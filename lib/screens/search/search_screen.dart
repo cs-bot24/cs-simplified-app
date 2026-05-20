@@ -98,7 +98,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           : ListView.separated(
                               padding: const EdgeInsets.all(16),
                               itemCount: academic.searchResults.length,
-                              separatorBuilder: (_, _) =>
+                              separatorBuilder: (context, index) =>
                                   const SizedBox(height: 10),
                               itemBuilder: (context, i) {
                                 final mat = academic.searchResults[i];

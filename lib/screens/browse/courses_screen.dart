@@ -99,7 +99,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
                     : ListView.separated(
                         padding: const EdgeInsets.all(16),
                         itemCount: academic.materials.length,
-                        separatorBuilder: (_, _) =>
+                        separatorBuilder: (context, index) =>
                             const SizedBox(height: 10),
                         itemBuilder: (context, i) {
                           final mat = academic.materials[i];

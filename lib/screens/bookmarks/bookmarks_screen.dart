@@ -113,7 +113,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           : ListView.separated(
                               padding: const EdgeInsets.all(16),
                               itemCount: academic.bookmarks.length,
-                              separatorBuilder: (_, _) =>
+                              separatorBuilder: (context, index) =>
                                   const SizedBox(height: 10),
                               itemBuilder: (context, i) {
                                 final mat = academic.bookmarks[i];

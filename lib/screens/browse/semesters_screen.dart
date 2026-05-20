@@ -49,7 +49,8 @@ class _SemestersScreenState extends State<SemestersScreen> {
                   : ListView.separated(
                       padding: const EdgeInsets.all(20),
                       itemCount: academic.courses.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 10),
                       itemBuilder: (context, i) {
                         final course = academic.courses[i];
                         return ListTile(
