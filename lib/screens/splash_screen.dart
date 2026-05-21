@@ -5,6 +5,7 @@ import '../core/storage.dart';
 import '../providers/auth_provider.dart';
 import 'home/home_screen.dart';
 import 'auth/login_screen.dart';
+import '../core/version_check.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,19 +28,24 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigate() async {
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-    await context.read<AuthProvider>().loadFromStorage();
-    if (!mounted) return;
-    final isLoggedIn = AppStorage.isLoggedIn;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            isLoggedIn ? const HomeScreen() : const LoginScreen(),
-      ),
-    );
-  }
+  await Future.delayed(const Duration(seconds: 2));
+  if (!mounted) return;
+
+  // Check for updates
+  await VersionCheck.check(context);
+
+  await context.read<AuthProvider>().loadFromStorage();
+  if (!mounted) return;
+  final isLoggedIn = AppStorage.isLoggedIn;
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) =>
+          isLoggedIn ? const HomeScreen() : const LoginScreen(),
+    ),
+  );
+}
+
 
   @override
   void dispose() { _ctrl.dispose(); super.dispose(); }
