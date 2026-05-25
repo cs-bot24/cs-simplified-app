@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/constants.dart';
 import '../../models/level_model.dart';
 import '../../providers/academic_provider.dart';
 import '../../widgets/loading_view.dart';
@@ -17,80 +16,46 @@ class _LevelsScreenState extends State<LevelsScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AcademicProvider>().fetchSemesters(widget.level.id);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) =>
+        context.read<AcademicProvider>().fetchSemesters(widget.level.id));
   }
 
   @override
   Widget build(BuildContext context) {
-    final academic = context.watch<AcademicProvider>();
+    final a = context.watch<AcademicProvider>();
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(AppConstants.primaryColorValue),
-        foregroundColor: Colors.white,
-        title: Text('${widget.level.emoji} ${widget.level.levelName}'),
-        elevation: 0,
-      ),
-      body: academic.loading
-          ? const LoadingView()
-          : academic.error != null
-              ? ErrorView(
-                  message: academic.error!,
-                  onRetry: () => context
-                      .read<AcademicProvider>()
-                      .fetchSemesters(widget.level.id))
-              : academic.semesters.isEmpty
-                  ? const Center(
-                      child: Text('No semesters available yet.',
-                          style: TextStyle(
-                              color: Color(AppConstants.textLightValue))))
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(20),
-                      itemCount: academic.semesters.length,
-                      separatorBuilder: (context, index) => const SizedBox(height: 12),
-                      itemBuilder: (context, i) {
-                        final sem = academic.semesters[i];
-                        return _SemesterTile(
-                          title: sem.semesterName,
-                          onTap: () => Navigator.push(context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      SemestersScreen(semester: sem))),
-                        );
-                      },
-                    ),
-    );
-  }
-}
-
-class _SemesterTile extends StatelessWidget {
-  final String title;
-  final VoidCallback onTap;
-  const _SemesterTile({required this.title, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      tileColor: const Color(AppConstants.accentColorValue),
-      leading: Container(
-        width: 44, height: 44,
-        decoration: BoxDecoration(
-          color: const Color(AppConstants.primaryColorValue).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(Icons.calendar_today_rounded,
-            color: Color(AppConstants.primaryColorValue), size: 20),
-      ),
-      title: Text(title,
-          style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Color(AppConstants.textDarkValue))),
-      trailing: const Icon(Icons.arrow_forward_ios_rounded,
-          size: 14, color: Color(AppConstants.textLightValue)),
+      appBar: AppBar(title: Text('${widget.level.emoji} ${widget.level.levelName}')),
+      body: a.loading ? const LoadingView()
+          : a.error != null ? ErrorView(message: a.error!,
+              onRetry: () => context.read<AcademicProvider>().fetchSemesters(widget.level.id))
+          : a.semesters.isEmpty
+              ? const Center(child: Text('No semesters available yet.'))
+              : ListView.separated(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: a.semesters.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (ctx, i) {
+                    final sem = a.semesters[i];
+                    return Card(
+                      child: ListTile(
+                        leading: Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.calendar_today_rounded,
+                              color: Theme.of(context).colorScheme.primary, size: 20),
+                        ),
+                        title: Text(sem.semesterName,
+                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                        onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                            builder: (_) => SemestersScreen(semester: sem))),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }

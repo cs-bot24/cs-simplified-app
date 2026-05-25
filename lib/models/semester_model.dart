@@ -4,17 +4,11 @@ class SemesterModel {
   final String semesterName;
   final int sortOrder;
 
-  SemesterModel({
-    required this.id,
-    required this.levelId,
-    required this.semesterName,
-    required this.sortOrder,
-  });
+  SemesterModel({required this.id, required this.levelId,
+      required this.semesterName, required this.sortOrder});
 
-  factory SemesterModel.fromJson(Map<String, dynamic> json) => SemesterModel(
-        id: json['id'],
-        levelId: json['level_id'],
-        semesterName: json['semester_name'],
-        sortOrder: json['sort_order'] ?? 0,
-      );
+  factory SemesterModel.fromJson(Map<String, dynamic> j) => SemesterModel(
+    id: j['id'], levelId: j['level_id'],
+    semesterName: j['semester_name'], sortOrder: j['sort_order'] ?? 0,
+  );
 }

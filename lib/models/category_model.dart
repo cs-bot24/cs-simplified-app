@@ -3,15 +3,9 @@ class CategoryModel {
   final String categoryName;
   final String emoji;
 
-  CategoryModel({
-    required this.id,
-    required this.categoryName,
-    required this.emoji,
-  });
+  CategoryModel({required this.id, required this.categoryName, required this.emoji});
 
-  factory CategoryModel.fromJson(Map<String, dynamic> json) => CategoryModel(
-        id: json['id'],
-        categoryName: json['category_name'],
-        emoji: json['emoji'] ?? '📄',
-      );
+  factory CategoryModel.fromJson(Map<String, dynamic> j) => CategoryModel(
+    id: j['id'], categoryName: j['category_name'], emoji: j['emoji'] ?? '📄',
+  );
 }

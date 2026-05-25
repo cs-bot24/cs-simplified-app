@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../core/constants.dart';
 import '../core/storage.dart';
+import '../core/version_check.dart';
 import '../providers/auth_provider.dart';
 import 'home/home_screen.dart';
 import 'auth/login_screen.dart';
-import '../core/version_check.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -15,77 +14,63 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
-  late Animation<double>    _fade;
+  late Animation<double> _fade;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 800));
+        vsync: this, duration: const Duration(milliseconds: 900));
     _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
     _ctrl.forward();
     _navigate();
   }
 
   Future<void> _navigate() async {
-  await Future.delayed(const Duration(seconds: 2));
-  if (!mounted) return;
-
-  // Check for updates
-  await VersionCheck.check(context);
-
-  await context.read<AuthProvider>().loadFromStorage();
-  if (!mounted) return;
-  final isLoggedIn = AppStorage.isLoggedIn;
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(
-      builder: (_) =>
-          isLoggedIn ? const HomeScreen() : const LoginScreen(),
-    ),
-  );
-}
-
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    await context.read<AuthProvider>().loadFromStorage();
+    if (!mounted) return;
+    await VersionCheck.check(context);
+    if (!mounted) return;
+    Navigator.pushReplacement(context, MaterialPageRoute(
+        builder: (_) => AppStorage.isLoggedIn
+            ? const HomeScreen()
+            : const LoginScreen()));
+  }
 
   @override
   void dispose() { _ctrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(AppConstants.primaryColorValue),
+      backgroundColor: scheme.primary,
       body: FadeTransition(
         opacity: _fade,
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 90, height: 90,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Icon(Icons.school_rounded,
-                    color: Colors.white, size: 52),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 96, height: 96,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(26),
               ),
-              const SizedBox(height: 20),
-              const Text(AppConstants.appName,
-                  style: TextStyle(
-                      color: Colors.white, fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5)),
-              const SizedBox(height: 8),
-              const Text(AppConstants.appTagline,
-                  style: TextStyle(color: Colors.white70, fontSize: 14)),
-              const SizedBox(height: 48),
-              const SizedBox(
-                width: 24, height: 24,
+              child: const Icon(Icons.school_rounded, color: Colors.white, size: 56),
+            ),
+            const SizedBox(height: 22),
+            const Text('CS Simplified',
+                style: TextStyle(color: Colors.white, fontSize: 30,
+                    fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+            const SizedBox(height: 8),
+            const Text('Your academic learning hub',
+                style: TextStyle(color: Colors.white70, fontSize: 14)),
+            const SizedBox(height: 52),
+            const SizedBox(width: 24, height: 24,
                 child: CircularProgressIndicator(
-                    color: Colors.white70, strokeWidth: 2),
-              ),
-            ],
-          ),
+                    color: Colors.white70, strokeWidth: 2)),
+          ]),
         ),
       ),
     );

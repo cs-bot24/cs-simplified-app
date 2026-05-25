@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../core/constants.dart';
 
 class AppButton extends StatelessWidget {
   final String label;
@@ -7,22 +6,16 @@ class AppButton extends StatelessWidget {
   final bool loading;
   final bool outlined;
   final IconData? icon;
+  final Color? color;
 
-  const AppButton({
-    super.key,
-    required this.label,
-    this.onTap,
-    this.loading = false,
-    this.outlined = false,
-    this.icon,
-  });
+  const AppButton({super.key, required this.label, this.onTap,
+      this.loading = false, this.outlined = false, this.icon, this.color});
 
   @override
   Widget build(BuildContext context) {
-    const primary = Color(AppConstants.primaryColorValue);
+    final c = color ?? Theme.of(context).colorScheme.primary;
     return SizedBox(
-      width: double.infinity,
-      height: 52,
+      width: double.infinity, height: 52,
       child: outlined
           ? OutlinedButton.icon(
               onPressed: loading ? null : onTap,
@@ -32,29 +25,23 @@ class AppButton extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : Text(label),
               style: OutlinedButton.styleFrom(
-                foregroundColor: primary,
-                side: BorderSide(color: primary),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                foregroundColor: c, side: BorderSide(color: c),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             )
           : ElevatedButton.icon(
               onPressed: loading ? null : onTap,
-              icon: icon != null ? Icon(icon, size: 18, color: Colors.white)
+              icon: icon != null
+                  ? Icon(icon, size: 18, color: Colors.white)
                   : const SizedBox.shrink(),
               label: loading
                   ? const SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : Text(label,
-                      style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.w600,
-                          fontSize: 16)),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(label, style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: primary,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                backgroundColor: c, elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
     );

@@ -16,45 +16,35 @@ class AuthProvider extends ChangeNotifier {
   bool       get isAdmin    => _user?.isAdmin ?? false;
 
   Future<void> loadFromStorage() async {
-    final userJson = AppStorage.getUser();
-    if (userJson != null) {
-      _user = UserModel.fromJson(jsonDecode(userJson));
+    final j = AppStorage.getUser();
+    if (j != null) {
+      _user = UserModel.fromJson(jsonDecode(j));
       notifyListeners();
     }
   }
 
-  Future<bool> register({
-    required String fullName,
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> register({required String fullName,
+      required String email, required String password}) async {
     _loading = true; _error = null; notifyListeners();
     try {
       final data = await ApiClient.register(
-        fullName: fullName, email: email, password: password,
-      );
-      await _saveSession(data);
+          fullName: fullName, email: email, password: password);
+      await _save(data);
       return true;
     } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _loading = false; notifyListeners();
-    }
+      _error = e.message; return false;
+    } finally { _loading = false; notifyListeners(); }
   }
 
   Future<bool> login({required String email, required String password}) async {
     _loading = true; _error = null; notifyListeners();
     try {
       final data = await ApiClient.login(email: email, password: password);
-      await _saveSession(data);
+      await _save(data);
       return true;
     } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _loading = false; notifyListeners();
-    }
+      _error = e.message; return false;
+    } finally { _loading = false; notifyListeners(); }
   }
 
   Future<void> logout() async {
@@ -63,11 +53,9 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _saveSession(Map<String, dynamic> data) async {
-    final token = data['access_token'];
-    final user  = UserModel.fromJson(data['user']);
-    await AppStorage.saveToken(token);
+  Future<void> _save(Map<String, dynamic> data) async {
+    await AppStorage.saveToken(data['access_token']);
     await AppStorage.saveUser(jsonEncode(data['user']));
-    _user = user;
+    _user = UserModel.fromJson(data['user']);
   }
 }
