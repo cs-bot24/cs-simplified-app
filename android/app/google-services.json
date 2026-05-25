@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "470892595548",
+    "project_id": "cs-simplified",
+    "storage_bucket": "cs-simplified.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:470892595548:android:0773422ff2313dcf799999",
+        "android_client_info": {
+          "package_name": "com.cssimplified.cs_simplified"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuMG_U-daDbsri5PhQvcxHeay38ZjJn0g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -8,6 +8,7 @@ class AppStorage {
     _prefs = await SharedPreferences.getInstance();
   }
 
+  // ── Auth Token ────────────────────────────────────────────────────────────
   static Future<void> saveToken(String token) async =>
       await _prefs?.setString(AppConstants.tokenKey, token);
 
@@ -20,8 +21,30 @@ class AppStorage {
 
   static bool get isLoggedIn => getToken() != null;
 
-  static Future<void> logout() async {
+  // ── Remember Me ──────────────────────────────────────────────────────────
+  static Future<void> saveRememberMe(bool value) async =>
+      await _prefs?.setBool(AppConstants.rememberMeKey, value);
+
+  static bool get rememberMe => _prefs?.getBool(AppConstants.rememberMeKey) ?? false;
+
+  // ── FCM Token ────────────────────────────────────────────────────────────
+  static Future<void> saveFcmToken(String token) async =>
+      await _prefs?.setString(AppConstants.fcmTokenKey, token);
+
+  static String? getFcmToken() => _prefs?.getString(AppConstants.fcmTokenKey);
+
+  // ── Notifications (local cache) ──────────────────────────────────────────
+  static Future<void> saveNotifications(String json) async =>
+      await _prefs?.setString('cached_notifications', json);
+
+  static String? getNotifications() => _prefs?.getString('cached_notifications');
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+  static Future<void> logout({bool clearRememberMe = false}) async {
     await _prefs?.remove(AppConstants.tokenKey);
     await _prefs?.remove(AppConstants.userKey);
+    if (clearRememberMe) {
+      await _prefs?.remove(AppConstants.rememberMeKey);
+    }
   }
 }

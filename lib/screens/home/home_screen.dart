@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../models/level_model.dart';
+import '../../widgets/skeleton_loader.dart';
 import '../browse/levels_screen.dart';
 import '../search/search_screen.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
 import '../admin/admin_dashboard.dart';
+import '../notifications/notifications_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -75,6 +78,7 @@ class _HomeTabState extends State<_HomeTab> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AcademicProvider>().fetchLevels();
+      context.read<NotificationProvider>().fetchNotifications();
     });
   }
 
@@ -110,13 +114,35 @@ class _HomeTabState extends State<_HomeTab> {
                             style: TextStyle(color: Colors.white, fontSize: 22,
                                 fontWeight: FontWeight.bold)),
                       ]),
-                      Container(
-                        width: 44, height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(12),
+                      Consumer<NotificationProvider>(
+                        builder: (_, notifs, __) => GestureDetector(
+                          onTap: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+                          child: Stack(
+                            children: [
+                              Container(
+                                width: 44, height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.notifications_outlined,
+                                    color: Colors.white),
+                              ),
+                              if (notifs.unreadCount > 0)
+                                Positioned(
+                                  top: 6, right: 6,
+                                  child: Container(
+                                    width: 10, height: 10,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                        child: const Icon(Icons.school_rounded, color: Colors.white),
                       ),
                     ],
                   ),
@@ -147,10 +173,10 @@ class _HomeTabState extends State<_HomeTab> {
           ),
           if (academic.loading)
             const SliverToBoxAdapter(
-              child: Center(child: Padding(
-                padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator(),
-              )),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: SkeletonList(count: 4),
+              ),
             )
           else
             SliverPadding(

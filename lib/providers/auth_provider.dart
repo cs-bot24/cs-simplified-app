@@ -36,11 +36,16 @@ class AuthProvider extends ChangeNotifier {
     } finally { _loading = false; notifyListeners(); }
   }
 
-  Future<bool> login({required String email, required String password}) async {
+  Future<bool> login({
+    required String email,
+    required String password,
+    bool rememberMe = false,
+  }) async {
     _loading = true; _error = null; notifyListeners();
     try {
       final data = await ApiClient.login(email: email, password: password);
       await _save(data);
+      await AppStorage.saveRememberMe(rememberMe);
       return true;
     } on ApiException catch (e) {
       _error = e.message; return false;
@@ -48,7 +53,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await AppStorage.logout();
+    // If remember me is off, clear it too
+    await AppStorage.logout(clearRememberMe: !AppStorage.rememberMe);
     _user = null;
     notifyListeners();
   }

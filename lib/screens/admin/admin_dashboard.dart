@@ -5,6 +5,8 @@ import '../../providers/auth_provider.dart';
 import 'manage_levels_screen.dart';
 import 'manage_materials_screen.dart';
 import 'upload_material_screen.dart';
+import 'send_notification_screen.dart';
+import 'admin_feedback_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -145,6 +147,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 color: Colors.orange,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const ManageMaterialsScreen())),
+              ),
+              const SizedBox(height: 10),
+              _ActionCard(
+                icon: Icons.campaign_rounded,
+                title: 'Send Notification',
+                subtitle: 'Broadcast message to all users',
+                color: Colors.teal,
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const SendNotificationScreen())),
+              ),
+              const SizedBox(height: 10),
+              _ActionCard(
+                icon: Icons.rate_review_rounded,
+                title: 'View Feedback',
+                subtitle: 'See user ratings and suggestions',
+                color: Colors.pink,
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AdminFeedbackScreen())),
               ),
             ],
           ),

@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../auth/login_screen.dart';
+import '../notifications/notifications_screen.dart';
+import '../contact/contact_screen.dart';
+import '../feedback/feedback_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -104,6 +108,21 @@ class ProfileScreen extends StatelessWidget {
               _SectionHeader(title: 'Account'),
               const SizedBox(height: 10),
 
+              // Notifications (with unread badge)
+              Consumer<NotificationProvider>(
+                builder: (_, notifs, __) => _MenuItem(
+                  icon: Icons.notifications_outlined,
+                  title: 'Notifications',
+                  subtitle: notifs.unreadCount > 0
+                      ? '${notifs.unreadCount} unread'
+                      : 'Stay up to date',
+                  badge: notifs.unreadCount > 0 ? notifs.unreadCount : null,
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+                ),
+              ),
+              const SizedBox(height: 8),
+
               if (!auth.isLoggedIn)
                 _MenuItem(
                   icon: Icons.login_rounded, title: 'Sign In',
@@ -135,6 +154,25 @@ class ProfileScreen extends StatelessWidget {
                       await context.read<AuthProvider>().logout();
                   },
                 ),
+
+              const SizedBox(height: 16),
+              _SectionHeader(title: 'Support'),
+              const SizedBox(height: 10),
+              _MenuItem(
+                icon: Icons.contact_support_outlined,
+                title: 'Contact Admin',
+                subtitle: 'Report issues, request materials',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const ContactScreen())),
+              ),
+              const SizedBox(height: 8),
+              _MenuItem(
+                icon: Icons.rate_review_outlined,
+                title: 'Give Feedback',
+                subtitle: 'Rate the app, suggest features',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const FeedbackScreen())),
+              ),
 
               const SizedBox(height: 16),
               _SectionHeader(title: 'About'),
@@ -241,8 +279,9 @@ class _MenuItem extends StatelessWidget {
   final String title, subtitle;
   final VoidCallback onTap;
   final Color? color;
+  final int? badge;
   const _MenuItem({required this.icon, required this.title,
-      required this.subtitle, required this.onTap, this.color});
+      required this.subtitle, required this.onTap, this.color, this.badge});
 
   @override
   Widget build(BuildContext context) {
@@ -263,8 +302,21 @@ class _MenuItem extends StatelessWidget {
             color: color)),
         subtitle: Text(subtitle, style: TextStyle(
             fontSize: 12, color: Colors.grey[500])),
-        trailing: Icon(Icons.arrow_forward_ios_rounded,
-            size: 14, color: Colors.grey[400]),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (badge != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text('$badge',
+                  style: const TextStyle(color: Colors.white,
+                      fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          if (badge != null) const SizedBox(width: 6),
+          Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey[400]),
+        ]),
         onTap: onTap,
       ),
     );

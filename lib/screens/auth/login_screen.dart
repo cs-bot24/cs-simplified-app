@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl  = TextEditingController();
   bool _showPass   = false;
+  bool _rememberMe = false;
 
   @override
   void dispose() { _emailCtrl.dispose(); _passCtrl.dispose(); super.dispose(); }
@@ -23,23 +24,34 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
-    final ok = await auth.login(email: _emailCtrl.text.trim(), password: _passCtrl.text);
+    final ok = await auth.login(
+      email: _emailCtrl.text.trim(),
+      password: _passCtrl.text,
+      rememberMe: _rememberMe,
+    );
     if (!mounted) return;
     if (ok) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error ?? 'Login failed'),
-            backgroundColor: Theme.of(context).colorScheme.error),
+        SnackBar(
+          content: Text(auth.error ?? 'Login failed'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
       );
     }
   }
 
+  void _continueAsGuest() {
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final auth    = context.watch<AuthProvider>();
-    final scheme  = Theme.of(context).colorScheme;
-    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final auth   = context.watch<AuthProvider>();
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: SafeArea(
@@ -98,9 +110,50 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   validator: (v) => v!.length >= 6 ? null : 'Min 6 characters',
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 12),
+
+                // ── Remember Me ──────────────────────────────────────────────
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 24, height: 24,
+                      child: Checkbox(
+                        value: _rememberMe,
+                        onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                        activeColor: scheme.primary,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: () => setState(() => _rememberMe = !_rememberMe),
+                      child: Text('Remember me',
+                          style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
                 AppButton(label: 'Sign In', loading: auth.loading,
                     onTap: _login, icon: Icons.login_rounded),
+                const SizedBox(height: 14),
+
+                // ── Guest Mode ───────────────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _continueAsGuest,
+                    icon: const Icon(Icons.explore_outlined),
+                    label: const Text('Continue as Guest'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+
                 const SizedBox(height: 20),
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Text("Don't have an account? ",
