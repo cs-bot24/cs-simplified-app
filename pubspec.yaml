@@ -1,7 +1,7 @@
 name: cs_simplified
 description: CS Simplified - Academic Learning Platform
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -24,6 +24,8 @@ dependencies:
   flutter_local_notifications: ^17.0.0
   share_plus: ^9.0.0
   open_filex: ^4.3.4
+  dio: ^5.4.0
+  permission_handler: ^11.3.0
 
 dev_dependencies:
   flutter_test:
