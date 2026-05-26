@@ -286,8 +286,10 @@ class _Field {
 
 class _LevelCard extends StatefulWidget {
   final LevelModel level;
-  final VoidCallback onEdit, onDelete, onAddSemester;
-  final Function(SemesterModel) onEditSemester, onDeleteSemester, onAddCourse;
+  final VoidCallback onEdit, onDelete;
+  final Future<void> Function() onAddSemester;
+  final Function(SemesterModel) onEditSemester, onDeleteSemester;
+  final Future<void> Function(SemesterModel) onAddCourse;
   final Function(Map<String, dynamic>) onEditCourse, onDeleteCourse;
 
   const _LevelCard({
@@ -427,7 +429,8 @@ class _LevelCardState extends State<_LevelCard> {
 
 class _SemesterTile extends StatefulWidget {
   final SemesterModel sem;
-  final VoidCallback onEdit, onDelete, onAddCourse;
+  final VoidCallback onEdit, onDelete;
+  final Future<void> Function() onAddCourse;
   final Function(Map<String, dynamic>) onEditCourse, onDeleteCourse;
 
   const _SemesterTile({
