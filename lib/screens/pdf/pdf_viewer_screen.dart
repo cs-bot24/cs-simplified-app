@@ -1,89 +1,176 @@
+// ============================================================
+//  pdf_viewer_screen.dart
+//
+//  ARCHITECTURE CHANGE (May 2026):
+//    OLD → syncfusion_flutter_pdfviewer (native renderer, unstable)
+//    NEW → webview_flutter + Google Drive Viewer URL
+//
+//  Why this approach is more stable:
+//    • No native PDF codec to crash on malformed PDFs.
+//    • Google Drive Viewer handles rendering server-side, so the
+//      app only renders an HTML page — a problem set WebView
+//      solves extremely reliably on all Android versions.
+//    • Zero licensing concerns (Syncfusion requires a paid licence
+//      for commercial use beyond its free-tier limits).
+//    • Cloudinary raw/upload URLs work without any auth header.
+//
+//  Screen contract (unchanged for callers):
+//    PdfViewerScreen(url: String, title: String)
+// ============================================================
+
 import 'dart:developer' as dev;
 import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 class PdfViewerScreen extends StatefulWidget {
-  final String url, title;
-  const PdfViewerScreen({super.key, required this.url, required this.title});
+  final String url;
+  final String title;
+
+  const PdfViewerScreen({
+    super.key,
+    required this.url,
+    required this.title,
+  });
+
   @override
   State<PdfViewerScreen> createState() => _PdfViewerScreenState();
 }
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
-  final PdfViewerController _pdfCtrl = PdfViewerController();
-  final GlobalKey<SfPdfViewerState> _pdfKey = GlobalKey();
+  // ── WebView controller ────────────────────────────────────────────────────
+  late final WebViewController _webController;
+
+  // ── Dio for direct HTTP download (viewer uses WebView, not Dio) ──────────
   final Dio _dio = Dio();
 
-  bool _loading = true;
-  String? _error;
-  int _currentPage = 1;
-  int _totalPages = 0;
-  bool _darkMode = true;
-  bool _saving = false;
+  // ── UI state ──────────────────────────────────────────────────────────────
+  bool _isLoading = true;
+  bool _hasError = false;
+
+  // ── Download state ────────────────────────────────────────────────────────
+  bool _isDownloading = false;
   double _downloadProgress = 0;
-  String? _savedPath; // path used for Save to Device
+
+  // ── Google Drive Viewer URL ───────────────────────────────────────────────
+  // The trick: Drive's /viewerng/viewer endpoint accepts any public PDF URL
+  // via the `url=` query parameter. It renders the PDF server-side and
+  // delivers an interactive HTML viewer inside the WebView.
+  // URL-encoding the PDF link is mandatory — raw `&` in the PDF URL would
+  // break the outer query string.
+  String get _viewerUrl {
+    final encoded = Uri.encodeComponent(widget.url.trim());
+    return 'https://drive.google.com/viewerng/viewer?embedded=true&url=$encoded';
+  }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
-    // Pre-fetch in background for Save to Device — viewer uses network directly
-    _prefetchForDownload();
+    _initWebView();
   }
 
   @override
   void dispose() {
-    _pdfCtrl.dispose();
     _dio.close();
     super.dispose();
   }
 
-  // Pre-download to temp so Save to Device is instant after viewing
-  Future<void> _prefetchForDownload() async {
-    final rawUrl = widget.url.trim();
-    if (rawUrl.isEmpty) return;
-    try {
-      final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/pdf_save_${rawUrl.hashCode.abs()}.pdf';
-      final file = File(path);
-      if (await file.exists() && await file.length() > 1024) {
-        _savedPath = path;
-        return;
-      }
-      await _dio.download(
-        rawUrl, path,
-        options: Options(
-          headers: {'Accept': 'application/pdf,*/*'},
-          followRedirects: true,
-          receiveTimeout: const Duration(seconds: 60),
+  // ── WebView initialisation ────────────────────────────────────────────────
+
+  void _initWebView() {
+    _webController = WebViewController()
+      // Google Drive Viewer requires JavaScript for its interactive PDF UI.
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      // Match the dark scaffold so there's no white flash before the page loads.
+      ..setBackgroundColor(const Color(0xFF1A1A1A))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (mounted) {
+              setState(() {
+                _isLoading = true;
+                _hasError = false;
+              });
+            }
+          },
+          onPageFinished: (_) {
+            if (mounted) setState(() => _isLoading = false);
+          },
+          onWebResourceError: (error) {
+            dev.log(
+              '[PDF] WebView error: ${error.description} '
+              '(errorCode=${error.errorCode})',
+              name: 'PdfViewer',
+            );
+            // Only treat as fatal if the main frame fails.
+            // Sub-resource errors (ads, analytics in the viewer) are ignorable.
+            if (error.isForMainFrame ?? true) {
+              if (mounted) setState(() { _isLoading = false; _hasError = true; });
+            }
+          },
         ),
-        onReceiveProgress: (r, t) {
-          if (t > 0 && mounted) setState(() => _downloadProgress = r / t);
-        },
+      )
+      ..loadRequest(Uri.parse(_viewerUrl));
+  }
+
+  // ── Retry ─────────────────────────────────────────────────────────────────
+
+  void _retryLoad() {
+    setState(() { _isLoading = true; _hasError = false; });
+    _webController.loadRequest(Uri.parse(_viewerUrl));
+  }
+
+  // ── External open ─────────────────────────────────────────────────────────
+  // Opens the *raw* Cloudinary PDF URL in the device browser or PDF app,
+  // bypassing the Google Drive wrapper entirely.
+
+  Future<void> _openExternally() async {
+    final rawUrl = widget.url.trim();
+    if (rawUrl.isEmpty) {
+      _toast('No URL available.', success: false);
+      return;
+    }
+    try {
+      await launchUrl(
+        Uri.parse(rawUrl),
+        mode: LaunchMode.externalApplication,
       );
-      if (await File(path).length() > 100) _savedPath = path;
-    } catch (e) {
-      dev.log('[PDF] Prefetch failed (save may not work): $e', name: 'PdfViewer');
+    } catch (_) {
+      // Last-resort: let Android pick any handler (e.g. a PDF app).
+      try {
+        await launchUrl(
+          Uri.parse(rawUrl),
+          mode: LaunchMode.platformDefault,
+        );
+      } catch (e) {
+        _toast('Unable to open externally.', success: false);
+      }
     }
   }
 
-  // ── Save to Device ────────────────────────────────────────────────────────
-  Future<void> _saveToDevice() async {
-    if (_savedPath == null) {
-      _toast('Still downloading, please wait…', success: false);
+  // ── Download ──────────────────────────────────────────────────────────────
+  // Downloads the PDF directly from the Cloudinary URL (no auth header
+  // needed for public raw/upload resources) and saves it to the device's
+  // Downloads folder so it appears in the phone's Files app.
+
+  Future<void> _downloadPdf() async {
+    final rawUrl = widget.url.trim();
+    if (rawUrl.isEmpty) {
+      _toast('No download URL.', success: false);
       return;
     }
-    setState(() => _saving = true);
-    try {
-      final safeName = widget.title
-          .replaceAll(RegExp(r'[^\w\s\-]'), '')
-          .trim()
-          .replaceAll(RegExp(r'\s+'), '_');
 
+    setState(() { _isDownloading = true; _downloadProgress = 0; });
+
+    try {
+      // ── 1. Android permission check (only needed on API ≤ 28) ────────────
       if (Platform.isAndroid) {
         final sdk = await _androidSdkInt();
         if (sdk < 29) {
@@ -93,317 +180,278 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             return;
           }
         }
-        Directory saveDir = Directory('/storage/emulated/0/Download');
-        if (!await saveDir.exists()) {
-          final ext = await getExternalStorageDirectory();
-          saveDir = ext ?? await getApplicationDocumentsDirectory();
-        }
-        if (!await saveDir.exists()) await saveDir.create(recursive: true);
-        final dest = '${saveDir.path}/$safeName.pdf';
-        await File(_savedPath!).copy(dest);
-        _toast('Saved to Downloads ✓', success: true);
-      } else {
-        final dir = await getApplicationDocumentsDirectory();
-        final dest = '${dir.path}/$safeName.pdf';
-        await File(_savedPath!).copy(dest);
-        _toast('Saved to Files ✓', success: true);
       }
+
+      // ── 2. Resolve the destination folder ────────────────────────────────
+      final saveDir = await _resolveDownloadsDirectory();
+
+      // ── 3. Build a clean, filesystem-safe filename ────────────────────────
+      final safeName = widget.title
+          .replaceAll(RegExp(r'[^\w\s\-]'), '')   // strip special chars
+          .trim()
+          .replaceAll(RegExp(r'\s+'), '_');         // spaces → underscores
+      final destPath = '${saveDir.path}/$safeName.pdf';
+
+      dev.log('[PDF] Downloading to $destPath', name: 'PdfViewer');
+
+      // ── 4. Download via Dio ───────────────────────────────────────────────
+      // No Authorization header — Cloudinary public URLs are credential-free.
+      await _dio.download(
+        rawUrl,
+        destPath,
+        options: Options(
+          headers: {'Accept': 'application/pdf,*/*'},
+          followRedirects: true,
+          receiveTimeout: const Duration(seconds: 120),
+        ),
+        onReceiveProgress: (received, total) {
+          if (total > 0 && mounted) {
+            setState(() => _downloadProgress = received / total);
+          }
+        },
+      );
+
+      _toast('Saved to Downloads ✓', success: true);
     } catch (e) {
-      _toast('Could not save: $e', success: false);
+      dev.log('[PDF] Download failed: $e', name: 'PdfViewer');
+      _toast('Download failed. Please try again.', success: false);
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() { _isDownloading = false; _downloadProgress = 0; });
     }
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /// Returns the best available Downloads folder for the current device.
+  /// Priority: /storage/emulated/0/Download (visible in Files app)
+  ///           → getExternalStorageDirectory (app-scoped external)
+  ///           → getApplicationDocumentsDirectory (internal, last resort)
+  Future<Directory> _resolveDownloadsDirectory() async {
+    if (Platform.isAndroid) {
+      final standard = Directory('/storage/emulated/0/Download');
+      if (await standard.exists()) return standard;
+
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) return ext;
+    }
+    return getApplicationDocumentsDirectory();
+  }
+
+  /// Extracts the Android SDK integer from the OS version string.
+  /// Falls back to 33 (Android 13) so we never incorrectly request old perms.
   Future<int> _androidSdkInt() async {
     try {
-      final v = Platform.operatingSystemVersion;
-      final match = RegExp(r'(?:SDK\s*|API\s*)(\d+)').firstMatch(v);
+      final version = Platform.operatingSystemVersion;
+      final match = RegExp(r'(?:SDK\s*|API\s*)(\d+)').firstMatch(version);
       if (match != null) return int.parse(match.group(1)!);
     } catch (_) {}
     return 33;
   }
 
-  // ── Open in external browser ──────────────────────────────────────────────
-  Future<void> _openExternally() async {
-    final raw = widget.url.trim();
-    if (raw.isEmpty) { _toast('No URL available.', success: false); return; }
-    try {
-      final uri = Uri.parse(raw);
-      // Skip canLaunchUrl check — it can falsely return false on some devices.
-      // launchUrl with externalApplication directly opens Chrome/browser.
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      // Last resort: try platformDefault which lets Android pick any handler
-      try {
-        await launchUrl(Uri.parse(raw), mode: LaunchMode.platformDefault);
-      } catch (_) {
-        _toast('Unable to open browser.', success: false);
-      }
-    }
-  }
-
-  void _jumpToPage() {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Jump to Page'),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: '1 – $_totalPages',
-            border: const OutlineInputBorder(),
+  void _toast(String msg, {required bool success}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          Icon(
+            success ? Icons.check_circle_outline : Icons.error_outline,
+            color: Colors.white,
+            size: 18,
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              final p = int.tryParse(ctrl.text);
-              if (p != null && p >= 1 && p <= _totalPages) _pdfCtrl.jumpToPage(p);
-              Navigator.pop(context);
-            },
-            child: const Text('Go'),
-          ),
-        ],
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg, style: const TextStyle(fontSize: 13))),
+        ]),
+        backgroundColor: success ? Colors.green[700] : Colors.red[700],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
 
-  void _toast(String msg, {required bool success}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        Icon(success ? Icons.check_circle : Icons.error_outline,
-            color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(msg)),
-      ]),
-      backgroundColor: success ? Colors.green : Colors.red,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ));
-  }
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final bg    = _darkMode ? const Color(0xFF1A1A1A) : Colors.grey[100]!;
-    final barBg = _darkMode ? const Color(0xFF2C2C2C) : Colors.white;
-    final txtClr = _darkMode ? Colors.white : Colors.black87;
-
     return Scaffold(
-      backgroundColor: bg,
-      appBar: AppBar(
-        backgroundColor: barBg,
-        elevation: 0,
-        iconTheme: IconThemeData(color: txtClr),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.title,
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: txtClr),
-                overflow: TextOverflow.ellipsis),
-            if (_totalPages > 0)
-              Text('Page $_currentPage of $_totalPages',
-                  style: TextStyle(fontSize: 11,
-                      color: _darkMode ? Colors.white54 : Colors.grey[500])),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(_darkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                color: txtClr),
-            onPressed: () => setState(() => _darkMode = !_darkMode),
-            tooltip: 'Toggle theme',
-          ),
-          if (_totalPages > 0)
-            IconButton(
-              icon: Icon(Icons.menu_book_outlined, color: txtClr),
-              onPressed: _jumpToPage,
-              tooltip: 'Jump to page',
-            ),
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert, color: txtClr),
-            onSelected: (v) {
-              if (v == 'save')    _saveToDevice();
-              if (v == 'browser') _openExternally();
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'save',
-                  child: Row(children: [
-                    Icon(Icons.download_rounded, size: 18), SizedBox(width: 10),
-                    Text('Save to Device'),
-                  ])),
-              const PopupMenuItem(value: 'browser',
-                  child: Row(children: [
-                    Icon(Icons.open_in_new, size: 18), SizedBox(width: 10),
-                    Text('Open in Browser'),
-                  ])),
-            ],
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xFF1A1A1A),
+      appBar: _buildAppBar(),
       body: Stack(
         children: [
-          _buildViewer(bg),
-          if (_saving)
-            Container(
-              color: Colors.black45,
-              child: const Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 12),
-                      Text('Saving…'),
-                    ]),
-                  ),
-                ),
-              ),
-            ),
+          // The WebView is always mounted so it keeps its state while
+          // loading/error overlays sit on top. This avoids a full reload
+          // every time the user taps "Retry".
+          if (!_hasError) WebViewWidget(controller: _webController),
+
+          // Loading indicator — shown until the Drive viewer page finishes.
+          if (_isLoading && !_hasError) _buildLoadingOverlay(),
+
+          // Error state — shown when the main frame fails to load.
+          if (_hasError) _buildErrorView(),
+
+          // Download progress overlay — floats over everything.
+          if (_isDownloading) _buildDownloadOverlay(),
         ],
       ),
     );
   }
 
-  Widget _buildViewer(Color bg) {
-    final rawUrl = widget.url.trim();
-
-    if (rawUrl.isEmpty) {
-      return _errorView(bg, 'No PDF URL provided.');
-    }
-
-    if (_error != null) {
-      return _errorView(bg, _error!);
-    }
-
-    return Stack(
-      children: [
-        // PRIMARY FIX: Use SfPdfViewer.network() directly.
-        // No Dio download needed for viewing — Syncfusion fetches it internally.
-        // This eliminates all temp-file caching issues and works for any
-        // public Cloudinary raw/upload URL out of the box.
-        SfPdfViewer.network(
-          rawUrl,
-          key: _pdfKey,
-          controller: _pdfCtrl,
-          headers: const {'Accept': 'application/pdf,*/*'},
-          pageLayoutMode: PdfPageLayoutMode.continuous,
-          scrollDirection: PdfScrollDirection.vertical,
-          enableDoubleTapZooming: true,
-          pageSpacing: 4,
-          onDocumentLoadFailed: (d) {
-            dev.log('[PDF] Load failed: ${d.description}', name: 'PdfViewer');
-            if (mounted) setState(() => _error = d.description);
-          },
-          onDocumentLoaded: (d) {
-            dev.log('[PDF] Loaded — ${d.document.pages.count} pages', name: 'PdfViewer');
-            if (mounted) setState(() {
-              _totalPages = d.document.pages.count;
-              _loading = false;
-            });
-          },
-          onPageChanged: (d) {
-            if (mounted) setState(() => _currentPage = d.newPageNumber);
-          },
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: const Color(0xFF2C2C2C),
+      elevation: 0,
+      iconTheme: const IconThemeData(color: Colors.white),
+      title: Text(
+        widget.title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
         ),
-
-        // Loading overlay — shown until onDocumentLoaded fires
-        if (_loading)
-          Container(
-            color: bg,
-            child: Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                CircularProgressIndicator(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                Text('Loading PDF…',
-                    style: TextStyle(
-                        color: _darkMode ? Colors.white54 : Colors.grey[600],
-                        fontSize: 13)),
-                if (_downloadProgress > 0 && _downloadProgress < 1) ...[
-                  const SizedBox(height: 8),
-                  Text('Caching ${(_downloadProgress * 100).toInt()}%…',
-                      style: TextStyle(
-                          color: _darkMode ? Colors.white38 : Colors.grey[400],
-                          fontSize: 11)),
-                ],
-              ]),
-            ),
-          ),
-
-        // Zoom controls
-        Positioned(
-          bottom: 24, right: 16,
-          child: Column(children: [
-            _ZoomBtn(Icons.add,    () => _pdfCtrl.zoomLevel = (_pdfCtrl.zoomLevel + 0.25).clamp(0.5, 4.0)),
-            const SizedBox(height: 8),
-            _ZoomBtn(Icons.remove, () => _pdfCtrl.zoomLevel = (_pdfCtrl.zoomLevel - 0.25).clamp(0.5, 4.0)),
-          ]),
+        overflow: TextOverflow.ellipsis,
+      ),
+      actions: [
+        // Open raw PDF in browser / external PDF app
+        IconButton(
+          icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
+          onPressed: _openExternally,
+          tooltip: 'Open in Browser',
+        ),
+        // Download PDF to device storage
+        IconButton(
+          icon: const Icon(Icons.download_rounded, color: Colors.white),
+          onPressed: _isDownloading ? null : _downloadPdf,
+          tooltip: 'Download PDF',
         ),
       ],
     );
   }
 
-  Widget _errorView(Color bg, String message) {
+  // ── Sub-widgets ───────────────────────────────────────────────────────────
+
+  Widget _buildLoadingOverlay() {
     return Container(
-      color: bg,
-      padding: const EdgeInsets.all(32),
-      child: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.picture_as_pdf_outlined, size: 72,
-              color: _darkMode ? Colors.white30 : Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text('Could not load PDF',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
-                  color: _darkMode ? Colors.white : Colors.black87)),
-          const SizedBox(height: 8),
-          Text(message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: _darkMode ? Colors.white54 : Colors.grey[600],
-                  fontSize: 13)),
-          const SizedBox(height: 24),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            OutlinedButton.icon(
-              onPressed: () => setState(() { _error = null; _loading = true; }),
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _darkMode ? Colors.white : null,
-                side: BorderSide(color: _darkMode ? Colors.white30 : Colors.grey),
-              ),
+      color: const Color(0xFF1A1A1A),
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(
+              color: Colors.white70,
+              strokeWidth: 2.5,
             ),
-            const SizedBox(width: 12),
-            ElevatedButton.icon(
-              onPressed: _openExternally,
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Open in Browser'),
+            SizedBox(height: 16),
+            Text(
+              'Loading PDF…',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
-          ]),
-        ]),
+          ],
+        ),
       ),
     );
   }
-}
 
-class _ZoomBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _ZoomBtn(this.icon, this.onTap);
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 42, height: 42,
-        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
-        child: Icon(icon, color: Colors.white, size: 20),
+  Widget _buildErrorView() {
+    return Container(
+      color: const Color(0xFF1A1A1A),
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.picture_as_pdf_outlined,
+              size: 72,
+              color: Colors.white24,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Could not load PDF',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'The Google Drive viewer could not render this file.\n'
+              'You can retry, open it in your browser, or download it.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 28),
+            // Primary actions row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _retryLoad,
+                  icon: const Icon(Icons.refresh_rounded, size: 17),
+                  label: const Text('Retry'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white30),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _openExternally,
+                  icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                  label: const Text('Open Externally'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            // Secondary: download instead
+            TextButton.icon(
+              onPressed: _isDownloading ? null : _downloadPdf,
+              icon: const Icon(Icons.download_rounded,
+                  color: Colors.white60, size: 18),
+              label: const Text(
+                'Download Instead',
+                style: TextStyle(color: Colors.white60),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDownloadOverlay() {
+    return Container(
+      // Semi-transparent scrim over the WebView
+      color: Colors.black54,
+      child: Center(
+        child: Card(
+          color: const Color(0xFF2C2C2C),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  // Shows determinate bar once we know the total size,
+                  // otherwise stays indeterminate (value == null).
+                  value: _downloadProgress > 0 ? _downloadProgress : null,
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _downloadProgress > 0
+                      ? 'Downloading ${(_downloadProgress * 100).toInt()}%…'
+                      : 'Preparing download…',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

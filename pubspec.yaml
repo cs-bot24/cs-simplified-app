@@ -14,18 +14,26 @@ dependencies:
   http_parser: ^4.0.2
   shared_preferences: ^2.2.0
   flutter_secure_storage: ^9.0.0
-  syncfusion_flutter_pdfviewer: ^27.1.48
+
+  # ── PDF viewer (NEW) ──────────────────────────────────────────────────────
+  # Replaces syncfusion_flutter_pdfviewer entirely.
+  # WebView renders the Google Drive viewer URL for stability & zero licensing.
+  webview_flutter: ^4.4.0
+
+  # ── Networking & file I/O (unchanged) ────────────────────────────────────
   path_provider: ^2.1.0
-  cached_network_image: ^3.3.0
+  dio: ^5.4.0
+  permission_handler: ^11.3.0
   url_launcher: ^6.2.0
+
+  # ── Other app features (unchanged) ────────────────────────────────────────
+  cached_network_image: ^3.3.0
   file_picker: ^8.0.0
   firebase_core: ^3.1.0
   firebase_messaging: ^15.0.0
   flutter_local_notifications: ^17.0.0
   share_plus: ^9.0.0
   open_filex: ^4.3.4
-  dio: ^5.4.0
-  permission_handler: ^11.3.0
 
 dev_dependencies:
   flutter_test:
