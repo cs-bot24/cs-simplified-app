@@ -212,11 +212,13 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  // FIX: was sending as query param — backend expects JSON body
   static Future<void> updateMaterialTitle(int id, String title) async {
     try {
       final res = await http.patch(
-        Uri.parse('$_base/materials/$id/title?new_title=${Uri.encodeComponent(title)}'),
+        Uri.parse('$_base/materials/$id/title'),
         headers: _headers(auth: true),
+        body: jsonEncode({'new_title': title}),
       );
       _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
@@ -279,22 +281,15 @@ class ApiClient {
       final data = _handle(res);
       return data is List ? data : [];
     } catch (e) {
-      dev.log('[API] Notifications not available: $e', name: 'ApiClient');
-      return []; // graceful fallback — endpoint may not exist yet
+      dev.log('[API] Notifications error: $e', name: 'ApiClient');
+      return [];
     }
   }
 
+  // FIX: was PATCH — backend route is POST
   static Future<void> markNotificationRead(int id) async {
     try {
-      final res = await http.patch(Uri.parse('$_base/notifications/$id/read'),
-          headers: _headers(auth: true));
-      _handle(res);
-    } catch (_) {}
-  }
-
-  static Future<void> markAllNotificationsRead() async {
-    try {
-      final res = await http.patch(Uri.parse('$_base/notifications/read-all'),
+      final res = await http.post(Uri.parse('$_base/notifications/$id/read'),
           headers: _headers(auth: true));
       _handle(res);
     } catch (_) {}
@@ -308,27 +303,28 @@ class ApiClient {
     } catch (_) {}
   }
 
+  // FIX: was /notifications/register-token — backend route is /notifications/register-fcm
   static Future<void> registerFcmToken(String fcmToken) async {
     if (AppStorage.getToken() == null) return;
     try {
-      await http.post(Uri.parse('$_base/notifications/register-token'),
+      await http.post(Uri.parse('$_base/notifications/register-fcm'),
           headers: _headers(auth: true),
           body: jsonEncode({'fcm_token': fcmToken}));
     } catch (_) {}
   }
 
+  // FIX: was /notifications/broadcast — backend route is POST /notifications
   static Future<void> sendAdminNotification({
     required String title,
     required String body,
     String? category,
   }) async {
     try {
-      final res = await http.post(Uri.parse('$_base/notifications/broadcast'),
+      final res = await http.post(Uri.parse('$_base/notifications'),
           headers: _headers(auth: true),
           body: jsonEncode({
             'title': title,
             'body': body,
-            'category': category ?? 'announcement',
           }));
       _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
@@ -368,6 +364,16 @@ class ApiClient {
           headers: _headers(auth: true),
           body: jsonEncode({'subject': subject, 'message': message, 'type': type}));
       _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // NEW: admin view of all contact messages
+  static Future<List<dynamic>> getAdminContactMessages() async {
+    try {
+      final res = await http.get(Uri.parse('$_base/contact'),
+          headers: _headers(auth: true));
+      final data = _handle(res);
+      return data is List ? data : [];
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 }

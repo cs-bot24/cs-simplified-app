@@ -7,6 +7,7 @@ import 'manage_materials_screen.dart';
 import 'upload_material_screen.dart';
 import 'send_notification_screen.dart';
 import 'admin_feedback_screen.dart';
+import 'admin_contacts_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -165,6 +166,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 color: Colors.pink,
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const AdminFeedbackScreen())),
+              ),
+              const SizedBox(height: 10),
+              _ActionCard(
+                icon: Icons.mail_outline_rounded,
+                title: 'User Messages',
+                subtitle: 'View in-app contact messages from users',
+                color: Colors.teal,
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AdminContactsScreen())),
               ),
             ],
           ),
