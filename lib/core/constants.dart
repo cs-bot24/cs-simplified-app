@@ -11,7 +11,7 @@ class AppConstants {
   static const String fcmTokenKey    = 'fcm_token';
 
   // ── Admin contact — update these in one place ────────────────────────────
-  static const String adminWhatsApp = 'https://wa.me/2348000000000';
+  static const String adminWhatsApp = 'https://wa.me/+234 806 858 2901';
   static const String adminTelegram = 'https://t.me/cssimplified';
   static const String adminEmail    = 'admin@cssimplified.app';
   static const String adminEmailSubjectDefault = 'CS Simplified Support';

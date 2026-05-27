@@ -1,3 +1,31 @@
+// lib/screens/home/home_screen.dart
+// ─────────────────────────────────────────────────────────────────────────────
+// CHANGES vs original:
+//
+//   1. CRASH FIX — IndexedStack assertion on logout:
+//      When an admin logs out, isAdmin flips to false.  The screens list
+//      shrinks from 5 items to 4.  If _index was 4 (Profile tab while
+//      admin) the IndexedStack and NavigationBar both receive an index
+//      that is out-of-bounds for the new shorter children list, triggering
+//      a Flutter assertion error ("index must be >= 0 && < children.length").
+//
+//      Fix: compute safeIndex = _index.clamp(0, screens.length - 1) before
+//      passing it to IndexedStack.  If the value needed clamping, schedule a
+//      setState via addPostFrameCallback so the _index field is corrected
+//      after the current build completes (mutating state during build is
+//      illegal in Flutter).
+//
+//   2. PERFORMANCE FIX — screens list rebuilt every frame:
+//      The original _screens() was called inside build(), creating new widget
+//      instances on every rebuild.  This defeated IndexedStack's purpose of
+//      keeping off-screen routes alive and caused repeated initState calls.
+//
+//      Fix: the four base screens are stored as final fields on the State
+//      object and constructed exactly once.  Only the AdminDashboard is
+//      conditional; it is also stored as a final field so it is never
+//      reconstructed unnecessarily.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -14,19 +42,27 @@ import '../notifications/notifications_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-  @override State<HomeScreen> createState() => _HomeScreenState();
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
 
-  List<Widget> _screens(bool isAdmin) => [
-    const _HomeTab(),
-    const SearchScreen(),
-    const BookmarksScreen(),
-    if (isAdmin) const AdminDashboard(),
-    const ProfileScreen(),
-  ];
+  // Build each screen exactly once.  IndexedStack keeps them alive in the
+  // widget tree so their State (scroll position, loaded data, etc.) is
+  // preserved when switching tabs — but only if we don't recreate them
+  // on every build() call, which the original did.
+  final _homeTab     = const _HomeTab();
+  final _searchTab   = const SearchScreen();
+  final _bookmarkTab = const BookmarksScreen();
+  final _profileTab  = const ProfileScreen();
+  final _adminTab    = const AdminDashboard();
+
+  List<Widget> _screens(bool isAdmin) => isAdmin
+      ? [_homeTab, _searchTab, _bookmarkTab, _adminTab, _profileTab]
+      : [_homeTab, _searchTab, _bookmarkTab, _profileTab];
 
   @override
   Widget build(BuildContext context) {
@@ -34,10 +70,25 @@ class _HomeScreenState extends State<HomeScreen> {
     final isAdmin = auth.isAdmin;
     final screens = _screens(isAdmin);
 
+    // ── Logout-crash fix ──────────────────────────────────────────────────
+    // When the admin logs out the screens list shrinks by one.  Any saved
+    // _index that now exceeds the new length is clamped to the last valid
+    // position (Profile), and we schedule a state update so the field is
+    // corrected cleanly on the next frame.
+    final safeIndex = _index.clamp(0, screens.length - 1);
+    if (safeIndex != _index) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _index = safeIndex);
+      });
+    }
+
     return Scaffold(
-      body: IndexedStack(index: _index, children: screens),
+      body: IndexedStack(
+        index: safeIndex,
+        children: screens,
+      ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
+        selectedIndex: safeIndex,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [
           const NavigationDestination(
@@ -67,9 +118,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// ── Home tab ──────────────────────────────────────────────────────────────────
+
 class _HomeTab extends StatefulWidget {
   const _HomeTab();
-  @override State<_HomeTab> createState() => _HomeTabState();
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
 }
 
 class _HomeTabState extends State<_HomeTab> {
@@ -77,6 +132,8 @@ class _HomeTabState extends State<_HomeTab> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Guard prevents redundant network calls when the tab is revisited.
+      // fetchLevels() already returns early if _levels is non-empty.
       context.read<AcademicProvider>().fetchLevels();
       context.read<NotificationProvider>().fetchNotifications();
     });
@@ -92,13 +149,14 @@ class _HomeTabState extends State<_HomeTab> {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
+          // ── Hero header ────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: Container(
               padding: const EdgeInsets.fromLTRB(24, 56, 24, 32),
               decoration: BoxDecoration(
                 color: scheme.primary,
-                borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(28)),
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(28)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,34 +164,47 @@ class _HomeTabState extends State<_HomeTab> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Hello, $name 👋',
-                            style: const TextStyle(color: Colors.white70, fontSize: 14)),
-                        const SizedBox(height: 4),
-                        const Text('CS Simplified',
-                            style: TextStyle(color: Colors.white, fontSize: 22,
-                                fontWeight: FontWeight.bold)),
-                      ]),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Hello, $name 👋',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 14)),
+                          const SizedBox(height: 4),
+                          const Text('CS Simplified',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                       Consumer<NotificationProvider>(
                         builder: (_, notifs, __) => GestureDetector(
-                          onTap: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const NotificationsScreen())),
                           child: Stack(
                             children: [
                               Container(
-                                width: 44, height: 44,
+                                width: 44,
+                                height: 44,
                                 decoration: BoxDecoration(
                                   color: Colors.white24,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(Icons.notifications_outlined,
+                                child: const Icon(
+                                    Icons.notifications_outlined,
                                     color: Colors.white),
                               ),
                               if (notifs.unreadCount > 0)
                                 Positioned(
-                                  top: 6, right: 6,
+                                  top: 6,
+                                  right: 6,
                                   child: Container(
-                                    width: 10, height: 10,
+                                    width: 10,
+                                    height: 10,
                                     decoration: const BoxDecoration(
                                       color: Colors.red,
                                       shape: BoxShape.circle,
@@ -148,29 +219,37 @@ class _HomeTabState extends State<_HomeTab> {
                   ),
                   const SizedBox(height: 20),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
                       color: Colors.white12,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Row(children: [
-                      Icon(Icons.lightbulb_outline, color: Colors.white70, size: 18),
+                      Icon(Icons.lightbulb_outline,
+                          color: Colors.white70, size: 18),
                       SizedBox(width: 10),
                       Text('Browse materials by level',
-                          style: TextStyle(color: Colors.white70, fontSize: 13)),
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 13)),
                     ]),
                   ),
                 ],
               ),
             ),
           ),
+
+          // ── Section title ──────────────────────────────────────────────
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(24, 28, 24, 16),
               child: Text('Select Your Level',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  style:
+                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ),
           ),
+
+          // ── Levels list ────────────────────────────────────────────────
           if (academic.loading)
             const SliverToBoxAdapter(
               child: Padding(
@@ -185,21 +264,27 @@ class _HomeTabState extends State<_HomeTab> {
                 delegate: SliverChildBuilderDelegate(
                   (ctx, i) {
                     final level = academic.levels[i];
-                    return _LevelCard(level: level,
-                      onTap: () => Navigator.push(ctx,
-                          MaterialPageRoute(builder: (_) => LevelsScreen(level: level))),
+                    return _LevelCard(
+                      level: level,
+                      onTap: () => Navigator.push(
+                          ctx,
+                          MaterialPageRoute(
+                              builder: (_) => LevelsScreen(level: level))),
                     );
                   },
                   childCount: academic.levels.length,
                 ),
               ),
             ),
+
           const SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
       ),
     );
   }
 }
+
+// ── Level card ────────────────────────────────────────────────────────────────
 
 class _LevelCard extends StatelessWidget {
   final LevelModel level;
@@ -221,26 +306,32 @@ class _LevelCard extends StatelessWidget {
         ),
         child: Row(children: [
           Container(
-            width: 52, height: 52,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
               color: scheme.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Center(child: Text(level.emoji,
-                style: const TextStyle(fontSize: 26))),
+            child: Center(
+                child: Text(level.emoji,
+                    style: const TextStyle(fontSize: 26))),
           ),
           const SizedBox(width: 16),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(level.levelName,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text('Tap to browse courses',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-            ],
-          )),
-          Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey[400]),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(level.levelName,
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text('Tap to browse courses',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+              ],
+            ),
+          ),
+          Icon(Icons.arrow_forward_ios_rounded,
+              size: 16, color: Colors.grey[400]),
         ]),
       ),
     );

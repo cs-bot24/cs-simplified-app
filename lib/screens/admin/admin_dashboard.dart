@@ -79,7 +79,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 crossAxisCount: 2, shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: 12, mainAxisSpacing: 12,
-                childAspectRatio: 1.5,
+                childAspectRatio: 1.25,
                 children: [
                   _StatCard(label: 'Total Users',
                       value: '${analytics['total_users'] ?? 0}',
@@ -192,31 +192,23 @@ class _StatCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: color, size: 26),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(value,
-                    style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: color)),
-              ),
-              const SizedBox(height: 2),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(label,
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey[500])),
-              ),
-            ],
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: color),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
