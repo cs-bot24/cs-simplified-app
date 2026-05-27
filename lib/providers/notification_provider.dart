@@ -36,12 +36,18 @@ class NotificationProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  // FIX: markAllNotificationsRead() doesn't exist on the backend.
+  // We mark each unread notification individually using the existing
+  // POST /notifications/{id}/read endpoint, then update local state.
   Future<void> markAllRead() async {
-    try {
-      await ApiClient.markAllNotificationsRead();
-      _notifications = _notifications.map((n) => n.copyWith(isRead: true)).toList();
-      notifyListeners();
-    } catch (_) {}
+    final unread = _notifications.where((n) => !n.isRead).toList();
+    for (final n in unread) {
+      try {
+        await ApiClient.markNotificationRead(n.id);
+      } catch (_) {}
+    }
+    _notifications = _notifications.map((n) => n.copyWith(isRead: true)).toList();
+    notifyListeners();
   }
 
   Future<void> deleteNotification(int id) async {
