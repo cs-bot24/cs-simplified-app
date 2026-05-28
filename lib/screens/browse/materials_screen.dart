@@ -54,7 +54,9 @@ class MaterialsScreen extends StatelessWidget {
             child: ElevatedButton.icon(
               onPressed: () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => PdfViewerScreen(
-                      url: material.fileUrl, title: material.materialTitle))),
+                      url: material.fileUrl,
+                      title: material.materialTitle,
+                      materialId: material.id))),
               icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
               label: const Text('Open PDF',
                   style: TextStyle(color: Colors.white, fontSize: 16,

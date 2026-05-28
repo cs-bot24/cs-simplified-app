@@ -1,44 +1,26 @@
-// lib/screens/home/home_screen.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// CHANGES vs original:
-//
-//   1. CRASH FIX — IndexedStack assertion on logout:
-//      When an admin logs out, isAdmin flips to false.  The screens list
-//      shrinks from 5 items to 4.  If _index was 4 (Profile tab while
-//      admin) the IndexedStack and NavigationBar both receive an index
-//      that is out-of-bounds for the new shorter children list, triggering
-//      a Flutter assertion error ("index must be >= 0 && < children.length").
-//
-//      Fix: compute safeIndex = _index.clamp(0, screens.length - 1) before
-//      passing it to IndexedStack.  If the value needed clamping, schedule a
-//      setState via addPostFrameCallback so the _index field is corrected
-//      after the current build completes (mutating state during build is
-//      illegal in Flutter).
-//
-//   2. PERFORMANCE FIX — screens list rebuilt every frame:
-//      The original _screens() was called inside build(), creating new widget
-//      instances on every rebuild.  This defeated IndexedStack's purpose of
-//      keeping off-screen routes alive and caused repeated initState calls.
-//
-//      Fix: the four base screens are stored as final fields on the State
-//      object and constructed exactly once.  Only the AdminDashboard is
-//      conditional; it is also stored as a final field so it is never
-//      reconstructed unnecessarily.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../providers/home_provider.dart';
 import '../../models/level_model.dart';
 import '../../widgets/skeleton_loader.dart';
+import '../../widgets/streak_badge.dart';
+import '../../widgets/material_card.dart';
+import '../../widgets/quote_card.dart';
+import '../../widgets/exam_prep_banner.dart';
+import '../../widgets/section_header.dart';
+import '../../widgets/home_shimmer.dart';
 import '../browse/levels_screen.dart';
 import '../search/search_screen.dart';
+import '../notifications/notifications_screen.dart';
+import '../admin/admin_dashboard.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
-import '../admin/admin_dashboard.dart';
-import '../notifications/notifications_screen.dart';
+
+// ── Shell (unchanged from original — only _HomeTab is redesigned) ─────────────
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -50,10 +32,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
 
-  // Build each screen exactly once.  IndexedStack keeps them alive in the
-  // widget tree so their State (scroll position, loaded data, etc.) is
-  // preserved when switching tabs — but only if we don't recreate them
-  // on every build() call, which the original did.
   final _homeTab     = const _HomeTab();
   final _searchTab   = const SearchScreen();
   final _bookmarkTab = const BookmarksScreen();
@@ -70,11 +48,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final isAdmin = auth.isAdmin;
     final screens = _screens(isAdmin);
 
-    // ── Logout-crash fix ──────────────────────────────────────────────────
-    // When the admin logs out the screens list shrinks by one.  Any saved
-    // _index that now exceeds the new length is clamped to the last valid
-    // position (Profile), and we schedule a state update so the field is
-    // corrected cleanly on the next frame.
     final safeIndex = _index.clamp(0, screens.length - 1);
     if (safeIndex != _index) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -83,10 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
-      body: IndexedStack(
-        index: safeIndex,
-        children: screens,
-      ),
+      body: IndexedStack(index: safeIndex, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
         onDestinationSelected: (i) => setState(() => _index = i),
@@ -118,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ── Home tab ──────────────────────────────────────────────────────────────────
+// ── Home tab — Phase 1.5A redesign ────────────────────────────────────────────
 
 class _HomeTab extends StatefulWidget {
   const _HomeTab();
@@ -127,164 +97,330 @@ class _HomeTab extends StatefulWidget {
   State<_HomeTab> createState() => _HomeTabState();
 }
 
-class _HomeTabState extends State<_HomeTab> {
+class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Guard prevents redundant network calls when the tab is revisited.
-      // fetchLevels() already returns early if _levels is non-empty.
       context.read<AcademicProvider>().fetchLevels();
       context.read<NotificationProvider>().fetchNotifications();
+      context.read<HomeProvider>().fetchHome();
+      // Streak ping is fire-and-forget — never awaited, never blocks UI
+      context.read<HomeProvider>().pingStreak();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Re-ping streak when app returns to foreground so a new day is detected
+  // even if the user left the app open overnight.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<HomeProvider>().pingStreak();
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    await Future.wait([
+      context.read<HomeProvider>().fetchHome(forceRefresh: true),
+      context.read<AcademicProvider>().fetchLevels(forceRefresh: true),
+    ]);
+  }
+
+  void _goToExamPrep() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SearchScreen(initialQuery: 'exam'),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final auth     = context.watch<AuthProvider>();
     final academic = context.watch<AcademicProvider>();
+    final home     = context.watch<HomeProvider>();
     final scheme   = Theme.of(context).colorScheme;
     final name     = auth.user?.fullName.split(' ').first ?? 'Student';
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          // ── Hero header ────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(24, 56, 24, 32),
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius:
-                    const BorderRadius.vertical(bottom: Radius.circular(28)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Hello, $name 👋',
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 14)),
-                          const SizedBox(height: 4),
-                          const Text('CS Simplified',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      Consumer<NotificationProvider>(
-                        builder: (_, notifs, __) => GestureDetector(
-                          onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      const NotificationsScreen())),
-                          child: Stack(
-                            children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: Colors.white24,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                    Icons.notifications_outlined,
-                                    color: Colors.white),
-                              ),
-                              if (notifs.unreadCount > 0)
-                                Positioned(
-                                  top: 6,
-                                  right: 6,
-                                  child: Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white12,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Row(children: [
-                      Icon(Icons.lightbulb_outline,
-                          color: Colors.white70, size: 18),
-                      SizedBox(width: 10),
-                      Text('Browse materials by level',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 13)),
-                    ]),
-                  ),
-                ],
-              ),
-            ),
-          ),
+      body: RefreshIndicator(
+        onRefresh: _onRefresh,
+        child: CustomScrollView(
+          slivers: [
 
-          // ── Section title ──────────────────────────────────────────────
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(24, 28, 24, 16),
-              child: Text('Select Your Level',
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            // ── 1. Hero header ──────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: _buildHeader(context, scheme, name, home),
             ),
-          ),
 
-          // ── Levels list ────────────────────────────────────────────────
-          if (academic.loading)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: SkeletonList(count: 4),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (ctx, i) {
-                    final level = academic.levels[i];
-                    return _LevelCard(
-                      level: level,
-                      onTap: () => Navigator.push(
-                          ctx,
-                          MaterialPageRoute(
-                              builder: (_) => LevelsScreen(level: level))),
-                    );
-                  },
-                  childCount: academic.levels.length,
+            // ── Loading shimmer (first load, no cache) ──────────────────────
+            if (home.loading && home.data == null)
+              const SliverToBoxAdapter(child: HomeShimmer()),
+
+            // ── 2. Exam prep banner ─────────────────────────────────────────
+            if (home.data != null && home.data!.examPrepCount > 0)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+                  child: ExamPrepBanner(
+                    count: home.data!.examPrepCount,
+                    onTap: _goToExamPrep,
+                  ),
                 ),
               ),
+
+            // ── 3. Trending materials (horizontal scroll) ───────────────────
+            if (home.data != null &&
+                home.data!.trendingMaterials.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
+                  child: SectionHeader(
+                    title: '📈 Trending This Week',
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 150,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: home.data!.trendingMaterials.length,
+                    itemBuilder: (_, i) => MaterialCard.horizontal(
+                      material: home.data!.trendingMaterials[i],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            // ── 4. Continue reading (recently viewed) ───────────────────────
+            if (home.data != null && home.data!.recentlyViewed.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
+                  child: SectionHeader(title: '⏱ Continue Reading'),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => MaterialCard.vertical(
+                      material: home.data!.recentlyViewed[i],
+                    ),
+                    childCount: home.data!.recentlyViewed.length,
+                  ),
+                ),
+              ),
+            ],
+
+            // ── 5. Daily quote ──────────────────────────────────────────────
+            if (home.data?.dailyQuote != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: QuoteCard(quote: home.data!.dailyQuote!),
+                ),
+              ),
+
+            // ── 6. Browse by level ──────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
+                child: SectionHeader(title: 'Browse by Level'),
+              ),
             ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            if (academic.loading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: SkeletonList(count: 3),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (ctx, i) {
+                      final level = academic.levels[i];
+                      return _LevelCard(
+                        level: level,
+                        onTap: () => Navigator.push(
+                          ctx,
+                          MaterialPageRoute(
+                            builder: (_) => LevelsScreen(level: level),
+                          ),
+                        ),
+                      );
+                    },
+                    childCount: academic.levels.length,
+                  ),
+                ),
+              ),
+
+            // Error state (only shown when there is truly nothing to display)
+            if (home.error != null && home.data == null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: _ErrorBanner(
+                    message: home.error!,
+                    onRetry: () =>
+                        context.read<HomeProvider>().fetchHome(forceRefresh: true),
+                  ),
+                ),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Header builder ─────────────────────────────────────────────────────────
+
+  Widget _buildHeader(
+    BuildContext context,
+    ColorScheme scheme,
+    String name,
+    HomeProvider home,
+  ) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 56, 24, 28),
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        borderRadius:
+            const BorderRadius.vertical(bottom: Radius.circular(28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row: greeting + streak badge + notification bell
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hello, $name 👋',
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 14),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'CS Simplified',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Streak badge
+              if (home.data != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: StreakBadge(streak: home.data!.streak),
+                ),
+              // Notification bell
+              Consumer<NotificationProvider>(
+                builder: (_, notifs, __) => GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationsScreen(),
+                    ),
+                  ),
+                  child: Stack(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.notifications_outlined,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      if (notifs.unreadCount > 0)
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Container(
+                            width: 9,
+                            height: 9,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Streak motivational message (only shown when streak > 0)
+          if (home.data != null && home.data!.streak.currentStreak > 0) ...[
+            const SizedBox(height: 10),
+            Text(
+              home.data!.streak.motivationalMessage,
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          // Search hint bar
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white12,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(children: [
+              Icon(Icons.lightbulb_outline, color: Colors.white70, size: 17),
+              SizedBox(width: 10),
+              Text(
+                'Browse materials by level',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ]),
+          ),
         ],
       ),
     );
   }
 }
 
-// ── Level card ────────────────────────────────────────────────────────────────
+// ── Level card (unchanged) ────────────────────────────────────────────────────
 
 class _LevelCard extends StatelessWidget {
   final LevelModel level;
@@ -313,8 +449,9 @@ class _LevelCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
             ),
             child: Center(
-                child: Text(level.emoji,
-                    style: const TextStyle(fontSize: 26))),
+              child: Text(level.emoji,
+                  style: const TextStyle(fontSize: 26)),
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -334,6 +471,39 @@ class _LevelCard extends StatelessWidget {
               size: 16, color: Colors.grey[400]),
         ]),
       ),
+    );
+  }
+}
+
+// ── Inline error banner ───────────────────────────────────────────────────────
+
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _ErrorBanner({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withOpacity(0.2)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.error_outline, color: Colors.red, size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(message,
+              style:
+                  const TextStyle(fontSize: 13, color: Colors.red)),
+        ),
+        TextButton(
+          onPressed: onRetry,
+          child: const Text('Retry', style: TextStyle(fontSize: 12)),
+        ),
+      ]),
     );
   }
 }

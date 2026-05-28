@@ -28,14 +28,21 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../core/api_client.dart';
+
 class PdfViewerScreen extends StatefulWidget {
   final String url;
   final String title;
+  /// Optional material ID used to record a view event for the
+  /// "Continue Reading" (recently viewed) feature.
+  /// If null, no view is recorded (e.g. admin previewing a PDF).
+  final int? materialId;
 
   const PdfViewerScreen({
     super.key,
     required this.url,
     required this.title,
+    this.materialId,
   });
 
   @override
@@ -74,6 +81,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   void initState() {
     super.initState();
     _initWebView();
+    // Record this view fire-and-forget so it feeds into "Continue Reading".
+    // Uses the optional materialId — if null (e.g. admin preview), skipped.
+    if (widget.materialId != null) {
+      ApiClient.recordMaterialView(widget.materialId!);
+    }
   }
 
   @override

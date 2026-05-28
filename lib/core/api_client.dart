@@ -90,6 +90,49 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  // ── Home ecosystem (Phase 1.5A) ───────────────────────────────────────────
+
+  /// Fetches the aggregated home screen payload in a single network call.
+  /// Returns streak, daily quote, trending materials, recently viewed, and
+  /// exam prep count — everything the home screen needs to render completely.
+  static Future<Map<String, dynamic>> getHome() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/home'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Records today's app activity and returns the updated streak.
+  /// Called fire-and-forget on every launch and foreground resume.
+  /// Errors are swallowed by HomeProvider — this must never crash the app.
+  static Future<Map<String, dynamic>> pingStreak() async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/streak/ping'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Records that the current user opened a material.
+  /// Called fire-and-forget from PdfViewerScreen.initState().
+  /// Status 204 returns null body — that's handled by _handle() correctly.
+  static Future<void> recordMaterialView(int materialId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/materials/$materialId/view'),
+        headers: _headers(auth: true),
+      );
+      if (res.statusCode != 204) _handle(res);
+    } catch (_) {
+      // View recording is best-effort — never propagate errors
+    }
+  }
+
   // ── Levels ────────────────────────────────────────────────────────────────
   static Future<List<dynamic>> getLevels() async {
     try {
@@ -212,7 +255,6 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
-  // FIX: was sending as query param — backend expects JSON body
   static Future<void> updateMaterialTitle(int id, String title) async {
     try {
       final res = await http.patch(
@@ -286,7 +328,6 @@ class ApiClient {
     }
   }
 
-  // FIX: was PATCH — backend route is POST
   static Future<void> markNotificationRead(int id) async {
     try {
       final res = await http.post(Uri.parse('$_base/notifications/$id/read'),
@@ -303,7 +344,6 @@ class ApiClient {
     } catch (_) {}
   }
 
-  // FIX: was /notifications/register-token — backend route is /notifications/register-fcm
   static Future<void> registerFcmToken(String fcmToken) async {
     if (AppStorage.getToken() == null) return;
     try {
@@ -313,7 +353,6 @@ class ApiClient {
     } catch (_) {}
   }
 
-  // FIX: was /notifications/broadcast — backend route is POST /notifications
   static Future<void> sendAdminNotification({
     required String title,
     required String body,
@@ -322,10 +361,7 @@ class ApiClient {
     try {
       final res = await http.post(Uri.parse('$_base/notifications'),
           headers: _headers(auth: true),
-          body: jsonEncode({
-            'title': title,
-            'body': body,
-          }));
+          body: jsonEncode({'title': title, 'body': body}));
       _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
@@ -367,7 +403,6 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
-  // NEW: admin view of all contact messages
   static Future<List<dynamic>> getAdminContactMessages() async {
     try {
       final res = await http.get(Uri.parse('$_base/contact'),
