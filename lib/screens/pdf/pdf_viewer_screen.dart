@@ -25,10 +25,15 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/api_client.dart';
+import '../../models/offline_material.dart';
+import '../../models/rating_model.dart';
+import '../../providers/offline_provider.dart';
+import '../../widgets/rating_dialog.dart';
 
 class PdfViewerScreen extends StatefulWidget {
   final String url;
@@ -64,6 +69,14 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   bool _isDownloading = false;
   double _downloadProgress = 0;
 
+  // ── Rating state (Phase 1.5B) ─────────────────────────────────────────────
+  // Tracks how long the student has had the PDF open.
+  // If > 10 seconds when they close, the rating dialog is shown.
+  final Stopwatch _stopwatch = Stopwatch();
+  // The student's existing rating (null = never rated).
+  // Fetched silently in initState to pre-populate the dialog.
+  RatingModel? _rating;
+
   // ── Google Drive Viewer URL ───────────────────────────────────────────────
   // The trick: Drive's /viewerng/viewer endpoint accepts any public PDF URL
   // via the `url=` query parameter. It renders the PDF server-side and
@@ -81,11 +94,66 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   void initState() {
     super.initState();
     _initWebView();
-    // Record this view fire-and-forget so it feeds into "Continue Reading".
-    // Uses the optional materialId — if null (e.g. admin preview), skipped.
+    _stopwatch.start();
+
     if (widget.materialId != null) {
+      // Record view for "Continue Reading" — fire-and-forget
       ApiClient.recordMaterialView(widget.materialId!);
+      // Pre-fetch rating so dialog knows if student already rated
+      _fetchRating();
     }
+  }
+
+  Future<void> _fetchRating() async {
+    try {
+      final raw = await ApiClient.getMaterialRating(widget.materialId!);
+      if (mounted) {
+        setState(() => _rating = RatingModel.fromJson(
+            raw as Map<String, dynamic>));
+      }
+    } catch (_) {
+      // Silent — rating fetch never interrupts the viewer
+    }
+  }
+
+  /// Called when the student tries to close the screen.
+  /// Shows the rating dialog if they've been reading for > 10 seconds.
+  Future<void> _handleClose() async {
+    _stopwatch.stop();
+    if (widget.materialId != null &&
+        _stopwatch.elapsed.inSeconds >= 10 &&
+        mounted) {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (_) => RatingDialog(
+          existingRating: _rating?.userRating,
+          onSubmit: (stars) async {
+            await ApiClient.rateMaterial(widget.materialId!, stars);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Row(children: [
+                    Icon(Icons.star_rounded,
+                        color: Colors.white, size: 16),
+                    SizedBox(width: 8),
+                    Text('Thank you for rating!'),
+                  ]),
+                  backgroundColor: Colors.amber[700],
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            }
+          },
+        ),
+      );
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -225,10 +293,22 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       );
 
       _toast('Saved to Downloads ✓', success: true);
-      // Log the download to the backend so analytics and trending stay accurate.
-      // Fire-and-forget — runs after the success toast so it never delays UX.
+      // Log to backend for trending/analytics — fire-and-forget
       if (widget.materialId != null) {
         ApiClient.logDownload(widget.materialId!);
+      }
+      // Register in OfflineProvider so it appears in the Offline tab instantly
+      if (widget.materialId != null && mounted) {
+        final fileSize = await File(destPath).length();
+        context.read<OfflineProvider>().addDownload(
+          OfflineMaterial(
+            materialId: widget.materialId!,
+            title: widget.title,
+            filePath: destPath,
+            fileSizeBytes: fileSize,
+            downloadedAt: DateTime.now(),
+          ),
+        );
       }
     } on DioException catch (e) {
       dev.log('[PDF] Dio error: ${e.type} — ${e.message}', name: 'PdfViewer');
@@ -323,7 +403,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleClose();
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
       appBar: _buildAppBar(),
       body: Stack(
@@ -503,6 +588,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           ),
         ),
       ),
-    );
+    ); // end PopScope
   }
 }

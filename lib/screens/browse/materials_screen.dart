@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/material_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
+import '../../providers/offline_provider.dart';
 import '../pdf/pdf_viewer_screen.dart';
 
 class MaterialsScreen extends StatelessWidget {
@@ -47,7 +48,29 @@ class MaterialsScreen extends StatelessWidget {
           Text(material.materialTitle,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text(courseCode, style: TextStyle(color: Colors.grey[500])),
+          Row(children: [
+            Text(courseCode, style: TextStyle(color: Colors.grey[500])),
+            if (context.watch<OfflineProvider>().isDownloaded(material.id)) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.green.withOpacity(0.4)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.download_done_rounded, size: 11, color: Colors.green),
+                  SizedBox(width: 4),
+                  Text('Downloaded',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.green,
+                          fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            ],
+          ]),
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity, height: 52,

@@ -8,7 +8,8 @@ import 'providers/auth_provider.dart';
 import 'providers/academic_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/notification_provider.dart';
-import 'providers/home_provider.dart';   // Phase 1.5A
+import 'providers/home_provider.dart';
+import 'providers/offline_provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 
@@ -43,8 +44,8 @@ class CsSimplifiedApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => AcademicProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
-        // Phase 1.5A — registered at root so streak ping survives navigation
         ChangeNotifierProvider(create: (_) => HomeProvider()),
+        ChangeNotifierProvider(create: (_) => OfflineProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, __) => MaterialApp(

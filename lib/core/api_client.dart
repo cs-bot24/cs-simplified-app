@@ -128,13 +128,10 @@ class ApiClient {
         Uri.parse('$_base/downloads/$materialId'),
         headers: _headers(),
       );
-    } catch (_) {
-      // Silent — logging failure must never affect the download experience
-    }
+    } catch (_) {}
   }
 
   /// Fetches all materials in the Exam Preparation category.
-  /// Used by ExamPrepScreen — direct category lookup, not a search query.
   static Future<List<dynamic>> getExamPrepMaterials() async {
     try {
       final res = await http.get(
@@ -142,6 +139,32 @@ class ApiClient {
         headers: _headers(auth: true),
       );
       return _handle(res) ?? [];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Submit or update a star rating (1–5) for a material.
+  /// Returns the updated aggregate stats including the new average.
+  static Future<Map<String, dynamic>> rateMaterial(
+      int materialId, int rating) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/materials/$materialId/rate'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'rating': rating}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Fetch the current user's rating + aggregate stats for a material.
+  /// Called fire-and-forget on PDF open to pre-populate the rating dialog.
+  static Future<Map<String, dynamic>> getMaterialRating(int materialId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/materials/$materialId/rating'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
   /// Status 204 returns null body — that's handled by _handle() correctly.

@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/home_provider.dart';
+import '../../providers/offline_provider.dart';
 import '../../models/level_model.dart';
 import '../../widgets/skeleton_loader.dart';
 import '../../widgets/streak_badge.dart';
@@ -15,6 +16,7 @@ import '../../widgets/section_header.dart';
 import '../../widgets/home_shimmer.dart';
 import '../browse/levels_screen.dart';
 import '../exam_prep/exam_prep_screen.dart';
+import '../offline/offline_screen.dart';
 import '../search/search_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../admin/admin_dashboard.dart';
@@ -36,12 +38,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final _homeTab     = const _HomeTab();
   final _searchTab   = const SearchScreen();
   final _bookmarkTab = const BookmarksScreen();
+  final _offlineTab  = const OfflineScreen();
   final _profileTab  = const ProfileScreen();
   final _adminTab    = const AdminDashboard();
 
   List<Widget> _screens(bool isAdmin) => isAdmin
-      ? [_homeTab, _searchTab, _bookmarkTab, _adminTab, _profileTab]
-      : [_homeTab, _searchTab, _bookmarkTab, _profileTab];
+      ? [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _adminTab, _profileTab]
+      : [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _profileTab];
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +77,10 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(Icons.bookmark_outline),
               selectedIcon: Icon(Icons.bookmark_rounded),
               label: 'Saved'),
+          const NavigationDestination(
+              icon: Icon(Icons.download_for_offline_outlined),
+              selectedIcon: Icon(Icons.download_for_offline_rounded),
+              label: 'Offline'),
           if (isAdmin)
             const NavigationDestination(
                 icon: Icon(Icons.admin_panel_settings_outlined),
@@ -107,8 +114,9 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       context.read<AcademicProvider>().fetchLevels();
       context.read<NotificationProvider>().fetchNotifications();
       context.read<HomeProvider>().fetchHome();
-      // Streak ping is fire-and-forget — never awaited, never blocks UI
       context.read<HomeProvider>().pingStreak();
+      // Load offline downloads registry on every app start
+      context.read<OfflineProvider>().loadFromStorage();
     });
   }
 
