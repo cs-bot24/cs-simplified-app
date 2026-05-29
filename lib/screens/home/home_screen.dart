@@ -15,6 +15,7 @@ import '../../widgets/section_header.dart';
 import '../../widgets/home_shimmer.dart';
 import '../browse/levels_screen.dart';
 import '../exam_prep/exam_prep_screen.dart';
+import '../search/search_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../admin/admin_dashboard.dart';
 import '../bookmarks/bookmarks_screen.dart';
