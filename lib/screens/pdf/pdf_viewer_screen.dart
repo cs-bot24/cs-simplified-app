@@ -427,8 +427,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           // Download progress overlay — floats over everything.
           if (_isDownloading) _buildDownloadOverlay(),
         ],
-      ),
-    );
+      ),        // closes Stack
+    ),          // closes Scaffold
+  );            // closes PopScope
   }
 
   PreferredSizeWidget _buildAppBar() {
