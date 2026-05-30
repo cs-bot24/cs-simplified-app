@@ -345,6 +345,90 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+
+  // ── Material Requests (Phase 1.5C) ───────────────────────────────────────
+  static Future<void> submitMaterialRequest({
+    required String courseName,
+    required String topic,
+    String? message,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('\$_base/material-requests'),
+        headers: _headers(auth: true),
+        body: jsonEncode({
+          'course_name': courseName,
+          'topic': topic,
+          if (message != null && message.isNotEmpty) 'message': message,
+        }),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<List<dynamic>> getAdminRequests({String? status}) async {
+    try {
+      var url = '\$_base/admin/material-requests';
+      if (status != null) url += '?status=\$status';
+      final res = await http.get(Uri.parse(url), headers: _headers(auth: true));
+      return _handle(res) ?? [];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> updateRequestStatus(int id, String status) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('\$_base/admin/material-requests/\$id'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'status': status}),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Admin Stats (Phase 1.5C) ──────────────────────────────────────────────
+  static Future<Map<String, dynamic>> getAdminStats() async {
+    try {
+      final res = await http.get(
+        Uri.parse('\$_base/analytics'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) ?? {};
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Announcements (Phase 1.5C) ────────────────────────────────────────────
+  static Future<void> sendAnnouncement({
+    required String title,
+    required String message,
+    String targetType = 'global',
+    int? targetId,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('\$_base/admin/announcements'),
+        headers: _headers(auth: true),
+        body: jsonEncode({
+          'title': title,
+          'message': message,
+          'target_type': targetType,
+          if (targetId != null) 'target_id': targetId,
+        }),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<List<dynamic>> getAnnouncements() async {
+    try {
+      final res = await http.get(
+        Uri.parse('\$_base/announcements'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) ?? [];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   // ── Analytics ─────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getAnalytics() async {
     try {

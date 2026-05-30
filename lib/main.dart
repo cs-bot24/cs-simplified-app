@@ -10,6 +10,8 @@ import 'providers/theme_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/home_provider.dart';
 import 'providers/offline_provider.dart';
+import 'providers/admin_stats_provider.dart';
+import 'providers/request_provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 
@@ -46,6 +48,8 @@ class CsSimplifiedApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => HomeProvider()),
         ChangeNotifierProvider(create: (_) => OfflineProvider()),
+        ChangeNotifierProvider(create: (_) => AdminStatsProvider()),
+        ChangeNotifierProvider(create: (_) => RequestProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, __) => MaterialApp(

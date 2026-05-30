@@ -63,13 +63,18 @@ class _HomeShimmerState extends State<HomeShimmer>
               // Trending section
               _box(base, 140, 18, radius: 6),
               const SizedBox(height: 12),
-              Row(children: [
-                _box(base, 160, 120, radius: 16),
-                const SizedBox(width: 12),
-                _box(base, 160, 120, radius: 16),
-                const SizedBox(width: 12),
-                _box(base, 160, 120, radius: 16),
-              ]),
+              // Wrap in scroll so fixed-width cards never overflow
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const NeverScrollableScrollPhysics(),
+                child: Row(children: [
+                  _box(base, 160, 120, radius: 16),
+                  const SizedBox(width: 12),
+                  _box(base, 160, 120, radius: 16),
+                  const SizedBox(width: 12),
+                  _box(base, 160, 120, radius: 16),
+                ]),
+              ),
               const SizedBox(height: 24),
 
               // Continue reading
