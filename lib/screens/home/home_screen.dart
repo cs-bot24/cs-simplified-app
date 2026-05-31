@@ -19,7 +19,7 @@ import '../exam_prep/exam_prep_screen.dart';
 import '../offline/offline_screen.dart';
 import '../search/search_screen.dart';
 import '../notifications/notifications_screen.dart';
-import '../admin/admin_dashboard.dart';
+import '../request/request_material_screen.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
 
@@ -242,13 +242,64 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 6. Browse by level ──────────────────────────────────────────
+
+            // ── 6a. Quick Actions ─────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
-                child: SectionHeader(title: 'Browse by Level'),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                child: SectionHeader(title: 'Quick Actions'),
               ),
             ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _QuickActionCard(
+                        icon: Icons.add_comment_outlined,
+                        label: 'Request\nMaterial',
+                        color: Colors.teal,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const RequestMaterialScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _QuickActionCard(
+                        icon: Icons.bookmark_outline_rounded,
+                        label: 'My\nBookmarks',
+                        color: Colors.indigo,
+                        onTap: () {
+                          final shell = context
+                              .findAncestorStateOfType<_HomeScreenState>();
+                          shell?.setState(() => shell._index = 2);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _QuickActionCard(
+                        icon: Icons.download_done_rounded,
+                        label: 'Downloaded',
+                        color: Colors.green,
+                        onTap: () {
+                          final shell = context
+                              .findAncestorStateOfType<_HomeScreenState>();
+                          shell?.setState(() => shell._index = 3);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── 6. Browse by level ──────────────────────────────────────────
 
             if (academic.loading)
               const SliverToBoxAdapter(
@@ -513,6 +564,52 @@ class _ErrorBanner extends StatelessWidget {
           child: const Text('Retry', style: TextStyle(fontSize: 12)),
         ),
       ]),
+    );
+  }
+}
+
+class _QuickActionCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionCard({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 26),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

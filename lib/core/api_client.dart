@@ -401,6 +401,7 @@ class ApiClient {
   static Future<void> sendAnnouncement({
     required String title,
     required String message,
+    String category = 'announcement',
     String targetType = 'global',
     int? targetId,
   }) async {
@@ -411,6 +412,7 @@ class ApiClient {
         body: jsonEncode({
           'title': title,
           'message': message,
+          'category': category,
           'target_type': targetType,
           if (targetId != null) 'target_id': targetId,
         }),
@@ -484,15 +486,22 @@ class ApiClient {
     } catch (_) {}
   }
 
+  // sendAdminNotification is kept for backwards compat but now correctly
+  // routes to POST /admin/announcements so all admin-sent content is
+  // stored in the announcements table and appears in the student feed.
   static Future<void> sendAdminNotification({
     required String title,
     required String body,
-    String? category,
+    String category = 'announcement',
   }) async {
     try {
-      final res = await http.post(Uri.parse('$_base/notifications'),
+      final res = await http.post(Uri.parse('$_base/admin/announcements'),
           headers: _headers(auth: true),
-          body: jsonEncode({'title': title, 'body': body}));
+          body: jsonEncode({
+            'title': title,
+            'message': body,
+            'category': category,
+          }));
       _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }

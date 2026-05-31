@@ -28,6 +28,8 @@ class AdminStatsProvider extends ChangeNotifier {
       (_stats['top_materials']  as List?) ?? [];
   List get recentUploads  =>
       (_stats['recent_uploads'] as List?) ?? [];
+  List get pendingRequestsPreview =>
+      (_stats['pending_requests_preview'] as List?) ?? [];
 
   Future<void> fetchStats() async {
     if (_loading) return;

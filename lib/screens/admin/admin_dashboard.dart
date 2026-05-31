@@ -165,6 +165,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 const SizedBox(height: 20),
               ],
 
+              // ── Pending Requests Preview (latest 3) ────────────────────
+              if (!stats.loading && stats.pendingRequestsPreview.isNotEmpty) ...[
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  const Text('Pending Requests',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const AdminRequestsScreen())),
+                    child: Text('View All',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w500)),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                ...stats.pendingRequestsPreview.map((r) => _PendingRequestPreviewTile(
+                  studentName: r['student_name'] ?? 'Student',
+                  courseName:  r['course_name']  ?? '',
+                  topic:       r['topic']        ?? '',
+                  createdAt:   r['created_at']   ?? '',
+                )),
+                const SizedBox(height: 20),
+              ],
+
               // Quick actions
               const Text('Quick Actions', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
@@ -347,6 +372,77 @@ class _ActionCard extends StatelessWidget {
         else
           Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey[400]),
       ]),
+    ),
+  );
+}
+
+class _PendingRequestPreviewTile extends StatelessWidget {
+  final String studentName, courseName, topic, createdAt;
+  const _PendingRequestPreviewTile({
+    required this.studentName,
+    required this.courseName,
+    required this.topic,
+    required this.createdAt,
+  });
+
+  String get _timeAgo {
+    try {
+      final dt   = DateTime.parse(createdAt).toLocal();
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24)   return '${diff.inHours}h ago';
+      if (diff.inDays < 7)     return '${diff.inDays}d ago';
+      return createdAt.split('T').first;
+    } catch (_) {
+      return createdAt.split('T').first;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Theme.of(context).cardColor,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.amber.withOpacity(0.25)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 36, height: 36,
+          decoration: BoxDecoration(
+            color: Colors.amber.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: const Icon(Icons.inbox_rounded, color: Colors.amber, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(studentName,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              const SizedBox(height: 2),
+              Text('$courseName · $topic',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.orange.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(_timeAgo,
+              style: const TextStyle(fontSize: 10, color: Colors.orange)),
+        ),
+      ],
     ),
   );
 }

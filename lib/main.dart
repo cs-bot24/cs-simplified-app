@@ -14,6 +14,7 @@ import 'providers/admin_stats_provider.dart';
 import 'providers/request_provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
+import 'core/fcm_service.dart' show navigatorKey;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,9 +59,63 @@ class CsSimplifiedApp extends StatelessWidget {
           themeMode: theme.mode,
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
-          home: const SplashScreen(),
+          // _AppBootstrap replaces SplashScreen as the home widget.
+          // It wraps SplashScreen and adds startup/resume badge refresh.
+          home: const _AppBootstrap(),
+          navigatorKey: navigatorKey,
         ),
       ),
     );
   }
+}
+
+/// Thin wrapper around [SplashScreen] that handles two badge requirements:
+///
+///   1. STARTUP — fetches the unread count immediately after the first frame
+///      so the red badge is visible before the user navigates anywhere.
+///
+///   2. RESUME  — re-fetches whenever the app returns from the background
+///      so any announcements sent while the app was backgrounded are reflected.
+///
+/// Only authenticated users have a valid token; [NotificationProvider] handles
+/// 401 responses silently and returns an empty list, so no badge shows for
+/// logged-out sessions.
+class _AppBootstrap extends StatefulWidget {
+  const _AppBootstrap();
+  @override
+  State<_AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends State<_AppBootstrap>
+    with WidgetsBindingObserver {
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshNotifications();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshNotifications();
+    }
+  }
+
+  void _refreshNotifications() {
+    if (!mounted) return;
+    context.read<NotificationProvider>().fetchNotifications();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SplashScreen();
 }

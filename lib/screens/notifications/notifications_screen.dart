@@ -15,7 +15,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<NotificationProvider>().fetchNotifications();
+      final provider = context.read<NotificationProvider>();
+      // Fetch merged feed (/notifications + /announcements).
+      provider.fetchNotifications();
+      // Opening this page resets the badge.
+      provider.markPageOpened();
     });
   }
 
@@ -24,6 +28,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final provider = context.watch<NotificationProvider>();
     final scheme   = Theme.of(context).colorScheme;
 
+    // Filter logic:
+    //   all          → everything
+    //   unread       → isRead == false
+    //   announcement → category == 'announcement'
+    //   material     → category == 'material'
+    //   system       → category == 'system'
     final filtered = _filter == 'all'
         ? provider.notifications
         : _filter == 'unread'
@@ -45,34 +55,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           if (provider.unreadCount > 0)
             TextButton(
               onPressed: () => provider.markAllRead(),
-              child: Text('Mark all read', style: TextStyle(color: scheme.primary, fontSize: 13)),
+              child: Text('Mark all read',
+                  style: TextStyle(color: scheme.primary, fontSize: 13)),
             ),
         ],
       ),
       body: Column(
         children: [
-          // Filter chips
+          // ── Filter chips ─────────────────────────────────────────────────
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               children: [
-                _FilterChip(label: 'All', value: 'all', selected: _filter == 'all',
+                _FilterChip(label: 'All', value: 'all',
+                    selected: _filter == 'all',
                     onTap: () => setState(() => _filter = 'all')),
                 const SizedBox(width: 8),
-                _FilterChip(label: 'Unread', value: 'unread', selected: _filter == 'unread',
+                _FilterChip(label: 'Unread', value: 'unread',
+                    selected: _filter == 'unread',
                     onTap: () => setState(() => _filter = 'unread')),
-                const SizedBox(width: 8),
-                _FilterChip(label: 'Materials', value: 'material', selected: _filter == 'material',
-                    onTap: () => setState(() => _filter = 'material')),
                 const SizedBox(width: 8),
                 _FilterChip(label: 'Announcements', value: 'announcement',
                     selected: _filter == 'announcement',
                     onTap: () => setState(() => _filter = 'announcement')),
+                const SizedBox(width: 8),
+                _FilterChip(label: 'Materials', value: 'material',
+                    selected: _filter == 'material',
+                    onTap: () => setState(() => _filter = 'material')),
+                const SizedBox(width: 8),
+                _FilterChip(label: 'System', value: 'system',
+                    selected: _filter == 'system',
+                    onTap: () => setState(() => _filter = 'system')),
               ],
             ),
           ),
           const Divider(height: 1),
+
+          // ── List ─────────────────────────────────────────────────────────
           Expanded(
             child: provider.loading
                 ? const Center(child: CircularProgressIndicator())
@@ -88,7 +108,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             return _NotificationTile(
                               notification: n,
                               onTap: () => provider.markRead(n.id),
-                              onDelete: () => _confirmDelete(ctx, n),
+                              // Announcements (negative IDs) can't be deleted
+                              // from the backend yet — only local dismiss.
+                              onDelete: () => n.id < 0
+                                  ? _localDismiss(n)
+                                  : _confirmDelete(ctx, n),
                             );
                           },
                         ),
@@ -99,6 +123,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  void _localDismiss(NotificationModel n) {
+    // For announcements: remove from the local list only.
+    context.read<NotificationProvider>().deleteNotification(n.id);
+  }
+
   void _confirmDelete(BuildContext context, NotificationModel n) {
     showDialog(
       context: context,
@@ -106,7 +137,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         title: const Text('Delete Notification'),
         content: const Text('Remove this notification?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
@@ -120,35 +153,40 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 }
 
+// ── Tile ──────────────────────────────────────────────────────────────────────
+
 class _NotificationTile extends StatelessWidget {
   final NotificationModel notification;
   final VoidCallback onTap, onDelete;
-  const _NotificationTile({required this.notification, required this.onTap, required this.onDelete});
+  const _NotificationTile(
+      {required this.notification,
+      required this.onTap,
+      required this.onDelete});
 
   IconData get _icon {
     switch (notification.category) {
-      case 'material': return Icons.picture_as_pdf_rounded;
+      case 'material':     return Icons.picture_as_pdf_rounded;
       case 'announcement': return Icons.campaign_rounded;
-      case 'system': return Icons.settings_rounded;
-      default: return Icons.notifications_rounded;
+      case 'system':       return Icons.settings_rounded;
+      default:             return Icons.notifications_rounded;
     }
   }
 
   Color get _color {
     switch (notification.category) {
-      case 'material': return Colors.blue;
+      case 'material':     return Colors.blue;
       case 'announcement': return Colors.orange;
-      case 'system': return Colors.purple;
-      default: return Colors.green;
+      case 'system':       return Colors.purple;
+      default:             return Colors.green;
     }
   }
 
   String _timeAgo(DateTime dt) {
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 1)  return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inHours < 24)   return '${diff.inHours}h ago';
+    if (diff.inDays < 7)     return '${diff.inDays}d ago';
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 
@@ -180,6 +218,7 @@ class _NotificationTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Category icon
               Container(
                 width: 42, height: 42,
                 decoration: BoxDecoration(
@@ -189,6 +228,7 @@ class _NotificationTile extends StatelessWidget {
                 child: Icon(_icon, color: _color, size: 20),
               ),
               const SizedBox(width: 12),
+              // Content
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,9 +255,7 @@ class _NotificationTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(notification.body,
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[600]),
+                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 5),
@@ -240,12 +278,17 @@ class _NotificationTile extends StatelessWidget {
   }
 }
 
+// ── Filter chip ───────────────────────────────────────────────────────────────
+
 class _FilterChip extends StatelessWidget {
   final String label, value;
   final bool selected;
   final VoidCallback onTap;
-  const _FilterChip({required this.label, required this.value,
-      required this.selected, required this.onTap});
+  const _FilterChip(
+      {required this.label,
+      required this.value,
+      required this.selected,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -254,24 +297,41 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? scheme.primary : scheme.primary.withOpacity(0.08),
+          color: selected
+              ? scheme.primary
+              : scheme.primary.withOpacity(0.08),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(label,
             style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: selected ? Colors.white : scheme.primary)),
+                color:
+                    selected ? Colors.white : scheme.primary)),
       ),
     );
   }
 }
 
+// ── Empty state ───────────────────────────────────────────────────────────────
+
 class _EmptyState extends StatelessWidget {
   final String filter;
   const _EmptyState({required this.filter});
+
+  String get _message {
+    switch (filter) {
+      case 'unread':       return 'You have no unread notifications';
+      case 'announcement': return 'No announcements yet';
+      case 'material':     return 'No material notifications yet';
+      case 'system':       return 'No system notifications yet';
+      default:
+        return 'Notifications about new materials\nand announcements will appear here';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -281,15 +341,12 @@ class _EmptyState extends StatelessWidget {
             size: 72, color: Colors.grey[300]),
         const SizedBox(height: 16),
         Text(filter == 'unread' ? 'All caught up!' : 'No notifications yet',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            style: const TextStyle(
+                fontSize: 18, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        Text(
-          filter == 'unread'
-              ? 'You have no unread notifications'
-              : 'Notifications about new materials\nand announcements will appear here',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-        ),
+        Text(_message,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey[500])),
       ]),
     );
   }

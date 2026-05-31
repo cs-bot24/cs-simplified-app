@@ -7,6 +7,7 @@ import '../auth/login_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../contact/contact_screen.dart';
 import '../feedback/feedback_screen.dart';
+import '../request/request_material_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -159,9 +160,18 @@ class ProfileScreen extends StatelessWidget {
               _SectionHeader(title: 'Support'),
               const SizedBox(height: 10),
               _MenuItem(
+                icon: Icons.add_comment_outlined,
+                title: 'Request a Material',
+                subtitle: 'Ask for a specific past question or note',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(
+                        builder: (_) => const RequestMaterialScreen())),
+              ),
+              const SizedBox(height: 8),
+              _MenuItem(
                 icon: Icons.contact_support_outlined,
                 title: 'Contact Admin',
-                subtitle: 'Report issues, request materials',
+                subtitle: 'Report issues or ask questions',
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const ContactScreen())),
               ),
