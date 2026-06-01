@@ -2,10 +2,9 @@ import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../core/api_client.dart';
 import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
-import '../../widgets/app_button.dart';
+import 'support_center_screen.dart';
 
 class ContactScreen extends StatefulWidget {
   const ContactScreen({super.key});
@@ -13,14 +12,6 @@ class ContactScreen extends StatefulWidget {
 }
 
 class _ContactScreenState extends State<ContactScreen> {
-  final _subjectCtrl = TextEditingController();
-  final _msgCtrl     = TextEditingController();
-  final _formKey     = GlobalKey<FormState>();
-  String _type  = 'question';
-  bool _sending = false;
-
-  @override
-  void dispose() { _subjectCtrl.dispose(); _msgCtrl.dispose(); super.dispose(); }
 
   // ── URL launching ─────────────────────────────────────────────────────────
 
@@ -53,12 +44,10 @@ class _ContactScreenState extends State<ContactScreen> {
     try {
       bool launched = false;
 
-      // Try external app first
       if (await canLaunchUrl(uri)) {
         launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
 
-      // Fallback: try in-browser
       if (!launched) {
         final fbUri = Uri.parse(fallback);
         if (await canLaunchUrl(fbUri)) {
@@ -67,35 +56,11 @@ class _ContactScreenState extends State<ContactScreen> {
       }
 
       if (!launched && mounted) {
-        _snack('Application not installed or unable to open link.',
-            success: false);
+        _snack('Application not installed or unable to open link.', success: false);
       }
     } catch (e) {
       dev.log('[Contact] Launch error: $e', name: 'ContactScreen');
       if (mounted) _snack('Unable to open link.', success: false);
-    }
-  }
-
-  // ── In-app message form ───────────────────────────────────────────────────
-
-  Future<void> _send() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _sending = true);
-    try {
-      await ApiClient.sendContactMessage(
-        subject: _subjectCtrl.text.trim(),
-        message: _msgCtrl.text.trim(),
-        type: _type,
-      );
-      if (!mounted) return;
-      _subjectCtrl.clear();
-      _msgCtrl.clear();
-      _snack('Message sent! We\'ll get back to you soon.', success: true);
-    } catch (e) {
-      if (!mounted) return;
-      _snack(e.toString(), success: false);
-    } finally {
-      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -127,7 +92,7 @@ class _ContactScreenState extends State<ContactScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
 
-            // ── Quick contact ──────────────────────────────────────────────
+            // ── Quick Contact ──────────────────────────────────────────────
             const Text('Quick Contact',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 12),
@@ -158,83 +123,27 @@ class _ContactScreenState extends State<ContactScreen> {
 
             const SizedBox(height: 28),
 
-            // ── In-app message ─────────────────────────────────────────────
-            const Text('Send a Message',
+            // ── Support Center ─────────────────────────────────────────────
+            const Text('Support Center',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 4),
-            Text('We usually respond within 24 hours',
+            Text('Track your requests and get admin replies',
                 style: TextStyle(fontSize: 12, color: Colors.grey[500])),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            if (auth.isLoggedIn) ...[
-              // Type selector
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _TypeChip(label: '❓ Question', value: 'question',
-                        selected: _type == 'question',
-                        onTap: () => setState(() => _type = 'question')),
-                    const SizedBox(width: 8),
-                    _TypeChip(label: '🐛 Bug Report', value: 'bug',
-                        selected: _type == 'bug',
-                        onTap: () => setState(() => _type = 'bug')),
-                    const SizedBox(width: 8),
-                    _TypeChip(label: '📚 Request Material',
-                        value: 'material_request',
-                        selected: _type == 'material_request',
-                        onTap: () => setState(() => _type = 'material_request')),
-                    const SizedBox(width: 8),
-                    _TypeChip(label: '💬 Other', value: 'other',
-                        selected: _type == 'other',
-                        onTap: () => setState(() => _type = 'other')),
-                  ],
+            if (auth.isLoggedIn)
+              _ContactCard(
+                icon: Icons.support_agent_rounded,
+                color: scheme.primary,
+                title: 'Open Support Center',
+                subtitle: 'Submit tickets, track status, read replies',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const SupportCenterScreen()),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Form(
-                key: _formKey,
-                child: Column(children: [
-                  TextFormField(
-                    controller: _subjectCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Subject',
-                      prefixIcon: const Icon(Icons.subject_rounded),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    validator: (v) =>
-                        v!.trim().isEmpty ? 'Enter a subject' : null,
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _msgCtrl,
-                    maxLines: 5,
-                    maxLength: 1000,
-                    decoration: InputDecoration(
-                      labelText: 'Message',
-                      alignLabelWithHint: true,
-                      prefixIcon: const Padding(
-                        padding: EdgeInsets.only(bottom: 80),
-                        child: Icon(Icons.message_rounded),
-                      ),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    validator: (v) => v!.trim().length < 10
-                        ? 'Min 10 characters'
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  AppButton(
-                    label: 'Send Message',
-                    loading: _sending,
-                    onTap: _send,
-                    icon: Icons.send_rounded,
-                  ),
-                ]),
-              ),
-            ] else ...[
+              )
+            else
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -249,7 +158,7 @@ class _ContactScreenState extends State<ContactScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Sign in to send a direct message',
+                        const Text('Sign in to use the Support Center',
                             style: TextStyle(fontWeight: FontWeight.w600,
                                 fontSize: 13)),
                         const SizedBox(height: 2),
@@ -262,7 +171,6 @@ class _ContactScreenState extends State<ContactScreen> {
                   ),
                 ]),
               ),
-            ],
           ],
         ),
       ),
@@ -331,34 +239,6 @@ class _ContactCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _TypeChip extends StatelessWidget {
-  final String label, value;
-  final bool selected;
-  final VoidCallback onTap;
-  const _TypeChip({required this.label, required this.value,
-      required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? scheme.primary : scheme.primary.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w500,
-                color: selected ? Colors.white : scheme.primary)),
       ),
     );
   }

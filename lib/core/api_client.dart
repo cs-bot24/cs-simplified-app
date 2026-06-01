@@ -560,4 +560,84 @@ class ApiClient {
       return data is List ? data : [];
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+  // ── Support Tickets (Student) ──────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> createSupportTicket({
+    required String title,
+    required String message,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/support-tickets'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'title': title, 'message': message}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<List<dynamic>> getMyTickets() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/support-tickets'),
+        headers: _headers(auth: true),
+      );
+      final data = _handle(res);
+      return data is List ? data : [];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getMyTicket(int id) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/support-tickets/$id'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Support Tickets (Admin) ────────────────────────────────────────────────
+
+  static Future<List<dynamic>> getAdminTickets({String? status}) async {
+    try {
+      final uri = Uri.parse('$_base/admin/support-tickets')
+          .replace(queryParameters: status != null ? {'status': status} : null);
+      final res = await http.get(uri, headers: _headers(auth: true));
+      final data = _handle(res);
+      return data is List ? data : [];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getAdminTicket(int id) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/admin/support-tickets/$id'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> updateTicketStatus(int id, String status) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$_base/admin/support-tickets/$id/status'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'status': status}),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> replyToTicket(int id, String reply) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/admin/support-tickets/$id/reply'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'admin_reply': reply}),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
 }

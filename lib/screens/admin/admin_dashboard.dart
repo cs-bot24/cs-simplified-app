@@ -9,6 +9,7 @@ import 'send_notification_screen.dart';
 import 'admin_feedback_screen.dart';
 import 'admin_contacts_screen.dart';
 import 'admin_requests_screen.dart';
+import 'admin_support_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -154,7 +155,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
               // Attention badges
               if (!stats.loading && (stats.pendingRequests > 0 ||
-                  stats.unreadFeedback > 0 || stats.unreadMessages > 0)) ...[
+                  stats.unreadFeedback > 0 || stats.unreadMessages > 0 ||
+                  stats.openSupportTickets > 0)) ...[
                 const Text('Needs Attention', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 Row(children: [
@@ -182,6 +184,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       icon: Icons.mail_rounded, color: Colors.teal,
                       onTap: () => Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const AdminContactsScreen()))
+                          .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
+                    )),
+                  ],
+                  if (stats.openSupportTickets > 0) ...[
+                    if (stats.pendingRequests > 0 || stats.unreadFeedback > 0 || stats.unreadMessages > 0)
+                      const SizedBox(width: 10),
+                    Expanded(child: _BadgeCard(
+                      label: 'Support', count: stats.openSupportTickets,
+                      icon: Icons.support_agent_rounded, color: Colors.deepPurple,
+                      onTap: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AdminSupportScreen()))
                           .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
                     )),
                   ],
@@ -281,6 +294,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   badge: stats.unreadFeedback,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const AdminFeedbackScreen()))
+                      .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); })),
+              const SizedBox(height: 10),
+              _ActionCard(icon: Icons.support_agent_rounded, title: 'Support Requests',
+                  subtitle: 'Manage student support tickets', color: Colors.deepPurple,
+                  badge: stats.openSupportTickets,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const AdminSupportScreen()))
                       .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); })),
               const SizedBox(height: 10),
               _ActionCard(icon: Icons.mail_outline_rounded, title: 'User Messages',
