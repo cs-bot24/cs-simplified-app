@@ -16,9 +16,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<NotificationProvider>();
-      // Fetch merged feed (/notifications + /announcements).
-      provider.fetchNotifications();
-      // Opening this page resets the badge.
+      // Refresh the merged feed when user opens the page.
+      // markPageOpened() calls fetchNotifications() internally.
       provider.markPageOpened();
     });
   }
