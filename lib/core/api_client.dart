@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'constants.dart';
 import 'storage.dart';
@@ -353,8 +354,9 @@ class ApiClient {
     String? message,
   }) async {
     try {
+      debugPrint('[ApiClient] POST $_base/material-requests token=${AppStorage.getToken() != null}');
       final res = await http.post(
-        Uri.parse('\$_base/material-requests'),
+        Uri.parse('$_base/material-requests'),
         headers: _headers(auth: true),
         body: jsonEncode({
           'course_name': courseName,
@@ -363,7 +365,10 @@ class ApiClient {
         }),
       );
       _handle(res);
-    } catch (e) { throw ApiException(_friendlyError(e)); }
+    } catch (e) {
+      debugPrint('[ApiClient] submitMaterialRequest threw: $e');
+      throw ApiException(_friendlyError(e));
+    }
   }
 
   static Future<List<dynamic>> getAdminRequests({String? status}) async {
@@ -389,12 +394,16 @@ class ApiClient {
   // ── Admin Stats (Phase 1.5C) ──────────────────────────────────────────────
   static Future<Map<String, dynamic>> getAdminStats() async {
     try {
+      debugPrint('[ApiClient] GET $_base/analytics token=${AppStorage.getToken() != null}');
       final res = await http.get(
-        Uri.parse('\$_base/analytics'),
+        Uri.parse('$_base/analytics'),
         headers: _headers(auth: true),
       );
       return _handle(res) ?? {};
-    } catch (e) { throw ApiException(_friendlyError(e)); }
+    } catch (e) {
+      debugPrint('[ApiClient] getAdminStats threw: $e');
+      throw ApiException(_friendlyError(e));
+    }
   }
 
   // ── Announcements (Phase 1.5C) ────────────────────────────────────────────

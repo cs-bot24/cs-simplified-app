@@ -16,12 +16,37 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
+  bool _fetchedOnce = false;
+
   @override
   void initState() {
     super.initState();
+    // addPostFrameCallback fires after the first frame.
+    // This covers the case where the admin tab is the active tab on load.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AdminStatsProvider>().fetchStats();
+      if (mounted) {
+        debugPrint('[AdminDashboard] initState fetchStats');
+        context.read<AdminStatsProvider>().fetchStats();
+        _fetchedOnce = true;
+      }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // didChangeDependencies fires when the widget is first inserted into
+    // the tree AND every time an inherited widget it depends on changes.
+    // This ensures fetchStats runs even when the tab is switched to later.
+    if (!_fetchedOnce) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          debugPrint('[AdminDashboard] didChangeDependencies fetchStats');
+          context.read<AdminStatsProvider>().fetchStats();
+          _fetchedOnce = true;
+        }
+      });
+    }
   }
 
   @override
@@ -36,7 +61,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => context.read<AdminStatsProvider>().fetchStats(),
+            onPressed: () {
+              _fetchedOnce = false;
+              context.read<AdminStatsProvider>().fetchStats();
+            },
           ),
         ],
       ),
@@ -48,6 +76,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Error banner — shows actual error message on screen ────────
+              if (stats.error != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(stats.error!,
+                          style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
+                    TextButton(
+                      onPressed: () => context.read<AdminStatsProvider>().fetchStats(),
+                      child: const Text('Retry', style: TextStyle(fontSize: 12)),
+                    ),
+                  ]),
+                ),
+
               // Welcome banner
               Container(
                 padding: const EdgeInsets.all(20),

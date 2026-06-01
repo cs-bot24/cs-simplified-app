@@ -28,6 +28,9 @@ class _RequestMaterialScreenState extends State<RequestMaterialScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    debugPrint('[RequestMaterial] submitting...');
+    debugPrint('[RequestMaterial] course=${_courseCtrl.text.trim()} topic=${_topicCtrl.text.trim()}');
+
     final success = await context.read<RequestProvider>().submit(
       courseName: _courseCtrl.text.trim(),
       topic: _topicCtrl.text.trim(),
@@ -35,6 +38,8 @@ class _RequestMaterialScreenState extends State<RequestMaterialScreen> {
           ? null
           : _messageCtrl.text.trim(),
     );
+
+    debugPrint('[RequestMaterial] result: success=$success error=${context.read<RequestProvider>().error}');
 
     if (!mounted) return;
 

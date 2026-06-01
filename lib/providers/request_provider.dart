@@ -1,9 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../core/api_client.dart';
 
-/// Manages material request form submission state.
-/// Kept simple — students don't see their own request history
-/// in this phase, so we only track submission status.
 class RequestProvider extends ChangeNotifier {
   bool _submitting = false;
   String? _error;
@@ -21,17 +18,22 @@ class RequestProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      debugPrint('[RequestProvider] calling POST /material-requests');
       await ApiClient.submitMaterialRequest(
         courseName: courseName,
         topic: topic,
         message: message,
       );
+      debugPrint('[RequestProvider] success');
       return true;
     } on ApiException catch (e) {
-      _error = e.message;
+      // Show the full error including status code so we can diagnose
+      _error = '${e.message} (status: ${e.statusCode})';
+      debugPrint('[RequestProvider] ApiException: ${e.message} status=${e.statusCode}');
       return false;
-    } catch (_) {
-      _error = 'Could not send request. Please try again.';
+    } catch (e, stack) {
+      _error = 'Error: $e';
+      debugPrint('[RequestProvider] unexpected: $e\n$stack');
       return false;
     } finally {
       _submitting = false;
