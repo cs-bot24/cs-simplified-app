@@ -162,7 +162,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     label: 'Requests', count: stats.pendingRequests,
                     icon: Icons.inbox_rounded, color: Colors.orange,
                     onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const AdminRequestsScreen())),
+                        builder: (_) => const AdminRequestsScreen()))
+                        .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
                   )),
                   if (stats.pendingRequests > 0 && stats.unreadFeedback > 0)
                     const SizedBox(width: 10),
@@ -170,7 +171,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     label: 'Feedback', count: stats.unreadFeedback,
                     icon: Icons.rate_review_rounded, color: Colors.pink,
                     onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const AdminFeedbackScreen())),
+                        builder: (_) => const AdminFeedbackScreen()))
+                        .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
                   )),
                   if (stats.unreadMessages > 0) ...[
                     if (stats.pendingRequests > 0 || stats.unreadFeedback > 0)
@@ -179,7 +181,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       label: 'Messages', count: stats.unreadMessages,
                       icon: Icons.mail_rounded, color: Colors.teal,
                       onTap: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AdminContactsScreen())),
+                          builder: (_) => const AdminContactsScreen()))
+                          .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
                     )),
                   ],
                 ]),
@@ -224,7 +227,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   GestureDetector(
                     onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const AdminRequestsScreen())),
+                        builder: (_) => const AdminRequestsScreen()))
+                        .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
                     child: Text('View All',
                         style: TextStyle(
                             fontSize: 13,
@@ -264,7 +268,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   subtitle: 'View and resolve student requests', color: Colors.amber[700]!,
                   badge: stats.pendingRequests,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const AdminRequestsScreen()))),
+                      builder: (_) => const AdminRequestsScreen()))
+                      .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); })),
               const SizedBox(height: 10),
               _ActionCard(icon: Icons.campaign_rounded, title: 'Send Notification',
                   subtitle: 'Broadcast message to all students', color: Colors.teal,
@@ -275,13 +280,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   subtitle: 'See user ratings and suggestions', color: Colors.pink,
                   badge: stats.unreadFeedback,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const AdminFeedbackScreen()))),
+                      builder: (_) => const AdminFeedbackScreen()))
+                      .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); })),
               const SizedBox(height: 10),
               _ActionCard(icon: Icons.mail_outline_rounded, title: 'User Messages',
                   subtitle: 'View contact messages from students', color: Colors.teal,
                   badge: stats.unreadMessages,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const AdminContactsScreen()))),
+                      builder: (_) => const AdminContactsScreen()))
+                      .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); })),
               const SizedBox(height: 24),
             ],
           ),
