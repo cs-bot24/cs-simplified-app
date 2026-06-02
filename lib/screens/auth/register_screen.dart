@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_text_field.dart';
 import '../home/home_screen.dart';
@@ -33,6 +34,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
     if (!mounted) return;
     if (ok) {
+      context.read<NotificationProvider>().fetchNotifications();
       Navigator.pushReplacement(context,
           MaterialPageRoute(builder: (_) => const HomeScreen()));
     } else {

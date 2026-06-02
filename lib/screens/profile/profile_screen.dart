@@ -8,6 +8,9 @@ import '../notifications/notifications_screen.dart';
 import '../contact/contact_screen.dart';
 import '../feedback/feedback_screen.dart';
 import '../request/request_material_screen.dart';
+import '../leaderboard/study_champions_screen.dart';
+import '../../core/api_client.dart';
+import '../../core/storage.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -156,6 +159,22 @@ class ProfileScreen extends StatelessWidget {
                   },
                 ),
 
+              // ── Delete Account (students only) ───────────────────────────────
+              if (auth.isLoggedIn && !auth.isAdmin) ...[
+                const SizedBox(height: 8),
+                const _DeleteAccountTile(),
+              ],
+
+              const SizedBox(height: 16),
+              _SectionHeader(title: 'Progress'),
+              _MenuItem(
+                icon: Icons.emoji_events_rounded,
+                title: 'Study Champions',
+                subtitle: 'View leaderboard and your rank',
+                color: Colors.amber,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const StudyChampionsScreen())),
+              ),
               const SizedBox(height: 16),
               _SectionHeader(title: 'Support'),
               const SizedBox(height: 10),
@@ -328,6 +347,175 @@ class _MenuItem extends StatelessWidget {
           Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey[400]),
         ]),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+
+// ── Delete Account tile ───────────────────────────────────────────────────────
+// A StatefulWidget so it can hold the TextEditingController and loading state.
+
+class _DeleteAccountTile extends StatefulWidget {
+  const _DeleteAccountTile();
+  @override State<_DeleteAccountTile> createState() => _DeleteAccountTileState();
+}
+
+class _DeleteAccountTileState extends State<_DeleteAccountTile> {
+  bool _deleting = false;
+
+  Future<void> _handleDelete() async {
+    // ── Step 1: Warning dialog ─────────────────────────────────────────────
+    final proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.warning_rounded, color: Colors.red, size: 22),
+          SizedBox(width: 8),
+          Text('Delete Account'),
+        ]),
+        content: const Text(
+          'Deleting your account is permanent.\n\n'
+          'You will lose:\n'
+          '• Profile data\n'
+          '• Bookmarks\n'
+          '• Download history\n'
+          '• Support tickets\n'
+          '• Achievements (future)\n\n'
+          'This action cannot be undone.',
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
+
+    // ── Step 2: Type DELETE confirmation ──────────────────────────────────
+    final confirmCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: const Text('Final Confirmation'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Type DELETE to confirm:',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  hintText: 'DELETE',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                ),
+                onChanged: (_) => setS(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: confirmCtrl.text.trim() == 'DELETE'
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
+              child: Text('Delete My Account',
+                  style: TextStyle(
+                      color: confirmCtrl.text.trim() == 'DELETE'
+                          ? Colors.red
+                          : Colors.grey,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+    confirmCtrl.dispose();
+    if (confirmed != true || !mounted) return;
+
+    // ── Step 3: Call API ──────────────────────────────────────────────────
+    setState(() => _deleting = true);
+    try {
+      await ApiClient.deleteAccount();
+      if (!mounted) return;
+      await context.read<AuthProvider>().logout();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Account deleted successfully.'),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error: ${e.message}'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Unexpected error: $e'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.red.withOpacity(0.3)),
+      ),
+      child: ListTile(
+        leading: Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: _deleting
+              ? const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.red),
+                )
+              : const Icon(Icons.delete_forever_rounded,
+                  color: Colors.red, size: 20),
+        ),
+        title: const Text('Delete Account',
+            style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red)),
+        subtitle: Text('Permanently remove your account',
+            style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+        trailing: Icon(Icons.arrow_forward_ios_rounded,
+            size: 14, color: Colors.red.withOpacity(0.5)),
+        onTap: _deleting ? null : _handleDelete,
       ),
     );
   }

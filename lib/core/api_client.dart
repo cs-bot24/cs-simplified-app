@@ -640,4 +640,90 @@ class ApiClient {
       _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+  // ── Admin: mark contact message read ─────────────────────────────────────
+
+  static Future<void> markContactMessageRead(int id) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$_base/contact/$id/read'),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Admin: mark feedback read ─────────────────────────────────────────────
+
+  static Future<void> markFeedbackRead(int id) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$_base/feedback/$id/read'),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Account deletion ──────────────────────────────────────────────────────
+
+  static Future<void> deleteAccount() async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/users/me'),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+  // ── Study ping (anti-cheat: called after 3 min of material reading) ───────
+
+  static Future<Map<String, dynamic>> studyPing(int materialId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/materials/$materialId/study-ping'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Leaderboard ───────────────────────────────────────────────────────────
+
+  static Future<dynamic> getLeaderboard({String mode = 'all_time'}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/leaderboard?mode=$mode'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getMyLeaderboardStats(
+      {String mode = 'all_time'}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/leaderboard/me?mode=$mode'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> updateLeaderboardSettings({
+    String? displayName,
+    bool? enabled,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (displayName != null) body['leaderboard_name'] = displayName;
+      if (enabled != null)     body['leaderboard_enabled'] = enabled;
+      final res = await http.patch(
+        Uri.parse('$_base/users/me/leaderboard'),
+        headers: _headers(auth: true),
+        body: jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
 }

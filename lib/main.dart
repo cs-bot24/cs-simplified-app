@@ -13,6 +13,7 @@ import 'providers/offline_provider.dart';
 import 'providers/admin_stats_provider.dart';
 import 'providers/request_provider.dart';
 import 'providers/support_provider.dart';
+import 'providers/leaderboard_provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'core/fcm_service.dart' show navigatorKey;
@@ -53,6 +54,7 @@ class CsSimplifiedApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AdminStatsProvider()),
         ChangeNotifierProvider(create: (_) => RequestProvider()),
         ChangeNotifierProvider(create: (_) => SupportProvider()),
+        ChangeNotifierProvider(create: (_) => LeaderboardProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, __) => MaterialApp(

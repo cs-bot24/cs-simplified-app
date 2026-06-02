@@ -21,6 +21,7 @@ import '../search/search_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../admin/admin_dashboard.dart';
 import '../request/request_material_screen.dart';
+import '../leaderboard/study_champions_screen.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
 
@@ -178,6 +179,19 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                   child: ExamPrepBanner(
                     count: home.data!.examPrepCount,
                     onTap: _goToExamPrep,
+                  ),
+                ),
+              ),
+
+            // ── 3. Leaderboard entry card ────────────────────────────────
+            if (home.data != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: _LeaderboardEntryCard(
+                    streak: home.data!.streak.currentStreak,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const StudyChampionsScreen())),
                   ),
                 ),
               ),
@@ -603,6 +617,67 @@ class _QuickActionCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+// ── Leaderboard entry card (home screen) ─────────────────────────────────────
+
+class _LeaderboardEntryCard extends StatelessWidget {
+  final int streak;
+  final VoidCallback onTap;
+  const _LeaderboardEntryCard({required this.streak, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.amber.withOpacity(0.15),
+              scheme.primary.withOpacity(0.08),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.amber.withOpacity(0.3)),
+        ),
+        child: Row(children: [
+          const Text('🏆', style: TextStyle(fontSize: 28)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Study Champions',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text(
+                  streak > 0
+                      ? 'Your streak: $streak day${streak == 1 ? '' : 's'} 🔥'
+                      : 'Start studying to join the leaderboard',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.amber.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text('View',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
+                    color: Colors.amber)),
+          ),
+        ]),
       ),
     );
   }

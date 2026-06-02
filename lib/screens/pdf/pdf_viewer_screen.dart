@@ -18,6 +18,7 @@
 //    PdfViewerScreen(url: String, title: String)
 // ============================================================
 
+import 'dart:async';
 import 'dart:developer' as dev;
 import 'dart:io';
 
@@ -33,6 +34,7 @@ import '../../core/api_client.dart';
 import '../../models/offline_material.dart';
 import '../../models/rating_model.dart';
 import '../../providers/offline_provider.dart';
+import '../../providers/leaderboard_provider.dart';
 import '../../widgets/rating_dialog.dart';
 
 class PdfViewerScreen extends StatefulWidget {
@@ -77,6 +79,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // Fetched silently in initState to pre-populate the dialog.
   RatingModel? _rating;
 
+  // ── Study tracking (Phase 1.5D-A anti-cheat) ─────────────────────────────
+  // Timer fires after exactly 3 minutes of the PDF being open.
+  // On fire → calls study-ping → only then can a streak increment.
+  Timer? _studyTimer;
+  bool _studyPingSent = false; // guard: only send once per session
+
   // ── Google Drive Viewer URL ───────────────────────────────────────────────
   // The trick: Drive's /viewerng/viewer endpoint accepts any public PDF URL
   // via the `url=` query parameter. It renders the PDF server-side and
@@ -101,6 +109,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       ApiClient.recordMaterialView(widget.materialId!);
       // Pre-fetch rating so dialog knows if student already rated
       _fetchRating();
+      // Phase 1.5D-A: start 3-minute study timer
+      _startStudyTimer();
     }
   }
 
@@ -114,6 +124,42 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     } catch (_) {
       // Silent — rating fetch never interrupts the viewer
     }
+  }
+
+  /// Phase 1.5D-A: fires exactly once after 3 minutes of genuine reading.
+  void _startStudyTimer() {
+    _studyTimer = Timer(const Duration(minutes: 3), () async {
+      if (_studyPingSent || widget.materialId == null) return;
+      _studyPingSent = true;
+      try {
+        final result = await ApiClient.studyPing(widget.materialId!);
+        if (!mounted) return;
+        final current = result['current_streak'] as int? ?? 0;
+        final longest = result['longest_streak'] as int? ?? 0;
+        final newDay  = result['new_study_day_counted'] as bool? ?? false;
+        // Update leaderboard provider silently
+        context.read<LeaderboardProvider>().updateMyStreak(current, longest);
+        // Show streak toast only when a new study day is recorded
+        if (newDay && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: [
+              const Text('🔥 ', style: TextStyle(fontSize: 18)),
+              Text('$current day streak — keep it up!'),
+            ]),
+            backgroundColor: Colors.orange[700],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 4),
+          ));
+        }
+        dev.log('[PdfViewer] study-ping sent material=${widget.materialId} '
+            'streak=$current new_day=$newDay', name: 'PdfViewerScreen');
+      } catch (e) {
+        // Silent failure — never interrupt the reading experience
+        dev.log('[PdfViewer] study-ping error: $e', name: 'PdfViewerScreen');
+      }
+    });
   }
 
   /// Called when the student tries to close the screen.
@@ -158,6 +204,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   @override
   void dispose() {
+    _studyTimer?.cancel();
     _dio.close();
     super.dispose();
   }
