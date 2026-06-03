@@ -447,7 +447,7 @@ class _BrandingRow extends StatelessWidget {
       child: const Center(
         child: Text('CS', style: TextStyle(
             color: Colors.white, fontSize: 11,
-            fontWeight: FontWeight.black)),
+            fontWeight: FontWeight.w900)),
       ),
     ),
     const SizedBox(width: 8),
