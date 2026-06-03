@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'dart:io';
 
 /// Captures a widget (via its RepaintBoundary GlobalKey) as PNG bytes,
@@ -58,7 +58,7 @@ class SharingService {
     required String cardType,
   }) async {
     try {
-      final result = await ImageGallerySaver.saveImage(
+      final result = await ImageGallerySaverPlus.saveImage(
         bytes,
         quality: 95,
         name: 'cs_simplified_$cardType',
