@@ -203,8 +203,26 @@ class _AdminRequestsScreenState extends State<AdminRequestsScreen> {
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-                  ? Center(child: Text(_error!,
-                      style: const TextStyle(color: Colors.red)))
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(mainAxisSize: MainAxisSize.min,
+                            children: [
+                          Icon(Icons.error_outline,
+                              size: 48, color: Colors.red[300]),
+                          const SizedBox(height: 12),
+                          Text(_error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.red)),
+                          const SizedBox(height: 20),
+                          ElevatedButton.icon(
+                            onPressed: _load,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Retry'),
+                          ),
+                        ]),
+                      ),
+                    )
                   : _requests.isEmpty
                       ? Center(
                           child: Column(mainAxisSize: MainAxisSize.min,

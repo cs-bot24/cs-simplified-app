@@ -29,7 +29,15 @@ class ApiClient {
         name: 'ApiClient');
     if (res.statusCode >= 200 && res.statusCode < 300) {
       if (res.body.isEmpty) return null;
-      return jsonDecode(res.body);
+      try {
+        return jsonDecode(res.body);
+      } on FormatException {
+        // Server returned non-JSON (e.g. HTML from cold start / proxy error)
+        dev.log('[API] Non-JSON response body: ${res.body.substring(0, res.body.length.clamp(0, 200))}',
+            name: 'ApiClient');
+        throw ApiException('Server returned an unexpected response. Please try again.',
+            statusCode: res.statusCode);
+      }
     }
     String detail = 'Something went wrong (${res.statusCode})';
     try {
