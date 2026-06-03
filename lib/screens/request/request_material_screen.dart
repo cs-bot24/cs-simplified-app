@@ -1,85 +1,94 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/request_provider.dart';
+import '../../providers/support_provider.dart';
+import '../../widgets/app_button.dart';
 
-/// Simple form screen for students to request missing materials.
-/// Accessible from the Browse screen FAB and from Profile screen.
+/// Student form to request a material from admin.
+/// Rebuilt on top of the SupportProvider / support_tickets infrastructure.
 class RequestMaterialScreen extends StatefulWidget {
   const RequestMaterialScreen({super.key});
-
-  @override
-  State<RequestMaterialScreen> createState() => _RequestMaterialScreenState();
+  @override State<RequestMaterialScreen> createState() =>
+      _RequestMaterialScreenState();
 }
 
 class _RequestMaterialScreenState extends State<RequestMaterialScreen> {
   final _formKey     = GlobalKey<FormState>();
+  final _titleCtrl   = TextEditingController();
   final _courseCtrl  = TextEditingController();
-  final _topicCtrl   = TextEditingController();
-  final _messageCtrl = TextEditingController();
+  final _detailsCtrl = TextEditingController();
+  bool _submitting   = false;
 
   @override
   void dispose() {
+    _titleCtrl.dispose();
     _courseCtrl.dispose();
-    _topicCtrl.dispose();
-    _messageCtrl.dispose();
+    _detailsCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _submitting = true);
 
-    debugPrint('[RequestMaterial] submitting...');
-    debugPrint('[RequestMaterial] course=${_courseCtrl.text.trim()} topic=${_topicCtrl.text.trim()}');
+    // Build a combined message: optionally include course code + details
+    final course  = _courseCtrl.text.trim();
+    final details = _detailsCtrl.text.trim();
+    final parts   = <String>[];
+    if (course.isNotEmpty)  parts.add('Course: $course');
+    if (details.isNotEmpty) parts.add(details);
+    final message = parts.join('\n');
 
-    final success = await context.read<RequestProvider>().submit(
-      courseName: _courseCtrl.text.trim(),
-      topic: _topicCtrl.text.trim(),
-      message: _messageCtrl.text.trim().isEmpty
-          ? null
-          : _messageCtrl.text.trim(),
+    final err = await context.read<SupportProvider>().createMaterialRequest(
+      title:   _titleCtrl.text.trim(),
+      message: message,
     );
 
-    debugPrint('[RequestMaterial] result: success=$success error=${context.read<RequestProvider>().error}');
-
     if (!mounted) return;
+    setState(() => _submitting = false);
 
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(children: [
-            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('Request submitted! We\'ll upload it soon.'),
-          ]),
-          backgroundColor: Colors.green[700],
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+    if (err == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Row(children: [
+          Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+          SizedBox(width: 8),
+          Expanded(child: Text('Request submitted successfully.')),
+        ]),
+        backgroundColor: Colors.green[700],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 3),
+      ));
       Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(err)),
+        ]),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 5),
+      ));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<RequestProvider>();
-    final scheme   = Theme.of(context).colorScheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: Column(children: [
-        // Header
+        // ── Coloured header ────────────────────────────────────────────────
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 28),
           decoration: BoxDecoration(
             color: scheme.primary,
-            borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(28)),
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
           ),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Container(
@@ -93,19 +102,18 @@ class _RequestMaterialScreenState extends State<RequestMaterialScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('📋', style: TextStyle(fontSize: 32)),
+            const Text('📚', style: TextStyle(fontSize: 32)),
             const SizedBox(height: 8),
             const Text('Request a Material',
                 style: TextStyle(color: Colors.white, fontSize: 22,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            const Text(
-                'Can\'t find what you need? Let us know.',
+            const Text("Can't find what you need? Let us know.",
                 style: TextStyle(color: Colors.white70, fontSize: 13)),
           ]),
         ),
 
-        // Form
+        // ── Form ───────────────────────────────────────────────────────────
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -114,70 +122,41 @@ class _RequestMaterialScreenState extends State<RequestMaterialScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _label('Course Name *'),
+                  // Material Title
+                  _label('Material Title *'),
+                  const SizedBox(height: 6),
+                  _field(
+                    ctrl: _titleCtrl,
+                    hint: 'e.g. MTH 104 Past Questions',
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'Title is required' : null,
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Course Code (optional)
+                  _label('Course Code (optional)'),
                   const SizedBox(height: 6),
                   _field(
                     ctrl: _courseCtrl,
-                    hint: 'e.g. Data Structures, COSC301',
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Please enter a course name'
-                        : null,
+                    hint: 'e.g. CSC 201',
                   ),
                   const SizedBox(height: 20),
 
-                  _label('Topic / Material Needed *'),
+                  // Additional Details (optional)
+                  _label('Additional Details (optional)'),
                   const SizedBox(height: 6),
                   _field(
-                    ctrl: _topicCtrl,
-                    hint: 'e.g. Past questions, Lecture notes, Tutorials',
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Please describe what you need'
-                        : null,
-                  ),
-                  const SizedBox(height: 20),
-
-                  _label('Additional Message (optional)'),
-                  const SizedBox(height: 6),
-                  _field(
-                    ctrl: _messageCtrl,
-                    hint: 'Any extra context that might help...',
+                    ctrl: _detailsCtrl,
+                    hint: 'e.g. Need past questions from 2021–2024.',
                     maxLines: 4,
                   ),
                   const SizedBox(height: 32),
 
-                  if (provider.error != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(provider.error!,
-                          style: const TextStyle(
-                              color: Colors.red, fontSize: 13)),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: provider.submitting ? null : _submit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: scheme.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: provider.submitting
-                          ? const SizedBox(width: 20, height: 20,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2))
-                          : const Text('Submit Request',
-                              style: TextStyle(fontSize: 15,
-                                  fontWeight: FontWeight.w600)),
-                    ),
+                  AppButton(
+                    label: 'Submit Request',
+                    loading: _submitting,
+                    onTap: _submit,
+                    icon: Icons.send_rounded,
                   ),
                 ],
               ),
@@ -200,6 +179,7 @@ class _RequestMaterialScreenState extends State<RequestMaterialScreen> {
       TextFormField(
         controller: ctrl,
         maxLines: maxLines,
+        textCapitalization: TextCapitalization.sentences,
         validator: validator,
         decoration: InputDecoration(
           hintText: hint,
@@ -210,8 +190,7 @@ class _RequestMaterialScreenState extends State<RequestMaterialScreen> {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
       );
 }

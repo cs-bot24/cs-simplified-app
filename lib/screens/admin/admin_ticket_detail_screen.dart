@@ -15,6 +15,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
   late final TextEditingController _replyCtrl;
   bool _savingReply   = false;
   bool _savingStatus  = false;
+  bool _deleting      = false;
   late String _currentStatus;
 
   @override
@@ -41,6 +42,37 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
     setState(() => _savingReply = false);
     if (err == null) {
       _snack('Reply saved.', success: true);
+    } else {
+      _snack(err, success: false);
+    }
+  }
+
+  // ── Delete ─────────────────────────────────────────────────────────────────
+  Future<void> _confirmDelete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Ticket'),
+        content: const Text('This ticket will be permanently removed. Continue?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _deleting = true);
+    final err = await context.read<SupportProvider>()
+        .deleteTicket(widget.ticket.id);
+    if (!mounted) return;
+    setState(() => _deleting = false);
+    if (err == null) {
+      Navigator.pop(context);
     } else {
       _snack(err, success: false);
     }
@@ -83,7 +115,22 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
     final t = widget.ticket;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Ticket Detail')),
+      appBar: AppBar(title: const Text('Ticket Detail'),
+        actions: [
+          if (_deleting)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: SizedBox(width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+              onPressed: _confirmDelete,
+              tooltip: 'Delete Ticket',
+            ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(

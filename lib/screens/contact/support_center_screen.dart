@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'create_ticket_screen.dart';
 import 'my_tickets_screen.dart';
+import '../request/request_material_screen.dart';
+import '../request/my_requests_screen.dart';
 
 class SupportCenterScreen extends StatelessWidget {
   const SupportCenterScreen({super.key});
@@ -73,11 +75,33 @@ class SupportCenterScreen extends StatelessWidget {
             _SupportCard(
               icon: Icons.inbox_rounded,
               color: Colors.teal,
-              title: 'My Requests',
+              title: 'My Support Requests',
               subtitle: 'View history and track your tickets',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const MyTicketsScreen()),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SupportCard(
+              icon: Icons.menu_book_rounded,
+              color: Colors.orange,
+              title: 'Request a Material',
+              subtitle: 'Ask admin to upload missing materials',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RequestMaterialScreen()),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SupportCard(
+              icon: Icons.history_rounded,
+              color: Colors.deepOrange,
+              title: 'My Material Requests',
+              subtitle: 'Track your material request history',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MyRequestsScreen()),
               ),
             ),
 

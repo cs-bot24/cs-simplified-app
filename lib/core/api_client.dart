@@ -355,45 +355,72 @@ class ApiClient {
   }
 
 
-  // ── Material Requests (Phase 1.5C) ───────────────────────────────────────
-  static Future<void> submitMaterialRequest({
-    required String courseName,
-    required String topic,
-    String? message,
+  // ── Material Requests (Student) ──────────────────────────────────────────
+  static Future<void> createMaterialRequest({
+    required String title,
+    String message = '',
   }) async {
     try {
-      debugPrint('[ApiClient] POST $_base/material-requests token=${AppStorage.getToken() != null}');
       final res = await http.post(
         Uri.parse('$_base/material-requests'),
         headers: _headers(auth: true),
-        body: jsonEncode({
-          'course_name': courseName,
-          'topic': topic,
-          if (message != null && message.isNotEmpty) 'message': message,
-        }),
+        body: jsonEncode({'title': title, 'message': message}),
       );
       _handle(res);
     } catch (e) {
-      debugPrint('[ApiClient] submitMaterialRequest threw: $e');
       throw ApiException(_friendlyError(e));
     }
   }
 
-  static Future<List<dynamic>> getAdminRequests({String? status}) async {
+  static Future<List<dynamic>> getMyMaterialRequests() async {
     try {
-      var url = '\$_base/admin/material-requests';
-      if (status != null) url += '?status=\$status';
-      final res = await http.get(Uri.parse(url), headers: _headers(auth: true));
-      return _handle(res) ?? [];
+      final res = await http.get(
+        Uri.parse('$_base/material-requests'),
+        headers: _headers(auth: true),
+      );
+      final data = _handle(res);
+      return data is List ? data : [];
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
-  static Future<void> updateRequestStatus(int id, String status) async {
+  // ── Material Requests (Admin) ─────────────────────────────────────────────
+  static Future<List<dynamic>> getAdminMaterialRequests({String? status}) async {
+    try {
+      final uri = Uri.parse('$_base/admin/material-requests')
+          .replace(queryParameters: status != null ? {'status': status} : null);
+      final res = await http.get(uri, headers: _headers(auth: true));
+      final data = _handle(res);
+      return data is List ? data : [];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> updateMaterialRequestStatus(int id, String status) async {
     try {
       final res = await http.patch(
-        Uri.parse('\$_base/admin/material-requests/\$id'),
+        Uri.parse('$_base/admin/material-requests/$id/status'),
         headers: _headers(auth: true),
         body: jsonEncode({'status': status}),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> replyToMaterialRequest(int id, String reply) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/admin/material-requests/$id/reply'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'admin_reply': reply}),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> deleteMaterialRequest(int id) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/admin/material-requests/$id'),
+        headers: _headers(auth: true),
       );
       _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
@@ -648,6 +675,17 @@ class ApiClient {
       _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+
+  static Future<void> deleteTicket(int id) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/admin/support-tickets/$id'),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   // ── Admin: mark contact message read ─────────────────────────────────────
 
   static Future<void> markContactMessageRead(int id) async {

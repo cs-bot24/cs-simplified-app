@@ -11,7 +11,6 @@ import 'providers/notification_provider.dart';
 import 'providers/home_provider.dart';
 import 'providers/offline_provider.dart';
 import 'providers/admin_stats_provider.dart';
-import 'providers/request_provider.dart';
 import 'providers/support_provider.dart';
 import 'providers/leaderboard_provider.dart';
 import 'providers/achievement_provider.dart';
@@ -53,7 +52,6 @@ class CsSimplifiedApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => HomeProvider()),
         ChangeNotifierProvider(create: (_) => OfflineProvider()),
         ChangeNotifierProvider(create: (_) => AdminStatsProvider()),
-        ChangeNotifierProvider(create: (_) => RequestProvider()),
         ChangeNotifierProvider(create: (_) => SupportProvider()),
         ChangeNotifierProvider(create: (_) => LeaderboardProvider()),
         ChangeNotifierProvider(create: (_) => AchievementProvider()),

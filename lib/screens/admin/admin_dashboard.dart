@@ -10,6 +10,7 @@ import 'admin_feedback_screen.dart';
 import 'admin_contacts_screen.dart';
 import 'admin_requests_screen.dart';
 import 'admin_support_screen.dart';
+import 'admin_material_requests_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -164,7 +165,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     label: 'Requests', count: stats.pendingRequests,
                     icon: Icons.inbox_rounded, color: Colors.orange,
                     onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const AdminRequestsScreen()))
+                        builder: (_) => const AdminMaterialRequestsScreen()))
                         .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
                   )),
                   if (stats.pendingRequests > 0 && stats.unreadFeedback > 0)
@@ -240,7 +241,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   GestureDetector(
                     onTap: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const AdminRequestsScreen()))
+                        builder: (_) => const AdminMaterialRequestsScreen()))
                         .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); }),
                     child: Text('View All',
                         style: TextStyle(
@@ -281,7 +282,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   subtitle: 'View and resolve student requests', color: Colors.amber[700]!,
                   badge: stats.pendingRequests,
                   onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const AdminRequestsScreen()))
+                      builder: (_) => const AdminMaterialRequestsScreen()))
                       .then((_) { if (mounted) context.read<AdminStatsProvider>().fetchStats(); })),
               const SizedBox(height: 10),
               _ActionCard(icon: Icons.campaign_rounded, title: 'Send Notification',
