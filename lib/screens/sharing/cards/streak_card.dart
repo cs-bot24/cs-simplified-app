@@ -373,17 +373,17 @@ class MilestoneShareCard extends StatelessWidget {
               child: _Circle(size: 220, color: Colors.white.withOpacity(0.05)),
             ),
             Padding(
-              padding: const EdgeInsets.all(28),
+              padding: const EdgeInsets.all(22),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const _BrandingRow(),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   const Text(
                     'MY PROGRESS 📊',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2,
                     ),
@@ -396,28 +396,28 @@ class MilestoneShareCard extends StatelessWidget {
                       label: 'Study Days',
                       icon: '📅',
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     _MilestoneStat(
                       value: '$materialsOpened',
                       label: 'Materials',
                       icon: '📚',
                     ),
                   ]),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(children: [
                     _MilestoneStat(
                       value: '$longestStreak',
                       label: 'Best Streak',
                       icon: '🔥',
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     _MilestoneStat(
                       value: '$achievementsUnlocked',
                       label: 'Achievements',
                       icon: '🏅',
                     ),
                   ]),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 10),
                   Text(displayName,
                       style: const TextStyle(
                           color: Colors.white60, fontSize: 12,
@@ -498,7 +498,7 @@ class _MilestoneStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Expanded(
     child: Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.08),
         borderRadius: BorderRadius.circular(14),
@@ -507,10 +507,10 @@ class _MilestoneStat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(icon, style: const TextStyle(fontSize: 20)),
-          const SizedBox(height: 6),
+          Text(icon, style: const TextStyle(fontSize: 18)),
+          const SizedBox(height: 4),
           Text(value, style: const TextStyle(
-              color: Colors.white, fontSize: 22,
+              color: Colors.white, fontSize: 20,
               fontWeight: FontWeight.bold)),
           Text(label, style: const TextStyle(
               color: Colors.white60, fontSize: 10)),
