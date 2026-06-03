@@ -34,7 +34,7 @@ dependencies:
   flutter_local_notifications: ^17.0.0
   share_plus: ^9.0.0
   open_filex: ^4.3.4
-  gal: ^2.3.0
+  gal: ^2.3.0   # Phase 1.5D-C: save share cards to gallery (actively maintained, supports AGP 8+ and modern Flutter/Kotlin)
 
 dev_dependencies:
   flutter_test:
