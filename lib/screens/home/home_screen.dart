@@ -22,6 +22,7 @@ import '../notifications/notifications_screen.dart';
 import '../admin/admin_dashboard.dart';
 import '../request/request_material_screen.dart';
 import '../leaderboard/study_champions_screen.dart';
+import '../sharing/share_progress_screen.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
 
@@ -667,16 +668,34 @@ class _LeaderboardEntryCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.amber.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(10),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.amber.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text('View',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
+                      color: Colors.amber)),
             ),
-            child: const Text('View',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
-                    color: Colors.amber)),
-          ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const ShareProgressScreen())),
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.share_rounded,
+                    size: 14, color: Colors.amber),
+              ),
+            ),
+          ]),
         ]),
       ),
     );

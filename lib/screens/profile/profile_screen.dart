@@ -9,6 +9,8 @@ import '../contact/contact_screen.dart';
 import '../feedback/feedback_screen.dart';
 import '../request/request_material_screen.dart';
 import '../leaderboard/study_champions_screen.dart';
+import '../achievements/achievements_screen.dart';
+import '../sharing/share_progress_screen.dart';
 import '../../core/api_client.dart';
 import '../../core/storage.dart';
 
@@ -174,6 +176,22 @@ class ProfileScreen extends StatelessWidget {
                 color: Colors.amber,
                 onTap: () => Navigator.push(context, MaterialPageRoute(
                     builder: (_) => const StudyChampionsScreen())),
+              ),
+              _MenuItem(
+                icon: Icons.military_tech_rounded,
+                title: 'Achievements',
+                subtitle: 'View your badges and milestones',
+                color: Colors.purple,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const AchievementsScreen())),
+              ),
+              _MenuItem(
+                icon: Icons.share_rounded,
+                title: 'Share Progress',
+                subtitle: 'Share your streak, rank or achievements',
+                color: Colors.teal,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const ShareProgressScreen())),
               ),
               const SizedBox(height: 16),
               _SectionHeader(title: 'Support'),

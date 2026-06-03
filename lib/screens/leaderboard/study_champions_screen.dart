@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/leaderboard_provider.dart';
+import '../sharing/share_progress_screen.dart';
 import '../../models/leaderboard_model.dart';
 
 class StudyChampionsScreen extends StatefulWidget {
@@ -41,6 +42,12 @@ class _StudyChampionsScreenState extends State<StudyChampionsScreen>
       appBar: AppBar(
         title: const Text('Study Champions'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.share_rounded),
+            tooltip: 'Share my rank',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const ShareProgressScreen(initialTab: 1))),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             onPressed: () => lb.fetchLeaderboard(mode: lb.mode),

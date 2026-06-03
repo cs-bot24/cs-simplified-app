@@ -32,6 +32,10 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"/>
 
+    <!-- READ_MEDIA_IMAGES: required by image_gallery_saver on Android 13+ (API 33+)
+         to save share cards to the device gallery. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+
     <!-- ── Application ──────────────────────────────────────────────────── -->
     <application
         android:label="CS Simplified"

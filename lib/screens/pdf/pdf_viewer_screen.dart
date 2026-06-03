@@ -35,6 +35,7 @@ import '../../models/offline_material.dart';
 import '../../models/rating_model.dart';
 import '../../providers/offline_provider.dart';
 import '../../providers/leaderboard_provider.dart';
+import '../../providers/achievement_provider.dart';
 import '../../widgets/rating_dialog.dart';
 
 class PdfViewerScreen extends StatefulWidget {
@@ -152,6 +153,29 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 borderRadius: BorderRadius.circular(10)),
             duration: const Duration(seconds: 4),
           ));
+        }
+        // Phase 1.5D-B: handle newly unlocked achievements
+        final newAchievements =
+            (result['new_achievements'] as List?)?.cast<String>() ?? [];
+        if (newAchievements.isNotEmpty && mounted) {
+          // Refresh provider so AchievementsScreen updates
+          context.read<AchievementProvider>().refreshAfterUnlock();
+          // Show a toast for each newly unlocked achievement
+          for (final title in newAchievements) {
+            if (!mounted) break;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Row(children: [
+                const Text('🏅 ', style: TextStyle(fontSize: 18)),
+                Expanded(child: Text('Achievement Unlocked: $title')),
+              ]),
+              backgroundColor: Colors.purple[700],
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              duration: const Duration(seconds: 5),
+            ));
+            await Future.delayed(const Duration(milliseconds: 600));
+          }
         }
         dev.log('[PdfViewer] study-ping sent material=${widget.materialId} '
             'streak=$current new_day=$newDay', name: 'PdfViewerScreen');

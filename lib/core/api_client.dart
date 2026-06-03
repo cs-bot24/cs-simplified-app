@@ -726,4 +726,36 @@ class ApiClient {
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+  // ── Achievements ──────────────────────────────────────────────────────────
+
+  static Future<dynamic> getAchievements() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/achievements'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<dynamic> getMyAchievements() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/achievements/me'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+  // ── Sharing ───────────────────────────────────────────────────────────────
+
+  static Future<dynamic> getShareCardData() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/sharing/card-data'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
 }
