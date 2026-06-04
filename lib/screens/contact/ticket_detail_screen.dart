@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
 import '../../models/support_ticket_model.dart';
 
-class TicketDetailScreen extends StatelessWidget {
+class TicketDetailScreen extends StatefulWidget {
   final SupportTicketModel ticket;
   const TicketDetailScreen({super.key, required this.ticket});
+  @override State<TicketDetailScreen> createState() => _TicketDetailScreenState();
+}
+
+class _TicketDetailScreenState extends State<TicketDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Mark reply as seen so the unread badge clears on the support center
+    if (widget.ticket.adminReply != null && widget.ticket.adminReply!.isNotEmpty) {
+      widget.ticket.markReplySeen();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final ticket = widget.ticket;
     final (badgeColor, statusLabel) = _statusBadge(ticket.status);
 
     return Scaffold(

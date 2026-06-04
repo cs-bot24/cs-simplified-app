@@ -121,6 +121,16 @@ class AppStorage {
   static String? getNotifications() =>
       _prefs?.getString('cached_notifications');
 
+  // ── Generic key-value (for reply-seen timestamps etc.) ───────────────────
+
+  static Future<void> setString(String key, String value) async =>
+      await _prefs?.setString(key, value);
+
+  static String? getString(String key) => _prefs?.getString(key);
+
+  static Future<void> removeKey(String key) async =>
+      await _prefs?.remove(key);
+
   // ── Logout ────────────────────────────────────────────────────────────────
 
   /// Clear the auth token and user from both secure storage and the cache.

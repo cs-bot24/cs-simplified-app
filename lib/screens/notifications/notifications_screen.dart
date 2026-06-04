@@ -154,16 +154,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
 // ── Tile ──────────────────────────────────────────────────────────────────────
 
-class _NotificationTile extends StatelessWidget {
+class _NotificationTile extends StatefulWidget {
   final NotificationModel notification;
   final VoidCallback onTap, onDelete;
   const _NotificationTile(
       {required this.notification,
       required this.onTap,
       required this.onDelete});
+  @override State<_NotificationTile> createState() => _NotificationTileState();
+}
+
+class _NotificationTileState extends State<_NotificationTile> {
+  bool _expanded = false;
 
   IconData get _icon {
-    switch (notification.category) {
+    switch (widget.notification.category) {
       case 'material':     return Icons.picture_as_pdf_rounded;
       case 'announcement': return Icons.campaign_rounded;
       case 'system':       return Icons.settings_rounded;
@@ -172,7 +177,7 @@ class _NotificationTile extends StatelessWidget {
   }
 
   Color get _color {
-    switch (notification.category) {
+    switch (widget.notification.category) {
       case 'material':     return Colors.blue;
       case 'announcement': return Colors.orange;
       case 'system':       return Colors.purple;
@@ -189,13 +194,16 @@ class _NotificationTile extends StatelessWidget {
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 
+  bool get _isTruncated => widget.notification.body.length > 80;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final n      = widget.notification;
     return Dismissible(
-      key: Key('notif_${notification.id}'),
+      key: Key('notif_${n.id}'),
       direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDelete(),
+      onDismissed: (_) => widget.onDelete(),
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
@@ -203,21 +211,21 @@ class _NotificationTile extends StatelessWidget {
         child: const Icon(Icons.delete_outline, color: Colors.white),
       ),
       child: InkWell(
-        onTap: onTap,
+        onTap: () {
+          widget.onTap();
+          if (_isTruncated) setState(() => _expanded = !_expanded);
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: notification.isRead
-                ? null
-                : scheme.primary.withOpacity(0.04),
+            color: n.isRead ? null : scheme.primary.withOpacity(0.04),
             border: Border(
-              bottom: BorderSide(color: Colors.grey.withOpacity(0.1)),
-            ),
+                bottom: BorderSide(color: Colors.grey.withOpacity(0.1))),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Category icon
+              // Icon
               Container(
                 width: 42, height: 42,
                 decoration: BoxDecoration(
@@ -232,40 +240,51 @@ class _NotificationTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(notification.title,
-                              style: TextStyle(
-                                  fontWeight: notification.isRead
-                                      ? FontWeight.w500
-                                      : FontWeight.bold,
-                                  fontSize: 14)),
+                    Row(children: [
+                      Expanded(
+                        child: Text(n.title,
+                            style: TextStyle(
+                                fontWeight: n.isRead
+                                    ? FontWeight.w500 : FontWeight.bold,
+                                fontSize: 14)),
+                      ),
+                      if (!n.isRead)
+                        Container(
+                          width: 8, height: 8,
+                          decoration: BoxDecoration(
+                              color: scheme.primary, shape: BoxShape.circle),
                         ),
-                        if (!notification.isRead)
-                          Container(
-                            width: 8, height: 8,
-                            decoration: BoxDecoration(
-                              color: scheme.primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
+                    ]),
                     const SizedBox(height: 3),
-                    Text(notification.body,
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
+                    // Body — expandable if long
+                    Text(
+                      n.body,
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      maxLines: _expanded ? null : 2,
+                      overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                    ),
+                    if (_isTruncated) ...[
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: () => setState(() => _expanded = !_expanded),
+                        child: Text(
+                          _expanded ? 'Show less' : 'Read more',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 5),
-                    Text(_timeAgo(notification.createdAt),
+                    Text(_timeAgo(n.createdAt),
                         style: TextStyle(fontSize: 11, color: Colors.grey[400])),
                   ],
                 ),
               ),
               IconButton(
                 icon: Icon(Icons.close, size: 16, color: Colors.grey[400]),
-                onPressed: onDelete,
+                onPressed: widget.onDelete,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),

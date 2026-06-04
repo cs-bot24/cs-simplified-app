@@ -11,6 +11,7 @@ import '../request/request_material_screen.dart';
 import '../leaderboard/study_champions_screen.dart';
 import '../achievements/achievements_screen.dart';
 import '../sharing/share_progress_screen.dart';
+import '../faq/faq_screen.dart';
 import '../../core/api_client.dart';
 import '../../core/storage.dart';
 
@@ -196,6 +197,14 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _SectionHeader(title: 'Support'),
               const SizedBox(height: 10),
+              _MenuItem(
+                icon: Icons.quiz_outlined,
+                title: 'FAQ',
+                subtitle: 'Find quick answers to common questions',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const FaqScreen())),
+              ),
+              const SizedBox(height: 8),
               _MenuItem(
                 icon: Icons.add_comment_outlined,
                 title: 'Request a Material',
