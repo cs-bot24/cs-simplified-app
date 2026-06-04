@@ -12,7 +12,7 @@ class AppConstants {
 
   // ── Admin contact — update these in one place ────────────────────────────
   static const String adminWhatsApp = 'https://wa.me/+234 806 858 2901';
-  static const String adminTelegram = 'https://t.me/cssimplified';
-  static const String adminEmail    = 'admin@cssimplified.app';
+  static const String adminTelegram = 'https://t.me/cssimplifiedadmin';
+  static const String adminEmail    = 'cssimplifiedu24@gmail.com';
   static const String adminEmailSubjectDefault = 'CS Simplified Support';
 }
