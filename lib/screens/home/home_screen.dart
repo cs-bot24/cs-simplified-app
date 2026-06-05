@@ -6,6 +6,7 @@ import '../../providers/academic_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/home_provider.dart';
 import '../../providers/offline_provider.dart';
+import '../../providers/admin_stats_provider.dart';
 import '../../models/level_model.dart';
 import '../../widgets/skeleton_loader.dart';
 import '../../widgets/streak_badge.dart';
@@ -25,8 +26,6 @@ import '../leaderboard/study_champions_screen.dart';
 import '../sharing/share_progress_screen.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
-
-// ── Shell (unchanged from original — only _HomeTab is redesigned) ─────────────
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,11 +48,43 @@ class _HomeScreenState extends State<HomeScreen> {
       ? [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _adminTab, _profileTab]
       : [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _profileTab];
 
+  int _adminTabIndex(bool isAdmin) => isAdmin ? 4 : -1;
+
+  @override
+  void initState() {
+    super.initState();
+    // Fetch admin stats once on login so the nav badge is immediately visible
+    // even before the admin has tapped the Admin tab.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && context.read<AuthProvider>().isAdmin) {
+        context.read<AdminStatsProvider>().fetchStats();
+      }
+    });
+  }
+
+  void _onTabSelected(int i, bool isAdmin) {
+    setState(() => _index = i);
+    // Refresh stats every time admin tab is tapped so dashboard badges are live.
+    if (i == _adminTabIndex(isAdmin)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<AdminStatsProvider>().fetchStats();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth    = context.watch<AuthProvider>();
     final isAdmin = auth.isAdmin;
     final screens = _screens(isAdmin);
+
+    // Total unread items — drives the nav bar badge dot
+    final adminStats  = context.watch<AdminStatsProvider>();
+    final totalUnread = isAdmin
+        ? adminStats.pendingRequests +
+          adminStats.openSupportTickets +
+          adminStats.unreadFeedback
+        : 0;
 
     final safeIndex = _index.clamp(0, screens.length - 1);
     if (safeIndex != _index) {
@@ -66,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(index: safeIndex, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: (i) => _onTabSelected(i, isAdmin),
         destinations: [
           const NavigationDestination(
               icon: Icon(Icons.home_outlined),
@@ -85,9 +116,15 @@ class _HomeScreenState extends State<HomeScreen> {
               selectedIcon: Icon(Icons.download_for_offline_rounded),
               label: 'Offline'),
           if (isAdmin)
-            const NavigationDestination(
-                icon: Icon(Icons.admin_panel_settings_outlined),
-                selectedIcon: Icon(Icons.admin_panel_settings_rounded),
+            NavigationDestination(
+                icon: _AdminNavIcon(
+                    icon: Icons.admin_panel_settings_outlined,
+                    badge: totalUnread,
+                    selected: false),
+                selectedIcon: _AdminNavIcon(
+                    icon: Icons.admin_panel_settings_rounded,
+                    badge: totalUnread,
+                    selected: true),
                 label: 'Admin'),
           const NavigationDestination(
               icon: Icon(Icons.person_outline),
@@ -95,6 +132,52 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Profile'),
         ],
       ),
+    );
+  }
+}
+
+// ── Admin nav icon with red dot badge ────────────────────────────────────────
+
+class _AdminNavIcon extends StatelessWidget {
+  final IconData icon;
+  final int badge;
+  final bool selected;
+  const _AdminNavIcon({
+    required this.icon,
+    required this.badge,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        if (badge > 0)
+          Positioned(
+            top: -4,
+            right: -6,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                badge > 99 ? '99+' : '$badge',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  height: 1.6,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -197,7 +280,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 3. Trending materials ───────────────────────────────────────
+            // ── 4. Trending materials ───────────────────────────────────────
             if (home.data != null &&
                 home.data!.trendingMaterials.isNotEmpty) ...[
               SliverToBoxAdapter(
@@ -221,7 +304,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
               ),
             ],
 
-            // ── 4. Continue reading ─────────────────────────────────────────
+            // ── 5. Continue reading ─────────────────────────────────────────
             if (home.data != null && home.data!.recentlyViewed.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
@@ -242,7 +325,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
               ),
             ],
 
-            // ── 5. Daily quote ──────────────────────────────────────────────
+            // ── 6. Daily quote ──────────────────────────────────────────────
             if (home.data?.dailyQuote != null)
               SliverToBoxAdapter(
                 child: Padding(
@@ -251,7 +334,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 6a. Quick Actions ───────────────────────────────────────────
+            // ── 7. Quick Actions ────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -307,7 +390,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
               ),
             ),
 
-            // ── 6b. Browse by level ─────────────────────────────────────────
+            // ── 8. Browse by level ──────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
@@ -363,8 +446,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       ),
     );
   }
-
-  // ── Header builder ──────────────────────────────────────────────────────────
 
   Widget _buildHeader(
     BuildContext context,
@@ -623,8 +704,7 @@ class _QuickActionCard extends StatelessWidget {
   }
 }
 
-
-// ── Leaderboard entry card (home screen) ─────────────────────────────────────
+// ── Leaderboard entry card ────────────────────────────────────────────────────
 
 class _LeaderboardEntryCard extends StatelessWidget {
   final int streak;
