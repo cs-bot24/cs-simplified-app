@@ -20,9 +20,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<AdminStatsProvider>().fetchStats();
-    });
+    // fetchStats() is called by home_screen.dart every time the admin tab
+    // is selected — no need to call it here. The refresh button and
+    // _goTo() helper call it explicitly when returning from sub-screens.
   }
 
   Future<void> _refresh() => context.read<AdminStatsProvider>().fetchStats();
@@ -65,7 +65,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
 
-              // ── Error banner ─────────────────────────────────────────────
               if (stats.error != null)
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -87,7 +86,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ]),
                 ),
 
-              // ── Welcome banner ───────────────────────────────────────────
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -114,7 +112,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
               const SizedBox(height: 20),
 
-              // ── Overview stats grid ──────────────────────────────────────
               const Text('Overview',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
@@ -163,7 +160,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     ),
               const SizedBox(height: 20),
 
-              // ── Needs Attention badges ────────────────────────────────────
               if (!stats.loading && hasAttention) ...[
                 const Text('Needs Attention',
                     style: TextStyle(
@@ -202,7 +198,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 const SizedBox(height: 20),
               ],
 
-              // ── Recent uploads ────────────────────────────────────────────
               if (stats.recentUploads.isNotEmpty) ...[
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -227,7 +222,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 const SizedBox(height: 20),
               ],
 
-              // ── Top downloads ─────────────────────────────────────────────
               if (stats.topMaterials.isNotEmpty) ...[
                 const Text('Top Downloads',
                     style: TextStyle(
@@ -245,7 +239,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 const SizedBox(height: 20),
               ],
 
-              // ── Pending requests preview ──────────────────────────────────
               if (!stats.loading &&
                   stats.pendingRequestsPreview.isNotEmpty) ...[
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -273,7 +266,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 const SizedBox(height: 20),
               ],
 
-              // ── Quick actions ─────────────────────────────────────────────
               const Text('Quick Actions',
                   style: TextStyle(
                       fontSize: 16, fontWeight: FontWeight.bold)),
@@ -346,9 +338,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Stat grid card
-// ─────────────────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
   final String label, value;
   final IconData icon;
@@ -382,9 +371,6 @@ class _StatCard extends StatelessWidget {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Needs Attention badge card
-// ─────────────────────────────────────────────────────────────────────────────
 class _BadgeCard extends StatelessWidget {
   final String label;
   final int count;
@@ -432,9 +418,6 @@ class _BadgeCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Quick action card
-// ─────────────────────────────────────────────────────────────────────────────
 class _ActionCard extends StatelessWidget {
   final IconData icon;
   final String title, subtitle;
@@ -492,9 +475,6 @@ class _ActionCard extends StatelessWidget {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Recent upload tile
-// ─────────────────────────────────────────────────────────────────────────────
 class _RecentTile extends StatelessWidget {
   final String title, course, uploadedAt;
   const _RecentTile({
@@ -543,9 +523,6 @@ class _RecentTile extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Top material tile
-// ─────────────────────────────────────────────────────────────────────────────
 class _TopMaterialTile extends StatelessWidget {
   final int rank, downloads;
   final String title, course;
@@ -588,9 +565,6 @@ class _TopMaterialTile extends StatelessWidget {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pending request preview tile
-// ─────────────────────────────────────────────────────────────────────────────
 class _PendingRequestPreviewTile extends StatelessWidget {
   final String studentName, courseName, topic, createdAt;
   const _PendingRequestPreviewTile({
