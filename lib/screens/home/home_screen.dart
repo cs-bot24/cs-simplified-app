@@ -50,21 +50,52 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int _adminTabIndex(bool isAdmin) => isAdmin ? 4 : -1;
 
+  // Track whether we have already fetched stats for this login session
+  bool _statsFetched = false;
+
   @override
   void initState() {
     super.initState();
-    // Fetch admin stats once on login so the nav badge is immediately visible
-    // even before the admin has tapped the Admin tab.
+    // Listen to AuthProvider — the moment isAdmin becomes true (either from
+    // loadFromStorage() completing or after login), fetch stats immediately.
+    // Using addListener is more reliable than addPostFrameCallback because
+    // it fires even if the widget is already built before isAdmin is true.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && context.read<AuthProvider>().isAdmin) {
-        context.read<AdminStatsProvider>().fetchStats();
-      }
+      final auth = context.read<AuthProvider>();
+      auth.addListener(_onAuthChanged);
+      // Also try immediately in case isAdmin is already true
+      _tryFetchStats();
     });
+  }
+
+  void _onAuthChanged() {
+    _tryFetchStats();
+  }
+
+  void _tryFetchStats() {
+    if (!mounted) return;
+    final isAdmin = context.read<AuthProvider>().isAdmin;
+    if (isAdmin && !_statsFetched) {
+      _statsFetched = true;
+      context.read<AdminStatsProvider>().fetchStats();
+    }
+    // Reset flag on logout so next login fetches fresh
+    if (!isAdmin) _statsFetched = false;
+  }
+
+  @override
+  void dispose() {
+    // Safe removal — addPostFrameCallback may not have fired yet if widget
+    // is disposed very quickly, so guard with try/catch
+    try {
+      context.read<AuthProvider>().removeListener(_onAuthChanged);
+    } catch (_) {}
+    super.dispose();
   }
 
   void _onTabSelected(int i, bool isAdmin) {
     setState(() => _index = i);
-    // Refresh stats every time admin tab is tapped so dashboard badges are live.
+    // Re-fetch every time admin tab is tapped so badges stay live
     if (i == _adminTabIndex(isAdmin)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) context.read<AdminStatsProvider>().fetchStats();
@@ -79,8 +110,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final screens = _screens(isAdmin);
 
     // Total unread items — drives the nav bar badge dot
-    final adminStats  = context.watch<AdminStatsProvider>();
-    final totalUnread = isAdmin
+    final adminStats   = context.watch<AdminStatsProvider>();
+    final totalUnread  = isAdmin
         ? adminStats.pendingRequests +
           adminStats.openSupportTickets +
           adminStats.unreadFeedback
@@ -267,7 +298,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 3. Leaderboard entry card ────────────────────────────────
+            // ── 3. Leaderboard entry card ───────────────────────────────────
             if (home.data != null)
               SliverToBoxAdapter(
                 child: Padding(
