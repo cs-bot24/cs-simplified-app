@@ -4,6 +4,7 @@ import '../../models/course_model.dart';
 import '../../models/material_model.dart';
 import '../../providers/academic_provider.dart';
 import '../../widgets/loading_view.dart';
+import '../../widgets/file_type_badge.dart';
 import 'materials_screen.dart';
 
 class CoursesScreen extends StatefulWidget {
@@ -127,9 +128,30 @@ class _MaterialCard extends StatelessWidget {
   final String courseCode;
   const _MaterialCard({required this.mat, required this.courseCode});
 
+  IconData get _icon {
+    switch (mat.fileType) {
+      case 'ppt':
+      case 'pptx': return Icons.slideshow_outlined;
+      case 'doc':
+      case 'docx': return Icons.description_outlined;
+      default:     return Icons.picture_as_pdf_outlined;
+    }
+  }
+
+  Color _color(ColorScheme scheme) {
+    switch (mat.fileType) {
+      case 'ppt':
+      case 'pptx': return const Color(0xFFD04A02);
+      case 'doc':
+      case 'docx': return const Color(0xFF185ABD);
+      default:     return scheme.primary;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final color  = _color(scheme);
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(
           builder: (_) => MaterialsScreen(material: mat, courseCode: courseCode))),
@@ -144,15 +166,22 @@ class _MaterialCard extends StatelessWidget {
           Container(
             width: 44, height: 44,
             decoration: BoxDecoration(
-              color: scheme.primary.withOpacity(0.1),
+              color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(Icons.picture_as_pdf_outlined, color: scheme.primary, size: 22),
+            child: Icon(_icon, color: color, size: 22),
           ),
           const SizedBox(width: 14),
-          Expanded(child: Text(mat.materialTitle,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
-          Icon(Icons.download_outlined, size: 20, color: scheme.primary),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(mat.materialTitle,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 4),
+              FileTypeBadge(fileType: mat.fileType),
+            ],
+          )),
+          Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey[400]),
         ]),
       ),
     );

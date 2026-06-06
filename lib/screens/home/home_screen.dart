@@ -298,7 +298,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 3. Leaderboard entry card ───────────────────────────────────
+            // ── 3. Leaderboard entry card ────────────────────────────────
             if (home.data != null)
               SliverToBoxAdapter(
                 child: Padding(
@@ -311,7 +311,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 4. Trending materials ───────────────────────────────────────
+            // ── 3. Trending materials ───────────────────────────────────────
             if (home.data != null &&
                 home.data!.trendingMaterials.isNotEmpty) ...[
               SliverToBoxAdapter(
@@ -335,7 +335,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
               ),
             ],
 
-            // ── 5. Continue reading ─────────────────────────────────────────
+            // ── 4. Continue reading ─────────────────────────────────────────
             if (home.data != null && home.data!.recentlyViewed.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
@@ -356,7 +356,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
               ),
             ],
 
-            // ── 6. Daily quote ──────────────────────────────────────────────
+            // ── 5. Daily quote ──────────────────────────────────────────────
             if (home.data?.dailyQuote != null)
               SliverToBoxAdapter(
                 child: Padding(
@@ -365,7 +365,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 7. Quick Actions ────────────────────────────────────────────
+            // ── 6a. Quick Actions ───────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -421,7 +421,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
               ),
             ),
 
-            // ── 8. Browse by level ──────────────────────────────────────────
+            // ── 6b. Browse by level ─────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
@@ -477,6 +477,8 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       ),
     );
   }
+
+  // ── Header builder ──────────────────────────────────────────────────────────
 
   Widget _buildHeader(
     BuildContext context,

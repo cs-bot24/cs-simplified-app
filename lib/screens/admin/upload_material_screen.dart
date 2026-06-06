@@ -79,9 +79,22 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
     } catch (_) {}
   }
 
+
+  MediaType _contentType(String ext) {
+    switch (ext) {
+      case 'ppt':  return MediaType('application', 'vnd.ms-powerpoint');
+      case 'pptx': return MediaType('application',
+          'vnd.openxmlformats-officedocument.presentationml.presentation');
+      case 'doc':  return MediaType('application', 'msword');
+      case 'docx': return MediaType('application',
+          'vnd.openxmlformats-officedocument.wordprocessingml.document');
+      default:     return MediaType('application', 'pdf');
+    }
+  }
+
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom, allowedExtensions: ['pdf'],
+      type: FileType.custom, allowedExtensions: ['pdf', 'ppt', 'pptx', 'doc', 'docx'],
     );
     if (result != null) {
       setState(() => _pickedFile = result.files.first);
@@ -91,7 +104,7 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
   Future<void> _upload() async {
     if (_course == null || _category == null ||
         _pickedFile == null || _titleCtrl.text.isEmpty) {
-      setState(() => _error = 'Please fill all fields and select a PDF file.');
+      setState(() => _error = 'Please fill all fields and select a file.');
       return;
     }
     setState(() { _uploading = true; _error = null; _success = null; });
@@ -104,16 +117,18 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
       req.fields['category_id']     = '${_category!.id}';
       req.fields['material_title']  = _titleCtrl.text.trim();
 
+      final ext  = _pickedFile!.name.split('.').last.toLowerCase();
+      final ctype = _contentType(ext);
       if (_pickedFile!.path != null) {
         req.files.add(await http.MultipartFile.fromPath(
           'file', _pickedFile!.path!,
-          contentType: MediaType('application', 'pdf'),
+          contentType: ctype,
         ));
       } else if (_pickedFile!.bytes != null) {
         req.files.add(http.MultipartFile.fromBytes(
           'file', _pickedFile!.bytes!,
           filename: _pickedFile!.name,
-          contentType: MediaType('application', 'pdf'),
+          contentType: ctype,
         ));
       }
 
@@ -215,7 +230,7 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
             ),
             const SizedBox(height: 24),
 
-            _StepHeader(step: '3', title: 'Select PDF File'),
+            _StepHeader(step: '3', title: 'Select File (PDF, PPTX, DOCX)'),
             const SizedBox(height: 12),
 
             // File picker
@@ -248,7 +263,7 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
                   Text(
                     _pickedFile != null
                         ? _pickedFile!.name
-                        : 'Tap to select PDF',
+                        : 'Tap to select file',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: _pickedFile != null ? Colors.green : scheme.primary,
