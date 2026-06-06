@@ -9,6 +9,7 @@ import 'send_notification_screen.dart';
 import 'admin_feedback_screen.dart';
 import 'admin_requests_screen.dart';
 import 'admin_support_screen.dart';
+import 'admin_categories_screen.dart';
 import 'admin_material_requests_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -327,6 +328,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 color: Colors.deepPurple,
                 badge: unreadSupportTickets,
                 onTap: () => _goTo(const AdminSupportScreen()),
+              ),
+              const SizedBox(height: 10),
+              _ActionCard(
+                icon: Icons.category_rounded,
+                title: 'Manage Categories',
+                subtitle: 'Create, edit, delete categories',
+                color: Colors.cyan[700]!,
+                onTap: () => _goTo(const AdminCategoriesScreen()),
               ),
               const SizedBox(height: 10),
               _ActionCard(

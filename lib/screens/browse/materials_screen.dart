@@ -8,114 +8,162 @@ import '../../widgets/file_type_badge.dart';
 import '../../core/file_opener.dart';
 import '../pdf/pdf_viewer_screen.dart';
 
-class MaterialsScreen extends StatelessWidget {
+/// Material detail + open screen.
+/// StatefulWidget + WidgetsBindingObserver so we can catch app-resume
+/// after an Office file is opened externally and fire the study-ping.
+class MaterialsScreen extends StatefulWidget {
   final MaterialModel material;
-  final String courseCode;
-  const MaterialsScreen({super.key, required this.material, required this.courseCode});
+  final String        courseCode;
+  const MaterialsScreen({
+    super.key,
+    required this.material,
+    required this.courseCode,
+  });
+  @override
+  State<MaterialsScreen> createState() => _MaterialsScreenState();
+}
 
-  Future<void> _open(BuildContext context) async {
-    if (material.isPdf) {
+class _MaterialsScreenState extends State<MaterialsScreen>
+    with WidgetsBindingObserver {
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    FileOpener.clearSession();
+    super.dispose();
+  }
+
+  /// Called when app comes back to foreground (user returns from Office app).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      FileOpener.onAppResumed(context);
+    }
+  }
+
+  Future<void> _open() async {
+    if (widget.material.isPdf) {
       Navigator.push(context, MaterialPageRoute(
         builder: (_) => PdfViewerScreen(
-          url:        material.fileUrl,
-          title:      material.materialTitle,
-          materialId: material.id,
+          url:        widget.material.fileUrl,
+          title:      widget.material.materialTitle,
+          materialId: widget.material.id,
         ),
       ));
     } else {
       await FileOpener.openExternal(
-        context:  context,
-        url:      material.fileUrl,
-        title:    material.materialTitle,
-        fileType: material.fileType,
+        context:    context,
+        url:        widget.material.fileUrl,
+        title:      widget.material.materialTitle,
+        fileType:   widget.material.fileType,
+        materialId: widget.material.id,
       );
     }
   }
 
-  String get _openButtonLabel {
-    if (material.isPdf)  return 'Open PDF';
-    if (material.isPpt)  return 'Open with PowerPoint';
-    return 'Open with Word';
+  String get _openLabel {
+    if (widget.material.isPdf)  return 'Open PDF';
+    if (widget.material.isPpt)  return 'Open Presentation';
+    return 'Open Document';
   }
 
   @override
   Widget build(BuildContext context) {
+    final m          = widget.material;
     final auth       = context.watch<AuthProvider>();
     final academic   = context.watch<AcademicProvider>();
+    final offline    = context.watch<OfflineProvider>();
     final scheme     = Theme.of(context).colorScheme;
-    final isBookmark = academic.isBookmarked(material.id);
+    final isBookmark = academic.isBookmarked(m.id);
+    final isDL       = offline.isDownloaded(m.id);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(courseCode),
+        title: Text(widget.courseCode),
         actions: [
           if (auth.isLoggedIn)
             IconButton(
               icon: Icon(isBookmark
                   ? Icons.bookmark_rounded
                   : Icons.bookmark_outline_rounded),
-              onPressed: () => academic.toggleBookmark(material.id),
+              onPressed: () => academic.toggleBookmark(m.id),
             ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-          // ── File type icon ───────────────────────────────────────────────
-          Center(child: FileTypeIcon(fileType: material.fileType, size: 56)),
+          // ── Hero icon ────────────────────────────────────────────────────
+          Center(child: FileTypeIcon(fileType: m.fileType, size: 56)),
           const SizedBox(height: 20),
 
-          // ── Title + badges ───────────────────────────────────────────────
-          Text(material.materialTitle,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          // ── Title ────────────────────────────────────────────────────────
+          Text(m.materialTitle,
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-          Row(children: [
-            FileTypeBadge(fileType: material.fileType, large: true),
-            const SizedBox(width: 8),
-            Text(courseCode, style: TextStyle(color: Colors.grey[500])),
-            if (context.watch<OfflineProvider>().isDownloaded(material.id)) ...[
-              const SizedBox(width: 8),
+
+          // ── Badges ───────────────────────────────────────────────────────
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            FileTypeBadge(fileType: m.fileType, large: true),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: scheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(widget.courseCode,
+                  style: TextStyle(fontSize: 11, color: scheme.primary,
+                      fontWeight: FontWeight.w600)),
+            ),
+            if (isDL)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color:  Colors.green.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.green.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: Colors.green.withOpacity(0.4)),
                 ),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.download_done_rounded, size: 11, color: Colors.green),
+                  Icon(Icons.download_done_rounded,
+                      size: 11, color: Colors.green),
                   SizedBox(width: 4),
                   Text('Downloaded', style: TextStyle(
                       fontSize: 10, color: Colors.green,
                       fontWeight: FontWeight.w600)),
                 ]),
               ),
-            ],
           ]),
 
-          // ── External app notice for Office docs ──────────────────────────
-          if (material.isOfficeDoc) ...[
+          // ── Info banner for Office files ─────────────────────────────────
+          if (m.isOfficeDoc) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color:        Colors.blue.withOpacity(0.06),
                 borderRadius: BorderRadius.circular(10),
-                border:       Border.all(color: Colors.blue.withOpacity(0.2)),
+                border: Border.all(color: Colors.blue.withOpacity(0.2)),
               ),
               child: Row(children: [
                 Icon(Icons.info_outline_rounded,
                     size: 16, color: Colors.blue[400]),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    material.isPpt
-                        ? 'This file will open in PowerPoint, WPS Office, or Google Slides.'
-                        : 'This file will open in Word, WPS Office, or Google Docs.',
-                    style: TextStyle(fontSize: 12, color: Colors.blue[700]),
-                  ),
-                ),
+                Expanded(child: Text(
+                  m.isPpt
+                      ? 'Opens in PowerPoint, WPS Office, or Google Slides. '
+                        'Study time is tracked automatically when you return.'
+                      : 'Opens in Word, WPS Office, or Google Docs. '
+                        'Study time is tracked automatically when you return.',
+                  style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+                )),
               ]),
             ),
           ],
@@ -126,15 +174,17 @@ class MaterialsScreen extends StatelessWidget {
           SizedBox(
             width: double.infinity, height: 52,
             child: ElevatedButton.icon(
-              onPressed: () => _open(context),
+              onPressed: _open,
               icon: Icon(
-                material.isPdf
+                m.isPdf
                     ? Icons.open_in_new_rounded
                     : Icons.launch_rounded,
                 color: Colors.white,
               ),
-              label: Text(_openButtonLabel,
-                  style: const TextStyle(color: Colors.white, fontSize: 16,
+              label: Text(_openLabel,
+                  style: const TextStyle(
+                      color:      Colors.white,
+                      fontSize:   16,
                       fontWeight: FontWeight.w600)),
             ),
           ),
@@ -145,11 +195,13 @@ class MaterialsScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity, height: 52,
               child: OutlinedButton.icon(
-                onPressed: () => academic.toggleBookmark(material.id),
+                onPressed: () => academic.toggleBookmark(m.id),
                 icon: Icon(isBookmark
                     ? Icons.bookmark_remove_outlined
                     : Icons.bookmark_add_outlined),
-                label: Text(isBookmark ? 'Remove Bookmark' : 'Save Bookmark'),
+                label: Text(isBookmark
+                    ? 'Remove Bookmark'
+                    : 'Save Bookmark'),
               ),
             ),
           ],

@@ -293,6 +293,42 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  static Future<Map<String, dynamic>> createCategory({
+    required String name, String emoji = '📄',
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/admin/categories'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'category_name': name, 'emoji': emoji}),
+      );
+      return _handle(res) as Map<String, dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> updateCategory({
+    required int id, required String name, String emoji = '📄',
+  }) async {
+    try {
+      final res = await http.put(
+        Uri.parse('$_base/admin/categories/$id'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'category_name': name, 'emoji': emoji}),
+      );
+      return _handle(res) as Map<String, dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> deleteCategory(int id) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/admin/categories/$id'),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   // ── Materials ─────────────────────────────────────────────────────────────
   static Future<List<dynamic>> getMaterials(int courseId, {int? categoryId}) async {
     try {
