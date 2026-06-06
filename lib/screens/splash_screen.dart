@@ -31,8 +31,13 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
     await context.read<AuthProvider>().loadFromStorage();
     if (!mounted) return;
+
+    // Await the version check — if an update dialog is shown,
+    // this waits until the user taps "Later" or "Update Now"
+    // before proceeding to the home/login screen.
     await VersionCheck.check(context);
     if (!mounted) return;
+
     Navigator.pushReplacement(context, MaterialPageRoute(
         builder: (_) => AppStorage.isLoggedIn
             ? const HomeScreen()
@@ -57,7 +62,8 @@ class _SplashScreenState extends State<SplashScreen>
                 color: Colors.white24,
                 borderRadius: BorderRadius.circular(26),
               ),
-              child: const Icon(Icons.school_rounded, color: Colors.white, size: 56),
+              child: const Icon(Icons.school_rounded,
+                  color: Colors.white, size: 56),
             ),
             const SizedBox(height: 22),
             const Text('CS Simplified',
