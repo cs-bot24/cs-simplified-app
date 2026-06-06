@@ -14,6 +14,8 @@ import '../sharing/share_progress_screen.dart';
 import '../faq/faq_screen.dart';
 import '../../core/api_client.dart';
 import '../../core/storage.dart';
+import '../../core/version_check.dart';
+import '../../core/constants.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -235,13 +237,34 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 10),
 
               _MenuItem(
+                icon: Icons.system_update_rounded,
+                title: 'Check for Updates',
+                subtitle: 'Current version: ${AppConstants.appVersion}',
+                onTap: () async {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Row(children: [
+                      SizedBox(width: 18, height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white)),
+                      SizedBox(width: 12),
+                      Text('Checking for updates...'),
+                    ]),
+                    duration: Duration(seconds: 3),
+                    behavior: SnackBarBehavior.floating,
+                  ));
+                  await VersionCheck.check(context, showNoUpdate: true);
+                },
+              ),
+              const SizedBox(height: 10),
+
+              _MenuItem(
                 icon: Icons.info_outline_rounded,
                 title: 'About CS Simplified',
-                subtitle: 'Academic learning platform v1.0.0',
+                subtitle: 'Academic learning platform v${AppConstants.appVersion}',
                 onTap: () => showAboutDialog(
                   context: context,
                   applicationName: 'CS Simplified',
-                  applicationVersion: '1.0.0',
+                  applicationVersion: AppConstants.appVersion,
                   applicationLegalese: 'Your academic learning hub for CS students.',
                 ),
               ),
@@ -271,7 +294,7 @@ class ProfileScreen extends StatelessWidget {
               ),
 
               const SizedBox(height: 32),
-              Text('CS Simplified v1.0.0',
+              Text('CS Simplified v${AppConstants.appVersion}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[400])),
               const SizedBox(height: 24),
             ]),
@@ -381,7 +404,6 @@ class _MenuItem extends StatelessWidget {
 
 
 // ── Delete Account tile ───────────────────────────────────────────────────────
-// A StatefulWidget so it can hold the TextEditingController and loading state.
 
 class _DeleteAccountTile extends StatefulWidget {
   const _DeleteAccountTile();
