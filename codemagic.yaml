@@ -1,29 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # codemagic.yaml — CS Simplified
 #
-# Workflow: build_and_release
-#   1. Installs Flutter dependencies
-#   2. Builds a release APK
-#   3. Publishes the APK to GitHub Releases automatically
+# Required — set these in Codemagic UI → Teams → Environment variables:
 #
-# Required environment variables (set in Codemagic UI → Environment variables):
+#   Group name: github
 #
-#   GITHUB_TOKEN
-#     A GitHub Personal Access Token with "repo" scope.
-#     Generate at: github.com → Settings → Developer settings →
-#                  Personal access tokens → Tokens (classic) → Generate new token
-#     Select scope: repo (full control of private repositories)
-#     Copy the token and paste it here as a secret variable.
-#
-#   GITHUB_REPO
-#     Your GitHub repo in owner/repo format.
-#     Example: KhalidAnas/cs-simplified
-#
-# Optional (for APK signing — recommended before Play Store):
-#   CM_KEYSTORE          (base64-encoded keystore file)
-#   CM_KEYSTORE_PASSWORD
-#   CM_KEY_ALIAS
-#   CM_KEY_PASSWORD
+#   GITHUB_TOKEN  →  Your GitHub Personal Access Token (repo scope) — mark Secret
+#   GITHUB_REPO   →  cs-bot24/cs-simplified-app
 #
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,10 +19,9 @@ workflows:
 
     environment:
       flutter: stable
-      java:    17
-      vars:
-        GITHUB_TOKEN: $GITHUB_TOKEN   # Set as secret in Codemagic UI
-        GITHUB_REPO:  $GITHUB_REPO    # e.g. KhalidAnas/cs-simplified
+      java: 17
+      groups:
+        - github
 
     triggering:
       events:
@@ -54,7 +36,7 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
 
-      # ── 2. Run analyzer (catches compile errors before building) ───────────
+      # ── 2. Analyze (non-fatal — warnings don't block build) ────────────────
       - name: Analyze
         script: flutter analyze --no-fatal-infos
         ignore_failure: true
@@ -64,58 +46,58 @@ workflows:
         script: |
           flutter build apk --release \
             --build-name=$(grep "^version:" pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1) \
-            --build-number=$(($(date +%s) % 100000))
+            --build-number=${CM_BUILD_NUMBER:-1}
 
       # ── 4. Publish to GitHub Releases ──────────────────────────────────────
       - name: Publish to GitHub Releases
         script: |
           set -e
 
-          # Read version from pubspec.yaml
           VERSION=$(grep "^version:" pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1)
-          TAG="v${VERSION}-build-${CM_BUILD_NUMBER}"
+          BUILD=${CM_BUILD_NUMBER:-1}
+          TAG="v${VERSION}-build-${BUILD}"
           APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
           APK_NAME="CS-Simplified-${TAG}.apk"
+          REPO="cs-bot24/cs-simplified-app"
 
-          echo "Publishing $APK_NAME as $TAG to $GITHUB_REPO"
+          echo "Publishing $APK_NAME as $TAG to $REPO"
+          echo "Token present: $([ -n "$GITHUB_TOKEN" ] && echo YES || echo NO)"
 
           # Create the GitHub release
           RELEASE_RESPONSE=$(curl -s -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/$GITHUB_REPO/releases" \
+            "https://api.github.com/repos/${REPO}/releases" \
             -d "{
-              \"tag_name\":         \"$TAG\",
+              \"tag_name\": \"${TAG}\",
               \"target_commitish\": \"main\",
-              \"name\":             \"CS Simplified $TAG\",
-              \"body\":             \"## CS Simplified $TAG\n\nBuilt automatically by Codemagic.\n\n### Install\n1. Download the APK below\n2. Open it on your Android device\n3. Allow installation from unknown sources if prompted\",
-              \"draft\":            false,
-              \"prerelease\":       false
+              \"name\": \"CS Simplified ${TAG}\",
+              \"body\": \"## CS Simplified ${TAG}\n\nBuilt automatically by Codemagic.\n\n### How to Install\n1. Download the APK file below\n2. Open it on your Android device\n3. Tap Install (allow unknown sources if prompted)\",
+              \"draft\": false,
+              \"prerelease\": false
             }")
 
-          # Extract upload URL from the response
+          echo "GitHub response: $RELEASE_RESPONSE"
+
           UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | \
-            python3 -c "import sys,json; print(json.load(sys.stdin)['upload_url'])" | \
+            python3 -c "import sys,json; d=json.load(sys.stdin); print(d['upload_url'])" | \
             sed 's/{?name,label}//')
 
           if [ -z "$UPLOAD_URL" ]; then
-            echo "Failed to create release. Response:"
-            echo "$RELEASE_RESPONSE"
+            echo "ERROR: Could not get upload URL"
             exit 1
           fi
 
-          echo "Upload URL: $UPLOAD_URL"
+          echo "Uploading APK to: $UPLOAD_URL"
 
-          # Upload the APK to the release
           curl -s -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Content-Type: application/vnd.android.package-archive" \
-            --data-binary @"$APK_PATH" \
-            "$UPLOAD_URL?name=$APK_NAME&label=Download%20APK"
+            --data-binary @"${APK_PATH}" \
+            "${UPLOAD_URL}?name=${APK_NAME}&label=Download+APK"
 
           echo ""
-          echo "✅ Published successfully!"
-          echo "Download: https://github.com/$GITHUB_REPO/releases/tag/$TAG"
+          echo "✅ Done! Download at: https://github.com/${REPO}/releases/tag/${TAG}"
 
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
