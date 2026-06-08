@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../providers/ai_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -470,14 +471,85 @@ class _MessageBubble extends StatelessWidget {
               ),
               const SizedBox(height: 4),
             ],
-            SelectableText(
-              message.text,
-              style: TextStyle(
-                fontSize: 14,
-                color: isUser ? Colors.white : (isDark ? Colors.white.withOpacity(0.87) : Colors.black87),
-                height: 1.5,
-              ),
-            ),
+            isUser
+                ? SelectableText(
+                    message.text,
+                    style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.5),
+                  )
+                : MarkdownBody(
+                    data: message.text,
+                    selectable: true,
+                    styleSheet: MarkdownStyleSheet(
+                      p: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white.withOpacity(0.87) : Colors.black87,
+                        height: 1.55,
+                      ),
+                      h1: TextStyle(fontSize: 18, fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87),
+                      h2: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87),
+                      h3: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87),
+                      strong: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87),
+                      em: TextStyle(
+                          fontStyle: FontStyle.italic,
+                          color: isDark ? Colors.white.withOpacity(0.87) : Colors.black87),
+                      code: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        backgroundColor: isDark
+                            ? const Color(0xFF1A1A1A)
+                            : const Color(0xFFE8ECF8),
+                        color: isDark ? const Color(0xFF82B1FF) : const Color(0xFF1A237E),
+                      ),
+                      codeblockDecoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE8ECF8),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      codeblockPadding: const EdgeInsets.all(12),
+                      blockquote: TextStyle(
+                          fontSize: 14,
+                          color: isDark
+                              ? Colors.white.withOpacity(0.7)
+                              : Colors.black54,
+                          fontStyle: FontStyle.italic),
+                      blockquoteDecoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                              color: isDark
+                                  ? Colors.white.withOpacity(0.3)
+                                  : Colors.black26,
+                              width: 3),
+                        ),
+                      ),
+                      blockquotePadding:
+                          const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+                      listBullet: TextStyle(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.87)
+                              : Colors.black87),
+                      tableHead: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87),
+                      tableBody: TextStyle(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.87)
+                              : Colors.black87),
+                      tableBorder: TableBorder.all(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.15)
+                              : Colors.black12),
+                      tableColumnWidth: const FlexColumnWidth(),
+                      tableCellsPadding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      h1Padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      h2Padding: const EdgeInsets.only(top: 6, bottom: 3),
+                      h3Padding: const EdgeInsets.only(top: 4, bottom: 2),
+                    ),
+                  ),
           ],
         ),
       ),
@@ -781,8 +853,14 @@ class _PracticeDialogState extends State<_PracticeDialog> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
-                child: Text(_result ?? 'Could not generate questions. Please try again.',
-                    style: const TextStyle(fontSize: 14, height: 1.5)),
+                child: MarkdownBody(
+                  data: _result ?? 'Could not generate questions. Please try again.',
+                  selectable: true,
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                    p: const TextStyle(fontSize: 14, height: 1.55),
+                    code: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  ),
+                ),
               ),
       ),
       actions: [
@@ -825,8 +903,14 @@ class _StudyNotesDialogState extends State<_StudyNotesDialog> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
-                child: Text(_result ?? 'Could not generate notes. Please try again.',
-                    style: const TextStyle(fontSize: 14, height: 1.5)),
+                child: MarkdownBody(
+                  data: _result ?? 'Could not generate notes. Please try again.',
+                  selectable: true,
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                    p: const TextStyle(fontSize: 14, height: 1.55),
+                    code: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  ),
+                ),
               ),
       ),
       actions: [

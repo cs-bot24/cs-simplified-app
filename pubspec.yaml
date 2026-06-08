@@ -38,6 +38,7 @@ dependencies:
 
   # ── AI Tutor Phase 2 ──────────────────────────────────────────────────────
   image_picker: ^1.1.2   # Pick images from camera/gallery for AI image question solving
+  flutter_markdown: ^0.7.4  # Render AI Markdown responses in chat
 
 dev_dependencies:
   flutter_test:
