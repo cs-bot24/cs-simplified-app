@@ -120,7 +120,7 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     final ai = context.read<AiProvider>();
     final lastAiMsg = ai.messages.lastWhere(
       (m) => !m.isUser,
-      orElse: () => const AiMessage(text: '', isUser: false, timestamp: null as dynamic),
+      orElse: () => AiMessage(text: '', isUser: false, timestamp: DateTime.now()),
     );
     final topic = lastAiMsg.subject ?? 'the topic we just discussed';
 
@@ -135,7 +135,7 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     final ai = context.read<AiProvider>();
     final lastAiMsg = ai.messages.lastWhere(
       (m) => !m.isUser,
-      orElse: () => const AiMessage(text: '', isUser: false, timestamp: null as dynamic),
+      orElse: () => AiMessage(text: '', isUser: false, timestamp: DateTime.now()),
     );
     final topic = lastAiMsg.subject ?? 'the topic we just discussed';
 
