@@ -12,6 +12,7 @@ import '../leaderboard/study_champions_screen.dart';
 import '../achievements/achievements_screen.dart';
 import '../sharing/share_progress_screen.dart';
 import '../faq/faq_screen.dart';
+import '../ai/ai_tutor_screen.dart';
 import '../../core/api_client.dart';
 import '../../core/storage.dart';
 import '../../core/version_check.dart';
@@ -172,6 +173,14 @@ class ProfileScreen extends StatelessWidget {
 
               const SizedBox(height: 16),
               _SectionHeader(title: 'Progress'),
+              _MenuItem(
+                icon: Icons.auto_awesome_rounded,
+                title: 'AI Tutor',
+                subtitle: 'Ask academic questions, get instant explanations',
+                color: const Color(0xFF1A3C6E),
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const AiTutorScreen())),
+              ),
               _MenuItem(
                 icon: Icons.emoji_events_rounded,
                 title: 'Study Champions',

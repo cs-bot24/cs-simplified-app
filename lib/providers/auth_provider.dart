@@ -48,8 +48,17 @@ class AuthProvider extends ChangeNotifier {
       await AppStorage.saveRememberMe(rememberMe);
       return true;
     } on ApiException catch (e) {
-      _error = e.message; return false;
-    } finally { _loading = false; notifyListeners(); }
+      // Surface the exact server message.
+      // Never show "Session expired" for a login attempt —
+      // a session cannot expire before it exists.
+      _error = e.message;
+      return false;
+    } catch (_) {
+      _error = 'Unable to connect. Please check your internet connection.';
+      return false;
+    } finally {
+      _loading = false; notifyListeners();
+    }
   }
 
   Future<void> logout() async {

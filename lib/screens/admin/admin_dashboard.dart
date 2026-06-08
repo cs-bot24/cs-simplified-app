@@ -355,7 +355,66 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 badge: unreadFeedback,
                 onTap: () => _goTo(const AdminFeedbackScreen()),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+
+              // ── AI Tutor stats (Phase 2.0) ─────────────────────────────────
+              if (!stats.loading) ...[ 
+                const Text('AI Tutor',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.3,
+                  children: [
+                    _StatCard(
+                      label: 'Total AI Questions',
+                      value: '${stats.totalAiQuestions}',
+                      icon: Icons.auto_awesome_rounded,
+                      color: const Color(0xFF1A3C6E),
+                    ),
+                    _StatCard(
+                      label: 'AI Questions Today',
+                      value: '${stats.aiQuestionsToday}',
+                      icon: Icons.today_rounded,
+                      color: Colors.indigo,
+                    ),
+                    _StatCard(
+                      label: 'AI Users',
+                      value: '${stats.premiumAiUsers}',
+                      icon: Icons.people_rounded,
+                      color: Colors.deepPurple,
+                    ),
+                  ],
+                ),
+                if (stats.mostActiveAiUsers.isNotEmpty) ...[ 
+                  const SizedBox(height: 16),
+                  const Text('Most Active AI Users',
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  ...stats.mostActiveAiUsers.map((u) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(children: [
+                          const Icon(Icons.person_rounded,
+                              size: 16, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(u['name'] ?? '',
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                          Text('${u['questions']} questions',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[500])),
+                        ]),
+                      )),
+                ],
+                const SizedBox(height: 24),
+              ],
             ],
           ),
         ),

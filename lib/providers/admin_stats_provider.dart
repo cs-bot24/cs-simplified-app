@@ -22,6 +22,12 @@ class AdminStatsProvider extends ChangeNotifier {
   /// Open support tickets — powered by the new support_tickets table.
   int get openSupportTickets   => (_stats['open_support_tickets']  as num?)?.toInt() ?? 0;
 
+  // ── AI Tutor stats (Phase 2.0) ─────────────────────────────────────────────
+  int  get totalAiQuestions  => (_stats['total_ai_questions']  as num?)?.toInt() ?? 0;
+  int  get aiQuestionsToday  => (_stats['ai_questions_today']  as num?)?.toInt() ?? 0;
+  int  get premiumAiUsers    => (_stats['premium_ai_users']    as num?)?.toInt() ?? 0;
+  List get mostActiveAiUsers => (_stats['most_active_ai_users'] as List?) ?? [];
+
   List get topMaterials            => (_stats['top_materials']             as List?) ?? [];
   List get recentUploads           => (_stats['recent_uploads']            as List?) ?? [];
   List get pendingRequestsPreview  => (_stats['pending_requests_preview']  as List?) ?? [];

@@ -55,7 +55,13 @@ class ApiClient {
 
   static String _friendlyError(dynamic e) {
     if (e is ApiException) {
-      if (e.statusCode == 401) return 'Session expired. Please sign in again.';
+      // Never swallow the real message from the server —
+      // return it directly unless it is blank.
+      if (e.message.isNotEmpty &&
+          !e.message.startsWith('Something went wrong')) {
+        return e.message;
+      }
+      if (e.statusCode == 401) return 'Your session has expired. Please sign in again.';
       if (e.statusCode == 403) return 'Permission denied.';
       if (e.statusCode == 404) return 'Not found. Please try again later.';
       if (e.statusCode == 422) return 'Invalid data sent. Please check your input.';
@@ -84,12 +90,13 @@ class ApiClient {
   static Future<Map<String, dynamic>> login({
     required String email, required String password,
   }) async {
-    try {
-      final res = await http.post(Uri.parse('$_base/auth/login'),
-          headers: _headers(),
-          body: jsonEncode({'email': email, 'password': password}));
-      return _handle(res);
-    } catch (e) { throw ApiException(_friendlyError(e)); }
+    // Do NOT wrap login errors through _friendlyError.
+    // The backend already returns precise messages (401 wrong creds, 403 disabled).
+    // Wrapping through _friendlyError would replace them with "Session expired".
+    final res = await http.post(Uri.parse('$_base/auth/login'),
+        headers: _headers(),
+        body: jsonEncode({'email': email, 'password': password}));
+    return _handle(res);
   }
 
   static Future<Map<String, dynamic>> getMe() async {
@@ -755,9 +762,7 @@ class ApiClient {
         headers: _headers(auth: true),
       );
       _handle(res);
-    } catch (e) { throw ApiException(_friendlyError(e)); }
-  }
-  // ── Study ping (anti-cheat: called after 3 min of material reading) ───────
+    } catch (e) { throw ApiException(_friendlyError(e)); }\n  }\n  // ── Study ping (anti-cheat: called after 3 min of material reading) ───────
 
   static Future<Map<String, dynamic>> studyPing(int materialId) async {
     try {
@@ -838,6 +843,33 @@ class ApiClient {
         headers: _headers(auth: true),
       );
       return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── AI Tutor (Phase 2.0) ──────────────────────────────────────────────────
+
+  /// Submit an academic question to the AI Tutor.
+  /// Returns a map with keys: question, response, conversation_id, created_at.
+  static Future<Map<String, dynamic>> askAi(String question) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/ai/ask'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'question': question}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Fetch the user's AI conversation history (newest first).
+  static Future<List<dynamic>> getAiHistory({int skip = 0, int limit = 20}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/ai/history?skip=$skip&limit=$limit'),
+        headers: _headers(auth: true),
+      );
+      final data = _handle(res);
+      return data is List ? data : [];
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 }
