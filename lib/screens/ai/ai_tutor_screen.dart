@@ -237,7 +237,7 @@ class _MessageBubble extends StatelessWidget {
                 fontSize: 14,
                 color: isUser
                     ? Colors.white
-                    : (isDark ? Colors.white87 : Colors.black87),
+                    : (isDark ? Colors.white.withOpacity(0.87) : Colors.black87),
                 height: 1.45,
               ),
             ),

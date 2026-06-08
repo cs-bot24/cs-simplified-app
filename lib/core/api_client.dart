@@ -762,7 +762,10 @@ class ApiClient {
         headers: _headers(auth: true),
       );
       _handle(res);
-    } catch (e) { throw ApiException(_friendlyError(e)); }\n  }\n  // ── Study ping (anti-cheat: called after 3 min of material reading) ───────
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Study ping (anti-cheat: called after 3 min of material reading) ───────
 
   static Future<Map<String, dynamic>> studyPing(int materialId) async {
     try {
