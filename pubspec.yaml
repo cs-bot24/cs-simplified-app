@@ -1,7 +1,7 @@
 name: cs_simplified
 description: CS Simplified - Academic Learning Platform
 publish_to: 'none'
-version: 1.0.2+3
+version: 1.0.3+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -35,6 +35,9 @@ dependencies:
   share_plus: ^9.0.0
   open_filex: ^4.3.4
   gal: ^2.3.0   # Phase 1.5D-C: save share cards to gallery (actively maintained, supports AGP 8+ and modern Flutter/Kotlin)
+
+  # ── AI Tutor Phase 2 ──────────────────────────────────────────────────────
+  image_picker: ^1.1.2   # Pick images from camera/gallery for AI image question solving
 
 dev_dependencies:
   flutter_test:

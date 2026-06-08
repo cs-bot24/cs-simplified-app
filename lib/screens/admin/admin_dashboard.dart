@@ -389,6 +389,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       icon: Icons.people_rounded,
                       color: Colors.deepPurple,
                     ),
+                    _StatCard(
+                      label: 'AI This Month',
+                      value: '${stats.aiQuestionsMonth}',
+                      icon: Icons.calendar_month_rounded,
+                      color: Colors.teal,
+                    ),
                   ],
                 ),
                 if (stats.mostActiveAiUsers.isNotEmpty) ...[ 
@@ -410,6 +416,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           Text('${u['questions']} questions',
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey[500])),
+                        ]),
+                      )),
+                ],
+                if (stats.topSubjects.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text('Top Subjects Asked',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  ...stats.topSubjects.map((s) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(children: [
+                          const Icon(Icons.school_rounded, size: 14, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(s['subject'] ?? '',
+                              style: const TextStyle(fontSize: 13))),
+                          Text('${s['count']}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey[500])),
                         ]),
                       )),
                 ],

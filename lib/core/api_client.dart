@@ -852,13 +852,56 @@ class ApiClient {
   // ── AI Tutor (Phase 2.0) ──────────────────────────────────────────────────
 
   /// Submit an academic question to the AI Tutor.
-  /// Returns a map with keys: question, response, conversation_id, created_at.
-  static Future<Map<String, dynamic>> askAi(String question) async {
+  /// Returns a map with keys: question, response, subject, conversation_id, created_at.
+  static Future<Map<String, dynamic>> askAi({
+    required String question,
+    String mode          = 'normal',
+    String level         = 'intermediate',
+    String? imageBase64,
+    String? imageMimeType,
+  }) async {
     try {
+      final body = <String, dynamic>{
+        'question':          question,
+        'mode':              mode,
+        'explanation_level': level,
+        if (imageBase64   != null) 'image_base64':    imageBase64,
+        if (imageMimeType != null) 'image_mime_type': imageMimeType,
+      };
       final res = await http.post(
         Uri.parse('$_base/ai/ask'),
         headers: _headers(auth: true),
-        body: jsonEncode({'question': question}),
+        body: jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Generate practice questions on a topic.
+  static Future<Map<String, dynamic>> generatePracticeQuestions({
+    required String topic,
+    String level = 'intermediate',
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/ai/practice'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'question': topic, 'explanation_level': level}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Generate study notes on a topic.
+  static Future<Map<String, dynamic>> generateStudyNotes({
+    required String topic,
+    String level = 'intermediate',
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/ai/study-notes'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'question': topic, 'explanation_level': level}),
       );
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
@@ -873,6 +916,34 @@ class ApiClient {
       );
       final data = _handle(res);
       return data is List ? data : [];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Get today's usage stats and preferences.
+  static Future<Map<String, dynamic>> getAiUsage() async {
+    try {
+      final res = await http.get(Uri.parse('$_base/ai/usage'), headers: _headers(auth: true));
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Update the user's preferred explanation level.
+  static Future<void> updateAiPreferences(String level) async {
+    try {
+      final res = await http.put(
+        Uri.parse('$_base/ai/preferences'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'explanation_level': level}),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Get the user's current plan and feature flags.
+  static Future<Map<String, dynamic>> getAiPlan() async {
+    try {
+      final res = await http.get(Uri.parse('$_base/ai/plan'), headers: _headers(auth: true));
+      return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 }

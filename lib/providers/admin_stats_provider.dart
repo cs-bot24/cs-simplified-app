@@ -25,8 +25,10 @@ class AdminStatsProvider extends ChangeNotifier {
   // ── AI Tutor stats (Phase 2.0) ─────────────────────────────────────────────
   int  get totalAiQuestions  => (_stats['total_ai_questions']  as num?)?.toInt() ?? 0;
   int  get aiQuestionsToday  => (_stats['ai_questions_today']  as num?)?.toInt() ?? 0;
+  int  get aiQuestionsMonth  => (_stats['ai_questions_month']  as num?)?.toInt() ?? 0;
   int  get premiumAiUsers    => (_stats['premium_ai_users']    as num?)?.toInt() ?? 0;
   List get mostActiveAiUsers => (_stats['most_active_ai_users'] as List?) ?? [];
+  List get topSubjects        => (_stats['top_subjects']        as List?) ?? [];
 
   List get topMaterials            => (_stats['top_materials']             as List?) ?? [];
   List get recentUploads           => (_stats['recent_uploads']            as List?) ?? [];
