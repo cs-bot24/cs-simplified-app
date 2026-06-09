@@ -1,13 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # codemagic.yaml — CS Simplified
 #
-# Required — set these in Codemagic UI → Teams → Environment variables:
+# Environment variable groups required in Codemagic App Settings:
 #
-#   Group name: github
+#   Group: github
+#     GITHUB_TOKEN   → GitHub Personal Access Token (repo scope) — Secret
+#     GITHUB_REPO    → cs-bot24/cs-simplified-app
 #
-#   GITHUB_TOKEN  →  Your GitHub Personal Access Token (repo scope) — mark Secret
-#   GITHUB_REPO   →  cs-bot24/cs-simplified-app
-#
+#   Group: keystore
+#     CM_KEYSTORE        → base64-encoded cs_simplified.jks — Secret
+#     KEY_ALIAS          → cs_simplified
+#     KEY_PASSWORD       → your key password — Secret
+#     KEYSTORE_PASSWORD  → your keystore password — Secret
 # ─────────────────────────────────────────────────────────────────────────────
 
 workflows:
@@ -22,6 +26,7 @@ workflows:
       java: 17
       groups:
         - github
+        - keystore
 
     triggering:
       events:
@@ -48,7 +53,40 @@ workflows:
             --build-name=$(grep "^version:" pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1) \
             --build-number=${CM_BUILD_NUMBER:-1}
 
-      # ── 4. Publish to GitHub Releases ──────────────────────────────────────
+      # ── 4. Sign APK with your keystore ─────────────────────────────────────
+      # CM_KEYSTORE is base64-encoded. We decode it to a temp .jks file first,
+      # then sign the APK with apksigner, then delete the temp file.
+      - name: Sign APK
+        script: |
+          APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
+          KEYSTORE_PATH="/tmp/cs_simplified.jks"
+
+          # Decode base64 keystore to a real .jks file
+          echo "$CM_KEYSTORE" | base64 --decode > "$KEYSTORE_PATH"
+
+          # Find the latest available build-tools version automatically
+          BUILD_TOOLS=$(ls "$ANDROID_SDK_ROOT/build-tools" | sort -V | tail -1)
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/apksigner"
+
+          echo "Using build-tools: $BUILD_TOOLS"
+          echo "Key alias: $KEY_ALIAS"
+
+          # Sign in-place
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            "$APK_PATH"
+
+          # Verify
+          "$APKSIGNER" verify --verbose "$APK_PATH"
+          echo "✅ APK signed successfully."
+
+          # Clean up temp keystore
+          rm -f "$KEYSTORE_PATH"
+
+      # ── 5. Publish to GitHub Releases ──────────────────────────────────────
       - name: Publish to GitHub Releases
         script: |
           set -e
