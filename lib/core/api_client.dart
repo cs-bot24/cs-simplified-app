@@ -855,18 +855,30 @@ class ApiClient {
   /// Returns a map with keys: question, response, subject, conversation_id, created_at.
   static Future<Map<String, dynamic>> askAi({
     required String question,
-    String mode          = 'normal',
-    String level         = 'intermediate',
+    String mode               = 'normal',
+    String level              = 'intermediate',
     String? imageBase64,
     String? imageMimeType,
+    // ── PDF Reader context (Phase 2C) ──────────────────────────────────────
+    // Pass these when the question originates from inside the PDF viewer.
+    int?    pdfMaterialId,
+    String? pdfMaterialTitle,
+    String? pdfCourseCode,
+    String? pdfLevelName,
+    String? pdfCategoryName,
   }) async {
     try {
       final body = <String, dynamic>{
         'question':          question,
         'mode':              mode,
         'explanation_level': level,
-        if (imageBase64   != null) 'image_base64':    imageBase64,
-        if (imageMimeType != null) 'image_mime_type': imageMimeType,
+        if (imageBase64       != null) 'image_base64':       imageBase64,
+        if (imageMimeType     != null) 'image_mime_type':    imageMimeType,
+        if (pdfMaterialId     != null) 'pdf_material_id':    pdfMaterialId,
+        if (pdfMaterialTitle  != null) 'pdf_material_title': pdfMaterialTitle,
+        if (pdfCourseCode     != null) 'pdf_course_code':    pdfCourseCode,
+        if (pdfLevelName      != null) 'pdf_level_name':     pdfLevelName,
+        if (pdfCategoryName   != null) 'pdf_category_name':  pdfCategoryName,
       };
       final res = await http.post(
         Uri.parse('$_base/ai/ask'),

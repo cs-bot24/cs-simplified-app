@@ -79,6 +79,70 @@ class AiProvider extends ChangeNotifier {
     await _sendRequest(question: question);
   }
 
+  // ── Ask from inside the PDF Reader (Phase 2C) ─────────────────────────────
+  // Identical to ask() but forwards course context so the AI knows
+  // which material the student is currently reading.
+  Future<void> askFromPdf({
+    required String question,
+    int?    materialId,
+    String? materialTitle,
+    String? courseCode,
+    String? levelName,
+    String? categoryName,
+  }) async {
+    await _sendRequest(
+      question:        question,
+      pdfMaterialId:   materialId,
+      pdfMaterialTitle: materialTitle,
+      pdfCourseCode:   courseCode,
+      pdfLevelName:    levelName,
+      pdfCategoryName: categoryName,
+    );
+  }
+
+  // ── Generate page-level content from inside PDF Reader ────────────────────
+  // Used by Explain Page, Generate Notes, Quiz Me buttons.
+  // The page text is injected directly as the question body.
+  Future<String?> generateFromPageText({
+    required String pageText,
+    required String action,   // 'explain' | 'notes' | 'quiz'
+    String? materialTitle,
+    String? courseCode,
+  }) async {
+    _state = AiState.loading;
+    _error = null;
+    notifyListeners();
+
+    final prompt = switch (action) {
+      'explain' => 'Summarise and explain the following course material. '
+          'Extract key concepts, definitions, and anything important for exams:\n\n$pageText',
+      'notes' => 'Generate structured study notes from the following course material. '
+          'Include: Key Concepts, Definitions, Important Points, and Exam Tips:\n\n$pageText',
+      'quiz' => 'Generate 5 exam-style questions (mix of multiple choice and short answer) '
+          'based on the following course material. Include correct answers:\n\n$pageText',
+      _ => pageText,
+    };
+
+    try {
+      final data = await ApiClient.askAi(
+        question:         prompt,
+        mode:             'normal',
+        level:            _level.name,
+        pdfMaterialTitle: materialTitle,
+        pdfCourseCode:    courseCode,
+      );
+      _state = AiState.idle;
+      notifyListeners();
+      return data['response'] as String?;
+    } on ApiException catch (e) {
+      _error = e.message; _state = AiState.error; notifyListeners();
+    } catch (_) {
+      _error = 'Could not process request. Please try again.';
+      _state = AiState.error; notifyListeners();
+    }
+    return null;
+  }
+
   // ── Ask with image ────────────────────────────────────────────────────────
 
   Future<void> askWithImage(File imageFile, {String extraText = ''}) async {
@@ -148,6 +212,12 @@ class AiProvider extends ChangeNotifier {
     String? imageBase64,
     String? imageMimeType,
     bool isImage = false,
+    // PDF Reader context — forwarded straight to the API
+    int?    pdfMaterialId,
+    String? pdfMaterialTitle,
+    String? pdfCourseCode,
+    String? pdfLevelName,
+    String? pdfCategoryName,
   }) async {
     final trimmed = question.trim();
     if (trimmed.isEmpty && imageBase64 == null) return;
@@ -167,11 +237,16 @@ class AiProvider extends ChangeNotifier {
 
     try {
       final data = await ApiClient.askAi(
-        question:      trimmed,
-        mode:          _mode == AiMode.examPrep ? 'exam_prep' : 'normal',
-        level:         _level.name,
-        imageBase64:   imageBase64,
-        imageMimeType: imageMimeType,
+        question:        trimmed,
+        mode:            _mode == AiMode.examPrep ? 'exam_prep' : 'normal',
+        level:           _level.name,
+        imageBase64:     imageBase64,
+        imageMimeType:   imageMimeType,
+        pdfMaterialId:   pdfMaterialId,
+        pdfMaterialTitle: pdfMaterialTitle,
+        pdfCourseCode:   pdfCourseCode,
+        pdfLevelName:    pdfLevelName,
+        pdfCategoryName: pdfCategoryName,
       );
       _messages.add(AiMessage(
         text:      data['response'] as String,
