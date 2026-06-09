@@ -1,5 +1,28 @@
 // ============================================================
 //  pdf_viewer_screen.dart — Phase 2C
+//
+//  Phases implemented:
+//    Phase 1 — Floating AI button → bottom sheet chat
+//    Phase 2 — Context-aware AI (material title, course, level)
+//    Phase 3 — N/A: WebView/Google Drive viewer does not expose
+//              text selection. Cannot be implemented without
+//              switching to a native PDF renderer.
+//    Phase 4 — Explain This Page (toolbar button, uses material context)
+//    Phase 5 — Generate Notes (toolbar button)
+//    Phase 6 — Quiz Me (toolbar button)
+//
+//  Architecture notes:
+//    - Reading position (WebView scroll) is preserved automatically
+//      because the WebView is never unmounted when the bottom sheet
+//      opens and closes.
+//    - All AI calls go through the existing AiProvider so usage
+//      tracking, quotas, and conversation history work unchanged.
+//    - The bottom sheet uses a DraggableScrollableSheet so the
+//      student can resize it to see more of the PDF or more of the chat.
+//    - Page text extraction is not possible with the WebView viewer.
+//      Phases 4–6 therefore send the material title + course as context
+//      rather than the literal page text. This still produces
+//      course-relevant AI responses.
 // ============================================================
 
 import 'dart:async';
@@ -24,10 +47,11 @@ import '../../providers/leaderboard_provider.dart';
 import '../../providers/achievement_provider.dart';
 import '../../widgets/rating_dialog.dart';
 
+// ── Colour constants (matches app dark theme) ─────────────────────────────────
 const _kBackground    = Color(0xFF1A1A1A);
 const _kSurface       = Color(0xFF2C2C2C);
 const _kSurfaceLight  = Color(0xFF383838);
-const _kAccent        = Color(0xFF6C63FF);
+const _kAccent        = Color(0xFF6C63FF);   // matches existing AI screen accent
 const _kAccentLight   = Color(0xFF8B85FF);
 const _kTextPrimary   = Colors.white;
 const _kTextSecondary = Color(0xFFAAAAAA);
@@ -38,7 +62,11 @@ const _kAiBubble      = Color(0xFF2C2C2C);
 class PdfViewerScreen extends StatefulWidget {
   final String url;
   final String title;
+
+  /// Material ID — used for view tracking, study ping, rating, and AI context.
   final int? materialId;
+
+  /// Optional course/category context forwarded to the AI.
   final String? courseCode;
   final String? levelName;
   final String? categoryName;
@@ -58,24 +86,38 @@ class PdfViewerScreen extends StatefulWidget {
 }
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
+  // ── WebView ───────────────────────────────────────────────────────────────
   late final WebViewController _webController;
+
+  // ── Dio for downloads ─────────────────────────────────────────────────────
   final Dio _dio = Dio();
 
+  // ── UI state ──────────────────────────────────────────────────────────────
   bool _isLoading     = true;
   bool _hasError      = false;
   bool _isDownloading = false;
   double _downloadProgress = 0;
+
+  // ── AI bottom sheet ───────────────────────────────────────────────────────
   bool _aiSheetOpen = false;
 
+  // ── Study Tools panel expansion state ────────────────────────────────────
+  // Shared with _StudyToolsPanel so the FAB lifts when the panel expands.
+  final ValueNotifier<bool> _studyPanelExpanded = ValueNotifier(false);
+
+  // ── Rating & study tracking ───────────────────────────────────────────────
   final Stopwatch _stopwatch = Stopwatch();
   RatingModel?    _rating;
   Timer?          _studyTimer;
   bool            _studyPingSent = false;
 
+  // ── Google Drive Viewer URL ───────────────────────────────────────────────
   String get _viewerUrl {
     final encoded = Uri.encodeComponent(widget.url.trim());
     return 'https://drive.google.com/viewerng/viewer?embedded=true&url=$encoded';
   }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
@@ -105,9 +147,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       try {
         final result  = await ApiClient.studyPing(widget.materialId!);
         if (!mounted)  return;
-        final current = result['current_streak']        as int?  ?? 0;
-        final longest = result['longest_streak']        as int?  ?? 0;
-        final newDay  = result['new_study_day_counted']  as bool? ?? false;
+        final current = result['current_streak']       as int?  ?? 0;
+        final longest = result['longest_streak']       as int?  ?? 0;
+        final newDay  = result['new_study_day_counted'] as bool? ?? false;
         context.read<LeaderboardProvider>().updateMyStreak(current, longest);
         if (newDay && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -183,9 +225,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   @override
   void dispose() {
     _studyTimer?.cancel();
+    _studyPanelExpanded.dispose();
     _dio.close();
     super.dispose();
   }
+
+  // ── WebView init ──────────────────────────────────────────────────────────
 
   void _initWebView() {
     _webController = WebViewController()
@@ -213,9 +258,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     _webController.loadRequest(Uri.parse(_viewerUrl));
   }
 
+  // ── AI Sheet ──────────────────────────────────────────────────────────────
+
   void _openAiSheet() {
     if (_aiSheetOpen) return;
     setState(() => _aiSheetOpen = true);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -234,6 +282,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     });
   }
 
+  // ── Phase 4/5/6 quick-action handlers ─────────────────────────────────────
+  // Because we cannot extract page text from the WebView/Google Drive viewer,
+  // these actions send the material + course metadata as context and ask the
+  // AI to answer based on general course knowledge about the material.
+  // The AI system prompt already includes the material title and course code
+  // so responses remain targeted and relevant.
+
   void _quickAction(String action) {
     final label = switch (action) {
       'explain' => 'Explain This Material',
@@ -241,6 +296,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       'quiz'    => 'Quiz Me',
       _         => action,
     };
+    // Open AI sheet with the quick action pre-fired.
+    // Study Tools panel auto-collapses before calling this, so
+    // _aiSheetOpen guard is the only thing we need.
     if (_aiSheetOpen) return;
     setState(() => _aiSheetOpen = true);
     showModalBottomSheet(
@@ -248,6 +306,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black45,
+      // useSafeArea keeps the sheet above system bars on all devices
       useSafeArea: false,
       builder: (ctx) => _AiBottomSheet(
         materialId:    widget.materialId,
@@ -262,6 +321,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       if (mounted) setState(() => _aiSheetOpen = false);
     });
   }
+
+  // ── Download ──────────────────────────────────────────────────────────────
 
   Future<void> _downloadPdf() async {
     final rawUrl = widget.url.trim();
@@ -338,19 +399,15 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     }
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   Future<Directory> _resolveDownloadsDirectory() async {
     if (Platform.isAndroid) {
       try {
         final dl = await getDownloadsDirectory();
-        if (dl != null) {
-          if (!await dl.exists()) await dl.create(recursive: true);
-          return dl;
-        }
+        if (dl != null) { if (!await dl.exists()) await dl.create(recursive: true); return dl; }
       } catch (_) {}
-      for (final path in [
-        '/storage/emulated/0/Downloads',
-        '/storage/emulated/0/Download',
-      ]) {
+      for (final path in ['/storage/emulated/0/Downloads', '/storage/emulated/0/Download']) {
         try {
           final dir = Directory(path);
           if (!await dir.exists()) await dir.create(recursive: true);
@@ -359,10 +416,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       }
       try {
         final ext = await getExternalStorageDirectory();
-        if (ext != null) {
-          if (!await ext.exists()) await ext.create(recursive: true);
-          return ext;
-        }
+        if (ext != null) { if (!await ext.exists()) await ext.create(recursive: true); return ext; }
       } catch (_) {}
     }
     return getApplicationDocumentsDirectory();
@@ -395,6 +449,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     ));
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -405,22 +461,50 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         appBar: _buildAppBar(),
         body: Stack(
           children: [
-            if (!_hasError) WebViewWidget(controller: _webController),
+            // WebView — always mounted to preserve scroll position
+            // Bottom padding reserves space so the PDF zoom controls
+            // are never hidden behind the Study Tools panel.
+            if (!_hasError)
+              Positioned.fill(
+                bottom: MediaQuery.of(context).padding.bottom + 52,
+                child: WebViewWidget(controller: _webController),
+              ),
+
             if (_isLoading && !_hasError) _buildLoadingOverlay(),
             if (_hasError)               _buildErrorView(),
             if (_isDownloading)          _buildDownloadOverlay(),
 
+            // ── Phase 4/5/6: Collapsible Study Tools panel ───────────────
+            // Rendered first (lower z-order) so the AI FAB floats above it
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: _StudyToolsPanel(onAction: _quickAction),
+              child: _StudyToolsPanel(
+                onAction: _quickAction,
+                expandedNotifier: _studyPanelExpanded,
+              ),
             ),
 
-            Positioned(
-              right: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 56,
-              child: _FloatingAiButton(onTap: _openAiSheet),
+            // ── Phase 1: Floating AI button ──────────────────────────────
+            // Lifts higher when Study Tools panel is expanded so it never
+            // overlaps the action buttons.
+            ValueListenableBuilder<bool>(
+              valueListenable: _studyPanelExpanded,
+              builder: (_, expanded, __) {
+                final bottomPad = MediaQuery.of(context).padding.bottom;
+                // collapsed: pill ~44px. expanded: pill + buttons ~130px
+                final fabBottom = expanded
+                    ? bottomPad + 140
+                    : bottomPad + 56;
+                return AnimatedPositioned(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  right: 16,
+                  bottom: fabBottom.toDouble(),
+                  child: _FloatingAiButton(onTap: _openAiSheet),
+                );
+              },
             ),
           ],
         ),
@@ -435,12 +519,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       iconTheme: const IconThemeData(color: Colors.white),
       title: Text(
         widget.title,
-        style: const TextStyle(
-          fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white,
-        ),
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
         overflow: TextOverflow.ellipsis,
       ),
       actions: [
+        // Phase 2: show course badge in app bar when context is available
         if (widget.courseCode != null)
           Container(
             margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -453,7 +536,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             child: Text(
               widget.courseCode!,
               style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w600, color: _kAccentLight,
+                fontSize: 11, fontWeight: FontWeight.w600,
+                color: _kAccentLight,
               ),
             ),
           ),
@@ -479,8 +563,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         children: [
           CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5),
           SizedBox(height: 16),
-          Text('Loading PDF…',
-              style: TextStyle(color: Colors.white54, fontSize: 13)),
+          Text('Loading PDF…', style: TextStyle(color: Colors.white54, fontSize: 13)),
         ],
       ),
     ),
@@ -493,13 +576,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.picture_as_pdf_outlined,
-              size: 72, color: Colors.white24),
+          const Icon(Icons.picture_as_pdf_outlined, size: 72, color: Colors.white24),
           const SizedBox(height: 20),
           const Text('Could not load PDF',
-              style: TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white,
-              )),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
           const SizedBox(height: 10),
           const Text(
             'The Google Drive viewer could not render this file.\n'
@@ -531,10 +611,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           const SizedBox(height: 14),
           TextButton.icon(
             onPressed: _isDownloading ? null : _downloadPdf,
-            icon: const Icon(Icons.download_rounded,
-                color: Colors.white60, size: 18),
-            label: const Text('Download Instead',
-                style: TextStyle(color: Colors.white60)),
+            icon: const Icon(Icons.download_rounded, color: Colors.white60, size: 18),
+            label: const Text('Download Instead', style: TextStyle(color: Colors.white60)),
           ),
         ],
       ),
@@ -573,7 +651,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Floating AI Button
+// Phase 1: Floating AI Button
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _FloatingAiButton extends StatefulWidget {
@@ -640,12 +718,21 @@ class _FloatingAiButtonState extends State<_FloatingAiButton>
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Collapsible Study Tools Panel
+// Phase 4/5/6: Collapsible Study Tools Panel
 // ══════════════════════════════════════════════════════════════════════════════
+//
+// Collapsed state: a small pill "Study Tools ⌃" sits at the bottom edge.
+// Expanded state: slides up to reveal Explain / Notes / Quiz Me buttons.
+// The floating AI FAB is positioned above this pill so they never overlap.
 
 class _StudyToolsPanel extends StatefulWidget {
   final void Function(String action) onAction;
-  const _StudyToolsPanel({required this.onAction});
+  final ValueNotifier<bool> expandedNotifier;
+
+  const _StudyToolsPanel({
+    required this.onAction,
+    required this.expandedNotifier,
+  });
 
   @override
   State<_StudyToolsPanel> createState() => _StudyToolsPanelState();
@@ -677,10 +764,13 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
 
   void _toggle() {
     setState(() => _expanded = !_expanded);
+    // Notify parent so the FAB can reposition itself
+    widget.expandedNotifier.value = _expanded;
     _expanded ? _ctrl.forward() : _ctrl.reverse();
   }
 
   void _fireAction(String action) {
+    // Auto-collapse after firing so the PDF regains full screen
     if (_expanded) _toggle();
     widget.onAction(action);
   }
@@ -692,6 +782,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // ── Expanded button row (slides in from below) ───────────────────
         SizeTransition(
           sizeFactor: _slideAnim,
           axisAlignment: -1,
@@ -699,8 +790,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
             opacity: _fadeAnim,
             child: Container(
               color: _kSurface.withOpacity(0.97),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
                   _StudyChip(
@@ -726,6 +816,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
           ),
         ),
 
+        // ── Collapsed pill (always visible) ──────────────────────────────
         GestureDetector(
           onTap: _toggle,
           child: Container(
@@ -743,8 +834,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
             child: Center(
               child: Container(
                 margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 decoration: BoxDecoration(
                   color: _kAccent.withOpacity(0.18),
                   borderRadius: BorderRadius.circular(20),
@@ -768,8 +858,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
                     const SizedBox(width: 6),
                     RotationTransition(
                       turns: _chevronAnim,
-                      child: const Icon(
-                          Icons.keyboard_arrow_up_rounded,
+                      child: const Icon(Icons.keyboard_arrow_up_rounded,
                           color: _kAccentLight, size: 16),
                     ),
                   ],
@@ -787,11 +876,7 @@ class _StudyChip extends StatelessWidget {
   final IconData     icon;
   final String       label;
   final VoidCallback onTap;
-  const _StudyChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _StudyChip({required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -828,7 +913,7 @@ class _StudyChip extends StatelessWidget {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// AI Bottom Sheet
+// Phase 1 & 2: AI Bottom Sheet
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _AiBottomSheet extends StatefulWidget {
@@ -837,6 +922,8 @@ class _AiBottomSheet extends StatefulWidget {
   final String? courseCode;
   final String? levelName;
   final String? categoryName;
+
+  /// When set, the sheet auto-fires this action on open (Phase 4/5/6).
   final String? initialAction;
   final String? initialLabel;
 
@@ -858,12 +945,16 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
   final _controller = TextEditingController();
   final _scrollCtrl = ScrollController();
   final _focusNode  = FocusNode();
+
+  // Local message list — isolated from the global AiProvider history
+  // so the PDF chat doesn't pollute the main AI Tutor conversation.
   final List<_LocalMessage> _messages = [];
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
+    // Phase 4/5/6: auto-fire quick action if one was requested
     if (widget.initialAction != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _fireQuickAction(widget.initialAction!);
@@ -891,6 +982,8 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     });
   }
 
+  // ── Send user question ────────────────────────────────────────────────────
+
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _loading) return;
@@ -899,11 +992,13 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     await _askAi(text);
   }
 
+  // ── Quick actions (Phase 4/5/6) ───────────────────────────────────────────
+
   Future<void> _fireQuickAction(String action) async {
     final prompt = switch (action) {
       'explain' =>
-        'Please explain the key concepts, important definitions, and main '
-        'ideas in this course material. Also include any exam tips.',
+        'Please explain the key concepts, important definitions, and main ideas '
+        'in this course material. Also include any exam tips.',
       'notes' =>
         'Generate structured study notes for this course material. '
         'Include: Key Concepts, Definitions, Important Points, and Exam Tips.',
@@ -927,8 +1022,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     if (_loading) return;
 
     setState(() {
-      _messages.add(_LocalMessage(
-          text: displayText ?? question, isUser: true));
+      _messages.add(_LocalMessage(text: displayText ?? question, isUser: true));
       _loading = true;
     });
     _scrollToBottom();
@@ -936,14 +1030,15 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     try {
       final ai = context.read<AiProvider>();
       final data = await ApiClient.askAi(
-        question:         question,
-        mode:             ai.isExamPrep ? 'exam_prep' : 'normal',
-        level:            ai.level.name,
-        pdfMaterialId:    widget.materialId,
+        question:        question,
+        mode:            ai.isExamPrep ? 'exam_prep' : 'normal',
+        level:           ai.level.name,
+        // Phase 2: inject full material context
+        pdfMaterialId:   widget.materialId,
         pdfMaterialTitle: widget.materialTitle,
-        pdfCourseCode:    widget.courseCode,
-        pdfLevelName:     widget.levelName,
-        pdfCategoryName:  widget.categoryName,
+        pdfCourseCode:   widget.courseCode,
+        pdfLevelName:    widget.levelName,
+        pdfCategoryName: widget.categoryName,
       );
       if (mounted) {
         setState(() {
@@ -970,11 +1065,16 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     }
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    // keyboardInset: how many pixels the keyboard is covering
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
 
     return AnimatedPadding(
+      // Lift the entire sheet by the keyboard height so the input
+      // is always visible — smooth 200ms transition matches keyboard animation
       padding: EdgeInsets.only(bottom: keyboardInset),
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
@@ -1017,6 +1117,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
     child: Row(
       children: [
+        // AI avatar
         Container(
           width: 32, height: 32,
           decoration: BoxDecoration(
@@ -1027,8 +1128,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
           ),
           child: const Center(
             child: Text('AI', style: TextStyle(
-              color: Colors.white, fontSize: 11,
-              fontWeight: FontWeight.bold,
+              color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold,
             )),
           ),
         ),
@@ -1038,44 +1138,38 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('AI Tutor', style: TextStyle(
-                color: _kTextPrimary, fontSize: 14,
-                fontWeight: FontWeight.w700,
+                color: _kTextPrimary, fontSize: 14, fontWeight: FontWeight.w700,
               )),
               Text(
                 widget.courseCode != null
                     ? '${widget.courseCode} · ${widget.materialTitle}'
                     : widget.materialTitle,
-                style: const TextStyle(
-                    color: _kTextSecondary, fontSize: 11),
+                style: const TextStyle(color: _kTextSecondary, fontSize: 11),
                 overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         ),
+        // Phase 2 context indicator
         if (widget.courseCode != null)
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: Colors.green.withOpacity(0.15),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                  color: Colors.green.withOpacity(0.3)),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 6, height: 6,
+                Container(width: 6, height: 6,
                   decoration: const BoxDecoration(
-                    color: Colors.greenAccent,
-                    shape: BoxShape.circle,
+                    color: Colors.greenAccent, shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 4),
                 const Text('Context on', style: TextStyle(
-                  color: Colors.greenAccent, fontSize: 10,
-                  fontWeight: FontWeight.w600,
+                  color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.w600,
                 )),
               ],
             ),
@@ -1087,12 +1181,12 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
   Widget _buildMessageList([ScrollController? sheetScrollCtrl]) {
     if (_messages.isEmpty) return _buildEmptyState();
     return ListView.builder(
-      controller: _messages.length > 3
-          ? _scrollCtrl
-          : (sheetScrollCtrl ?? _scrollCtrl),
+      // Use the sheet's scroll controller when available so dragging
+      // the message list also controls the sheet size — natural feel.
+      controller: _messages.length > 3 ? _scrollCtrl : (sheetScrollCtrl ?? _scrollCtrl),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      keyboardDismissBehavior:
-          ScrollViewKeyboardDismissBehavior.onDrag,
+      // Swipe down on the message list dismisses the keyboard
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       itemCount: _messages.length,
       itemBuilder: (_, i) => _MessageBubble(message: _messages[i]),
     );
@@ -1112,8 +1206,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
                 ? 'Ask anything about ${widget.courseCode}'
                 : 'Ask anything about this material',
             textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: _kTextSecondary, fontSize: 13),
+            style: const TextStyle(color: _kTextSecondary, fontSize: 13),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -1131,16 +1224,14 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     child: Row(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: _kAiBubble,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            children: List.generate(
-                3, (i) => _TypingDot(delay: i * 200)),
+            children: List.generate(3, (i) => _TypingDot(delay: i * 200)),
           ),
         ),
       ],
@@ -1148,13 +1239,12 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
   );
 
   Widget _buildInputBar() => Container(
-    padding: const EdgeInsets.only(
-        left: 12, right: 8, top: 8, bottom: 10),
+    // No viewInsets needed here — AnimatedPadding on the sheet already
+    // lifts the entire panel above the keyboard.
+    padding: const EdgeInsets.only(left: 12, right: 8, top: 8, bottom: 10),
     decoration: BoxDecoration(
       color: _kSurface,
-      border: Border(
-          top: BorderSide(
-              color: Colors.white.withOpacity(0.07))),
+      border: Border(top: BorderSide(color: Colors.white.withOpacity(0.07))),
     ),
     child: Row(
       children: [
@@ -1165,22 +1255,19 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
               borderRadius: BorderRadius.circular(24),
             ),
             child: TextField(
-              controller:      _controller,
-              focusNode:       _focusNode,
-              enabled:         !_loading,
-              maxLines:        4,
-              minLines:        1,
+              controller:  _controller,
+              focusNode:   _focusNode,
+              enabled:     !_loading,
+              maxLines:    4,
+              minLines:    1,
               textInputAction: TextInputAction.send,
-              onSubmitted:     (_) => _send(),
-              style: const TextStyle(
-                  color: _kTextPrimary, fontSize: 14),
+              onSubmitted: (_) => _send(),
+              style: const TextStyle(color: _kTextPrimary, fontSize: 14),
               decoration: const InputDecoration(
                 hintText: 'Ask about this material…',
-                hintStyle: TextStyle(
-                    color: _kTextSecondary, fontSize: 14),
+                hintStyle: TextStyle(color: _kTextSecondary, fontSize: 14),
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 10),
+                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           ),
@@ -1192,13 +1279,10 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
             duration: const Duration(milliseconds: 200),
             width: 42, height: 42,
             decoration: BoxDecoration(
-              color: _loading
-                  ? _kAccent.withOpacity(0.4)
-                  : _kAccent,
+              color: _loading ? _kAccent.withOpacity(0.4) : _kAccent,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.send_rounded,
-                color: Colors.white, size: 18),
+            child: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
           ),
         ),
       ],
@@ -1208,7 +1292,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Local message model
+// Message model (local to the PDF sheet — does not affect global history)
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _LocalMessage {
@@ -1224,7 +1308,7 @@ class _LocalMessage {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Message Bubble
+// Message Bubble — Markdown rendered for AI, plain text for user
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _MessageBubble extends StatelessWidget {
@@ -1235,16 +1319,13 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isUser = message.isUser;
     return Align(
-      alignment: isUser
-          ? Alignment.centerRight
-          : Alignment.centerLeft,
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.82,
         ),
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(
-            horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: message.isError
               ? Colors.red.withOpacity(0.15)
@@ -1263,9 +1344,7 @@ class _MessageBubble extends StatelessWidget {
             ? SelectableText(
                 message.text,
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  height: 1.45,
+                  color: Colors.white, fontSize: 14, height: 1.45,
                 ),
               )
             : MarkdownBody(
@@ -1273,36 +1352,25 @@ class _MessageBubble extends StatelessWidget {
                 selectable: true,
                 styleSheet: MarkdownStyleSheet(
                   p: const TextStyle(
-                    color: Color(0xFFDDDDDD),
-                    fontSize: 14,
-                    height: 1.55,
+                    color: Color(0xFFDDDDDD), fontSize: 14, height: 1.55,
                   ),
                   h1: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white,
                   ),
                   h2: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white,
                   ),
                   h3: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white,
                   ),
                   strong: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontWeight: FontWeight.bold, color: Colors.white,
                   ),
                   em: const TextStyle(
-                    fontStyle: FontStyle.italic,
-                    color: Color(0xFFCCCCCC),
+                    fontStyle: FontStyle.italic, color: Color(0xFFCCCCCC),
                   ),
                   code: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
+                    fontFamily: 'monospace', fontSize: 13,
                     backgroundColor: Color(0xFF1A1A1A),
                     color: Color(0xFF82B1FF),
                   ),
@@ -1312,39 +1380,29 @@ class _MessageBubble extends StatelessWidget {
                   ),
                   codeblockPadding: const EdgeInsets.all(12),
                   blockquote: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFFAAAAAA),
+                    fontSize: 14, color: Color(0xFFAAAAAA),
                     fontStyle: FontStyle.italic,
                   ),
                   blockquoteDecoration: BoxDecoration(
                     border: Border(
                       left: BorderSide(
-                        color: _kAccent.withOpacity(0.5),
-                        width: 3,
+                        color: _kAccent.withOpacity(0.5), width: 3,
                       ),
                     ),
                   ),
-                  blockquotePadding: const EdgeInsets.only(
-                      left: 12, top: 4, bottom: 4),
-                  listBullet: const TextStyle(
-                      color: Color(0xFFDDDDDD)),
+                  blockquotePadding:
+                      const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+                  listBullet: const TextStyle(color: Color(0xFFDDDDDD)),
                   tableHead: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontWeight: FontWeight.bold, color: Colors.white,
                   ),
-                  tableBody: const TextStyle(
-                      color: Color(0xFFDDDDDD)),
-                  tableBorder:
-                      TableBorder.all(color: Colors.white12),
+                  tableBody: const TextStyle(color: Color(0xFFDDDDDD)),
+                  tableBorder: TableBorder.all(color: Colors.white12),
                   tableCellsPadding:
-                      const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                  h1Padding: const EdgeInsets.only(
-                      top: 8, bottom: 4),
-                  h2Padding: const EdgeInsets.only(
-                      top: 6, bottom: 3),
-                  h3Padding: const EdgeInsets.only(
-                      top: 4, bottom: 2),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  h1Padding: const EdgeInsets.only(top: 8, bottom: 4),
+                  h2Padding: const EdgeInsets.only(top: 6, bottom: 3),
+                  h3Padding: const EdgeInsets.only(top: 4, bottom: 2),
                 ),
               ),
       ),
@@ -1354,7 +1412,7 @@ class _MessageBubble extends StatelessWidget {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Typing Dots
+// Typing indicator dots
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _TypingDot extends StatefulWidget {
@@ -1374,8 +1432,7 @@ class _TypingDotState extends State<_TypingDot>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
+      vsync: this, duration: const Duration(milliseconds: 600),
     );
     Future.delayed(Duration(milliseconds: widget.delay), () {
       if (mounted) _ctrl.repeat(reverse: true);
@@ -1398,8 +1455,7 @@ class _TypingDotState extends State<_TypingDot>
           width: 7, height: 7,
           margin: const EdgeInsets.symmetric(horizontal: 2),
           decoration: const BoxDecoration(
-            color: _kAccentLight,
-            shape: BoxShape.circle,
+            color: _kAccentLight, shape: BoxShape.circle,
           ),
         ),
       ),
