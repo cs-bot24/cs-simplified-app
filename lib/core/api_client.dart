@@ -958,4 +958,76 @@ class ApiClient {
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+
+  // ── Study Planner ─────────────────────────────────────────────────────────
+
+  static Future<List<dynamic>> getStudyPlans() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/study-plans'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) as List<dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> createStudyPlan({
+    String? courseCode,
+    required String courseName,
+    required String title,
+    String? goal,
+    required DateTime startDate,
+    required DateTime endDate,
+    required int studyHoursPerDay,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_name':          courseName,
+        'title':                title,
+        'start_date':           startDate.toIso8601String().split('T').first,
+        'end_date':             endDate.toIso8601String().split('T').first,
+        'study_hours_per_day':  studyHoursPerDay,
+        if (courseCode != null) 'course_code': courseCode,
+        if (goal       != null) 'goal':        goal,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/study-plans'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res) as Map<String, dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> deleteStudyPlan(int planId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/study-plans/$planId'),
+        headers: _headers(auth: true),
+      );
+      if (res.statusCode != 204) _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> completeStudySession(
+      int planId, int sessionId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/study-plans/$planId/sessions/$sessionId/complete'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(<String, dynamic>{}),
+      );
+      return _handle(res) as Map<String, dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<List<dynamic>> getTodaysSessions() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/study-plans/today/sessions'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) as List<dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
 }
