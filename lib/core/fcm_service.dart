@@ -116,7 +116,16 @@ class FcmService {
       }
     }
 
-    // 6. Refresh token when FCM rotates it.
+    // 6. Subscribe to the all_users topic so backend can push
+    //    global announcements to all devices at once.
+    try {
+      await _messaging.subscribeToTopic('all_users');
+      debugPrint('[FCM] subscribed to topic: all_users');
+    } catch (e) {
+      debugPrint('[FCM] topic subscription failed: $e');
+    }
+
+    // 7. Refresh token when FCM rotates it.
     _messaging.onTokenRefresh.listen((newToken) async {
       debugPrint('[FCM] token refreshed');
       await AppStorage.saveFcmToken(newToken);
@@ -127,17 +136,17 @@ class FcmService {
       }
     });
 
-    // 7. Foreground message handler.
+    // 8. Foreground message handler.
     //    When the app is open and a push arrives:
     //      a) Show a local notification banner (FCM suppresses its own
     //         banner when the app is in the foreground on Android).
     //      b) Insert into NotificationProvider so the badge updates.
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    // 8. Handle notification tap when app was in background (not terminated).
+    // 9. Handle notification tap when app was in background (not terminated).
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpen);
 
-    // 9. Handle notification tap when app was terminated.
+    // 10. Handle notification tap when app was terminated.
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
       _handleNotificationOpen(initialMessage);
