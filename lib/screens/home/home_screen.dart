@@ -27,6 +27,7 @@ import '../sharing/share_progress_screen.dart';
 import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
 import '../ai/ai_tutor_screen.dart';
+import '../study_planner/study_planner_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,14 +43,16 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchTab   = const SearchScreen();
   final _bookmarkTab = const BookmarksScreen();
   final _offlineTab  = const OfflineScreen();
+  final _plannerTab  = const StudyPlannerScreen();
   final _profileTab  = const ProfileScreen();
   final _adminTab    = const AdminDashboard();
 
+  // Tab order: Home · Search · Saved · Offline · Planner · [Admin] · Profile
   List<Widget> _screens(bool isAdmin) => isAdmin
-      ? [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _adminTab, _profileTab]
-      : [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _profileTab];
+      ? [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _plannerTab, _adminTab, _profileTab]
+      : [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _plannerTab, _profileTab];
 
-  int _adminTabIndex(bool isAdmin) => isAdmin ? 4 : -1;
+  int _adminTabIndex(bool isAdmin) => isAdmin ? 5 : -1;
 
   // Track whether we have already fetched stats for this login session
   bool _statsFetched = false;
@@ -147,6 +150,10 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(Icons.download_for_offline_outlined),
               selectedIcon: Icon(Icons.download_for_offline_rounded),
               label: 'Offline'),
+          const NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined),
+              selectedIcon: Icon(Icons.calendar_today_rounded),
+              label: 'Planner'),
           if (isAdmin)
             NavigationDestination(
                 icon: _AdminNavIcon(
@@ -436,6 +443,24 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                     MaterialPageRoute(
                         builder: (_) => const AiTutorScreen()),
                   ),
+                ),
+              ),
+            ),
+
+            // ── 6a-3. Study Planner action card ─────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: _QuickActionCard(
+                  icon: Icons.calendar_today_rounded,
+                  label: 'Study Planner',
+                  color: const Color(0xFF6C63FF),
+                  wide: true,
+                  onTap: () {
+                    final shell = context
+                        .findAncestorStateOfType<_HomeScreenState>();
+                    shell?.setState(() => shell._index = 4);
+                  },
                 ),
               ),
             ),
