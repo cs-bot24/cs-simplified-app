@@ -1,6 +1,6 @@
 import '../models/faq_model.dart';
 
-/// Static FAQ data for v1.
+/// Static FAQ data.
 /// Future migration path: replace this list with an API call that returns
 /// the same FaqCategory/FaqItem structure — the UI layer needs zero changes.
 const List<FaqCategory> faqData = [
@@ -14,7 +14,7 @@ const List<FaqCategory> faqData = [
       answer:
           'CS Simplified is a learning platform created to help Computer '
           'Science students access study materials, exam preparation resources, '
-          'and academic support in one place.',
+          'AI-powered tutoring, and academic support in one place.',
       tags: ['about', 'platform', 'intro'],
     ),
     FaqItem(
@@ -64,6 +64,175 @@ const List<FaqCategory> faqData = [
     ),
   ]),
 
+  // ── AI Tutor ─────────────────────────────────────────────────────────────────
+  FaqCategory(category: 'AI Tutor', items: [
+    FaqItem(
+      id: 15,
+      category: 'AI Tutor',
+      question: 'What is the AI Tutor?',
+      answer:
+          'The AI Tutor is a built-in academic assistant powered by Google '
+          'Gemini. It can answer course questions, explain concepts, help '
+          'with exam preparation, and generate practice questions and study '
+          'notes — available 24/7 from the home screen.',
+      tags: ['ai', 'tutor', 'gemini', 'assistant', 'chat'],
+    ),
+    FaqItem(
+      id: 16,
+      category: 'AI Tutor',
+      question: 'How do I use the AI Tutor?',
+      answer:
+          'Tap the AI Tutor card on the home screen. Type your question and '
+          'tap Send. You can also upload an image of a question — the AI will '
+          'read and answer it directly.\n\n'
+          'You can switch between Normal Mode and Exam Prep Mode, and choose '
+          'your explanation level: Beginner, Intermediate, or Advanced.',
+      tags: ['ai', 'how to', 'question', 'image', 'exam prep'],
+    ),
+    FaqItem(
+      id: 17,
+      category: 'AI Tutor',
+      question: 'Can I send a photo of a question to the AI?',
+      answer:
+          'Yes. Tap the image icon in the AI Tutor chat, take a photo or '
+          'choose one from your gallery, and send it. The AI will analyse '
+          'the image and answer the question even if you do not type anything.',
+      tags: ['image', 'photo', 'camera', 'ai', 'question'],
+    ),
+    FaqItem(
+      id: 18,
+      category: 'AI Tutor',
+      question: 'What is Exam Prep Mode?',
+      answer:
+          'Exam Prep Mode adjusts the AI\'s responses to be more focused '
+          'and exam-oriented. The AI will:\n'
+          '• Keep answers concise and structured.\n'
+          '• Highlight what examiners typically look for.\n'
+          '• Point out common student mistakes.\n'
+          '• Include a "Likely exam angle" tip where relevant.\n\n'
+          'Toggle it on using the switch at the top of the AI Tutor screen.',
+      tags: ['exam prep', 'mode', 'ai', 'study'],
+    ),
+    FaqItem(
+      id: 19,
+      category: 'AI Tutor',
+      question: 'How do I use AI inside the PDF viewer?',
+      answer:
+          'While reading any material, you will see a floating AI button '
+          'on the screen. Tap it to open the AI Tutor without leaving the PDF '
+          '— your reading position is preserved.\n\n'
+          'You can also tap the Study Tools bar at the bottom of the PDF:\n'
+          '• Explain — AI summarises the material and highlights key concepts.\n'
+          '• Notes — AI generates structured study notes with exam tips.\n'
+          '• Quiz Me — AI generates practice questions from the material.\n\n'
+          'The AI automatically knows which course material you are reading '
+          'so all responses are course-relevant.',
+      tags: ['pdf', 'ai', 'reader', 'explain', 'notes', 'quiz'],
+    ),
+    FaqItem(
+      id: 20,
+      category: 'AI Tutor',
+      question: 'Can the AI generate practice questions?',
+      answer:
+          'Yes. In the AI Tutor chat, tap the Practice Questions button to '
+          'generate exam-style questions on any topic. Inside the PDF viewer, '
+          'tap Quiz Me to generate questions based on the current material.',
+      tags: ['practice', 'questions', 'quiz', 'ai', 'exam'],
+    ),
+    FaqItem(
+      id: 21,
+      category: 'AI Tutor',
+      question: 'Can the AI generate study notes?',
+      answer:
+          'Yes. In the AI Tutor chat, tap the Study Notes button. Inside '
+          'the PDF viewer, tap Notes in the Study Tools bar. The AI will '
+          'create structured notes including Key Concepts, Definitions, '
+          'Important Points, and Exam Tips.',
+      tags: ['notes', 'study', 'ai', 'generate', 'revision'],
+    ),
+    FaqItem(
+      id: 22,
+      category: 'AI Tutor',
+      question: 'Why did the AI not analyse my image?',
+      answer:
+          'Image analysis requires the Gemini AI service to be available. '
+          'If Gemini is temporarily unavailable, you will see a message '
+          'asking you to type your question instead. This is a temporary '
+          'situation — try again in a few minutes or type out your question.',
+      tags: ['image', 'ai', 'error', 'not working', 'gemini'],
+    ),
+  ]),
+
+  // ── Study Planner ─────────────────────────────────────────────────────────────
+  FaqCategory(category: 'Study Planner', items: [
+    FaqItem(
+      id: 23,
+      category: 'Study Planner',
+      question: 'What is the Study Planner?',
+      answer:
+          'The Study Planner is an AI-powered scheduling tool. You tell it '
+          'your course, goal, deadline, and how many hours you can study '
+          'per day — the AI builds a complete week-by-week study schedule '
+          'broken into daily sessions automatically.',
+      tags: ['study planner', 'schedule', 'ai', 'plan'],
+    ),
+    FaqItem(
+      id: 24,
+      category: 'Study Planner',
+      question: 'How do I create a study plan?',
+      answer:
+          'Tap the Planner tab at the bottom of the screen, or tap the '
+          'Study Planner card on the home screen. Tap New Plan, fill in:\n'
+          '• Course code and name\n'
+          '• Your goal (e.g. Pass MTH104 with a B)\n'
+          '• Start and end dates\n'
+          '• Study hours available per day\n\n'
+          'Tap Generate Plan with AI — the AI creates your full schedule '
+          'in seconds.',
+      tags: ['create', 'plan', 'study planner', 'how to'],
+    ),
+    FaqItem(
+      id: 25,
+      category: 'Study Planner',
+      question: 'How do I mark a study session as complete?',
+      answer:
+          'Open the Today tab in the Study Planner — it shows all sessions '
+          'scheduled for today. Tap the Done button next to a session when '
+          'you finish it. Your plan progress updates instantly.',
+      tags: ['complete', 'session', 'done', 'study planner', 'progress'],
+    ),
+    FaqItem(
+      id: 26,
+      category: 'Study Planner',
+      question: 'How is my study plan progress calculated?',
+      answer:
+          'Progress is calculated as the percentage of sessions you have '
+          'completed out of the total sessions in the plan. When you reach '
+          '100%, the plan is automatically marked as Completed.',
+      tags: ['progress', 'percentage', 'complete', 'study planner'],
+    ),
+    FaqItem(
+      id: 27,
+      category: 'Study Planner',
+      question: 'Can I have multiple study plans at once?',
+      answer:
+          'Yes. You can create a separate study plan for each course. All '
+          'active plans appear in the My Plans tab. The Today tab collects '
+          'sessions from all your active plans into one daily view.',
+      tags: ['multiple', 'plans', 'courses', 'study planner'],
+    ),
+    FaqItem(
+      id: 28,
+      category: 'Study Planner',
+      question: 'Can I delete a study plan?',
+      answer:
+          'Yes. On the My Plans tab, tap the three-dot menu on any plan '
+          'and select Delete. This removes the plan and all its sessions '
+          'permanently.',
+      tags: ['delete', 'remove', 'plan', 'study planner'],
+    ),
+  ]),
+
   // ── Streak & Leaderboard ─────────────────────────────────────────────────────
   FaqCategory(category: 'Streak & Leaderboard', items: [
     FaqItem(
@@ -110,7 +279,7 @@ const List<FaqCategory> faqData = [
           '• Notification permission is enabled in your device settings.\n'
           '• Your internet connection is active.\n'
           '• You have the latest version of the app installed.\n\n'
-          'If the issue persists, contact support.',
+          'If the issue persists, try logging out and back in, then contact support.',
       tags: ['notifications', 'not receiving', 'permission', 'alerts'],
     ),
     FaqItem(
