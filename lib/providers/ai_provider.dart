@@ -1,8 +1,24 @@
-import 'dart:io';
+// lib/providers/ai_provider.dart
+//
+// Platform-adaptive AI provider.
+//
+// The only platform-specific code in this file is image handling:
+//
+//   Mobile: askWithImage(File)       — reads bytes from dart:io File
+//   Web:    askWithImageBytes(Uint8List) — bytes already in memory
+//           from file_picker or image_picker web result
+//
+// Everything else (text chat, PDF context, practice questions,
+// study notes, session memory) is identical on all platforms.
+
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../models/ai_model.dart';
+
+// dart:io is not available on web — conditional import
+import 'ai_provider_io.dart' if (dart.library.html) 'ai_provider_web.dart';
 
 enum AiState { idle, loading, error }
 
@@ -18,10 +34,11 @@ class AiProvider extends ChangeNotifier {
 
   // ── Phase 3: Session memory ───────────────────────────────────────────────
   // Tracks topics and concepts discussed in this session so that
-  // Practice Questions and Study Notes are generated from actual session content.
-  final List<String> _sessionTopics   = [];   // subjects detected (e.g. "Computer Science")
-  final List<String> _sessionConcepts = [];   // key terms from AI responses (parsed)
-  String?            _sessionSummary;         // running plain-text summary (optional)
+  // Practice Questions and Study Notes are generated from actual session
+  // content rather than random topics.
+  final List<String> _sessionTopics   = [];  // subjects detected (e.g. "Computer Science")
+  final List<String> _sessionConcepts = [];  // key terms extracted from AI responses
+  String?            _sessionSummary;        // running plain-text summary of recent questions
 
   List<AiMessage>  get messages        => List.unmodifiable(_messages);
   AiState          get state           => _state;
@@ -34,17 +51,15 @@ class AiProvider extends ChangeNotifier {
   int              get questionsMonth  => _questionsMonth;
   bool             get isExamPrep      => _mode == AiMode.examPrep;
 
-  // Session memory — exposed so UI can show "X topics studied"
-  List<String> get sessionTopics   => List.unmodifiable(_sessionTopics);
-  List<String> get sessionConcepts => List.unmodifiable(_sessionConcepts);
+  // Session memory — exposed so UI can show "X topics studied" and
+  // so dialogs know whether to show the "From this session" badge.
+  List<String> get sessionTopics    => List.unmodifiable(_sessionTopics);
+  List<String> get sessionConcepts  => List.unmodifiable(_sessionConcepts);
   bool         get hasSessionContext => _sessionTopics.isNotEmpty;
 
   // ── Mode & Level ──────────────────────────────────────────────────────────
 
-  void setMode(AiMode m) {
-    _mode = m;
-    notifyListeners();
-  }
+  void setMode(AiMode m) { _mode = m; notifyListeners(); }
 
   void toggleExamPrep() {
     _mode = _mode == AiMode.examPrep ? AiMode.normal : AiMode.examPrep;
@@ -54,9 +69,7 @@ class AiProvider extends ChangeNotifier {
   Future<void> setLevel(ExplanationLevel l) async {
     _level = l;
     notifyListeners();
-    try {
-      await ApiClient.updateAiPreferences(l.name);
-    } catch (_) {}
+    try { await ApiClient.updateAiPreferences(l.name); } catch (_) {}
   }
 
   // ── Load plan & preferences ───────────────────────────────────────────────
@@ -72,7 +85,7 @@ class AiProvider extends ChangeNotifier {
   Future<void> loadUsage() async {
     try {
       final data = await ApiClient.getAiUsage();
-      _questionsToday = (data['questions_today'] as num?)?.toInt() ?? 0;
+      _questionsToday = (data['questions_today']      as num?)?.toInt() ?? 0;
       _questionsMonth = (data['questions_this_month'] as num?)?.toInt() ?? 0;
       final savedLevel = data['preferred_level'] as String?;
       if (savedLevel != null) {
@@ -85,13 +98,48 @@ class AiProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  // ── Ask (text) ────────────────────────────────────────────────────────────
+  // ── Ask (text only) ───────────────────────────────────────────────────────
 
   Future<void> ask(String question) async {
     await _sendRequest(question: question);
   }
 
-  // ── Ask from inside the PDF Reader (Phase 2C) ─────────────────────────────
+  // ── Ask with image — MOBILE path ─────────────────────────────────────────
+  // Uses dart:io File via the conditional import shim.
+  // Not called on web — use askWithImageBytes() instead.
+
+  Future<void> askWithImage(dynamic imageFile, {String extraText = ''}) async {
+    final bytes = await readImageBytes(imageFile);
+    final b64   = base64Encode(bytes);
+    final path  = getImagePath(imageFile);
+    final mime  = path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    await _sendRequest(
+      question:      extraText,
+      imageBase64:   b64,
+      imageMimeType: mime,
+      isImage:       true,
+    );
+  }
+
+  // ── Ask with image — WEB path ─────────────────────────────────────────────
+  // file_picker and image_picker return Uint8List on web.
+  // Called from ai_tutor_screen.dart when kIsWeb is true.
+
+  Future<void> askWithImageBytes(
+    Uint8List bytes, {
+    String extraText = '',
+    String mimeType  = 'image/jpeg',
+  }) async {
+    final b64 = base64Encode(bytes);
+    await _sendRequest(
+      question:      extraText,
+      imageBase64:   b64,
+      imageMimeType: mimeType,
+      isImage:       true,
+    );
+  }
+
+  // ── Ask from PDF Reader (Phase 2C) ────────────────────────────────────────
 
   Future<void> askFromPdf({
     required String question,
@@ -111,11 +159,11 @@ class AiProvider extends ChangeNotifier {
     );
   }
 
-  // ── Generate page-level content from inside PDF Reader ────────────────────
+  // ── Generate from page text (PDF quick actions) ───────────────────────────
 
   Future<String?> generateFromPageText({
     required String pageText,
-    required String action,   // 'explain' | 'notes' | 'quiz'
+    required String action,
     String? materialTitle,
     String? courseCode,
   }) async {
@@ -126,11 +174,11 @@ class AiProvider extends ChangeNotifier {
     final prompt = switch (action) {
       'explain' => 'Summarise and explain the following course material. '
           'Extract key concepts, definitions, and anything important for exams:\n\n$pageText',
-      'notes' => 'Generate structured study notes from the following course material. '
+      'notes'   => 'Generate structured study notes from the following course material. '
           'Include: Key Concepts, Definitions, Important Points, and Exam Tips:\n\n$pageText',
-      'quiz' => 'Generate 5 exam-style questions (mix of multiple choice and short answer) '
+      'quiz'    => 'Generate 5 exam-style questions (mix of multiple choice and short answer) '
           'based on the following course material. Include correct answers:\n\n$pageText',
-      _ => pageText,
+      _         => pageText,
     };
 
     try {
@@ -153,25 +201,9 @@ class AiProvider extends ChangeNotifier {
     return null;
   }
 
-  // ── Ask with image ────────────────────────────────────────────────────────
-
-  Future<void> askWithImage(File imageFile, {String extraText = ''}) async {
-    final bytes = await imageFile.readAsBytes();
-    final b64   = base64Encode(bytes);
-    final mime  = imageFile.path.toLowerCase().endsWith('.png')
-        ? 'image/png'
-        : 'image/jpeg';
-    await _sendRequest(
-      question:      extraText,
-      imageBase64:   b64,
-      imageMimeType: mime,
-      isImage:       true,
-    );
-  }
-
-  // ── Practice questions (Phase 3: context-aware) ───────────────────────────
-  // Priority 1: Use current session topics & concepts.
-  // Priority 2: Fall back to topic string (subject from last AI message).
+  // ── Practice questions (Phase 3: session-context aware) ──────────────────
+  // Priority 1: session topics + concepts from this session.
+  // Priority 2: falls back to the plain topic string.
 
   Future<String?> generatePracticeQuestions(String topic) async {
     _state = AiState.loading;
@@ -181,7 +213,7 @@ class AiProvider extends ChangeNotifier {
       final data = await ApiClient.generatePracticeQuestions(
         topic:           topic,
         level:           _level.name,
-        sessionTopics:   _sessionTopics.isNotEmpty ? _sessionTopics : null,
+        sessionTopics:   _sessionTopics.isNotEmpty   ? _sessionTopics   : null,
         sessionConcepts: _sessionConcepts.isNotEmpty ? _sessionConcepts : null,
       );
       _state = AiState.idle;
@@ -196,7 +228,7 @@ class AiProvider extends ChangeNotifier {
     return null;
   }
 
-  // ── Study notes (Phase 3: context-aware) ─────────────────────────────────
+  // ── Study notes (Phase 3: session-context aware) ─────────────────────────
   // When session topics exist, notes summarise the actual session content.
 
   Future<String?> generateStudyNotes(String topic) async {
@@ -228,7 +260,7 @@ class AiProvider extends ChangeNotifier {
     required String question,
     String? imageBase64,
     String? imageMimeType,
-    bool isImage = false,
+    bool    isImage          = false,
     int?    pdfMaterialId,
     String? pdfMaterialTitle,
     String? pdfCourseCode,
@@ -278,7 +310,7 @@ class AiProvider extends ChangeNotifier {
       _questionsMonth++;
       _state = AiState.idle;
 
-      // ── Phase 3: Update session memory ─────────────────────────────────
+      // ── Phase 3: Update session memory after every successful response ──
       _updateSessionMemory(
         userQuestion: trimmed,
         aiResponse:   aiMessage.text,
@@ -299,43 +331,40 @@ class AiProvider extends ChangeNotifier {
 
   // ── Phase 3: Session memory update ───────────────────────────────────────
   // Called after each successful AI response.
-  // Tracks topics (subjects) and extracts key concepts from the response.
+  // Records the subject, extracts key term labels from the structured
+  // markdown response, and keeps a rolling summary of recent questions.
 
   void _updateSessionMemory({
     required String  userQuestion,
     required String  aiResponse,
-    String? subject,
+    String?          subject,
   }) {
-    // 1. Track unique subjects/topics
+    // 1. Track unique subjects / topics
     if (subject != null &&
         subject.isNotEmpty &&
         !_sessionTopics.contains(subject)) {
       _sessionTopics.add(subject);
     }
 
-    // 2. Extract concepts — look for text after common definition markers.
-    //    This is lightweight client-side parsing; the AI uses these labels
-    //    in its structured responses (e.g. "🔰 What is it?", "📌").
-    final conceptPatterns = [
-      // Matches "Term:" at start of a line followed by a short definition
-      RegExp(r'(?:^|\n)\*{0,2}([A-Z][A-Za-z\s]{2,30})\*{0,2}:(?!\s*/)', multiLine: true),
-    ];
-
-    for (final pattern in conceptPatterns) {
-      final matches = pattern.allMatches(aiResponse);
-      for (final match in matches) {
-        final concept = match.group(1)?.trim();
-        if (concept != null &&
-            concept.length > 2 &&
-            concept.length < 40 &&
-            !_sessionConcepts.contains(concept) &&
-            _sessionConcepts.length < 30) {
-          _sessionConcepts.add(concept);
-        }
+    // 2. Extract labelled concepts from the AI's structured response.
+    //    Looks for lines like "**Term**:" or "Term:" that appear in the
+    //    teaching format the AI uses (Definition, Key Point, etc.).
+    final conceptPattern = RegExp(
+      r'(?:^|\n)\*{0,2}([A-Z][A-Za-z\s]{2,30})\*{0,2}:(?!\s*/)',
+      multiLine: true,
+    );
+    for (final match in conceptPattern.allMatches(aiResponse)) {
+      final concept = match.group(1)?.trim();
+      if (concept != null &&
+          concept.length > 2 &&
+          concept.length < 40 &&
+          !_sessionConcepts.contains(concept) &&
+          _sessionConcepts.length < 30) {
+        _sessionConcepts.add(concept);
       }
     }
 
-    // 3. Build a brief running session summary (last 5 questions)
+    // 3. Rolling summary — last 5 non-image user questions
     final recentQuestions = _messages
         .where((m) => m.isUser && m.text.isNotEmpty && !m.isImage)
         .map((m) => m.text)
@@ -360,7 +389,7 @@ class AiProvider extends ChangeNotifier {
     _messages.clear();
     _error = null;
     _state = AiState.idle;
-    // Also clear session memory when the conversation is cleared
+    // Clear session memory alongside the conversation
     _sessionTopics.clear();
     _sessionConcepts.clear();
     _sessionSummary = null;
