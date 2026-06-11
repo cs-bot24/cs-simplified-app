@@ -119,31 +119,51 @@ class _AiTutorScreenState extends State<AiTutorScreen>
 
   void _showPracticeDialog(BuildContext context) {
     final ai = context.read<AiProvider>();
-    final lastAiMsg = ai.messages.lastWhere(
-      (m) => !m.isUser,
-      orElse: () => AiMessage(text: '', isUser: false, timestamp: DateTime.now()),
-    );
-    final topic = lastAiMsg.subject ?? 'the topic we just discussed';
+
+    // Phase 3: use session topics if available; fall back to last subject
+    final String topic;
+    if (ai.hasSessionContext) {
+      topic = ai.sessionTopics.join(', ');
+    } else {
+      final lastAiMsg = ai.messages.lastWhere(
+        (m) => !m.isUser,
+        orElse: () => AiMessage(text: '', isUser: false, timestamp: DateTime.now()),
+      );
+      topic = lastAiMsg.subject ?? 'the topic we just discussed';
+    }
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _PracticeDialog(topic: topic),
+      builder: (_) => _PracticeDialog(
+        topic: topic,
+        isSessionBased: ai.hasSessionContext,
+      ),
     );
   }
 
   void _showStudyNotesDialog(BuildContext context) {
     final ai = context.read<AiProvider>();
-    final lastAiMsg = ai.messages.lastWhere(
-      (m) => !m.isUser,
-      orElse: () => AiMessage(text: '', isUser: false, timestamp: DateTime.now()),
-    );
-    final topic = lastAiMsg.subject ?? 'the topic we just discussed';
+
+    // Phase 3: use session topics if available; fall back to last subject
+    final String topic;
+    if (ai.hasSessionContext) {
+      topic = ai.sessionTopics.join(', ');
+    } else {
+      final lastAiMsg = ai.messages.lastWhere(
+        (m) => !m.isUser,
+        orElse: () => AiMessage(text: '', isUser: false, timestamp: DateTime.now()),
+      );
+      topic = lastAiMsg.subject ?? 'the topic we just discussed';
+    }
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _StudyNotesDialog(topic: topic),
+      builder: (_) => _StudyNotesDialog(
+        topic: topic,
+        isSessionBased: ai.hasSessionContext,
+      ),
     );
   }
 
@@ -826,7 +846,8 @@ class _ErrorBanner extends StatelessWidget {
 
 class _PracticeDialog extends StatefulWidget {
   final String topic;
-  const _PracticeDialog({required this.topic});
+  final bool   isSessionBased;
+  const _PracticeDialog({required this.topic, this.isSessionBased = false});
   @override State<_PracticeDialog> createState() => _PracticeDialogState();
 }
 class _PracticeDialogState extends State<_PracticeDialog> {
@@ -840,28 +861,63 @@ class _PracticeDialogState extends State<_PracticeDialog> {
   }
 
   Future<void> _generate() async {
+    setState(() { _loading = true; _result = null; });
     final result = await context.read<AiProvider>().generatePracticeQuestions(widget.topic);
     if (mounted) setState(() { _result = result; _loading = false; });
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: const Text('Practice Questions'),
       content: SizedBox(
         width: double.maxFinite,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                child: MarkdownBody(
-                  data: _result ?? 'Could not generate questions. Please try again.',
-                  selectable: true,
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                    p: const TextStyle(fontSize: 14, height: 1.55),
-                    code: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.isSessionBased)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, size: 12, color: scheme.primary),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'From this session: ${widget.topic}',
+                        style: TextStyle(fontSize: 11, color: scheme.primary, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            Flexible(
+              child: _loading
+                  ? const Center(child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ))
+                  : SingleChildScrollView(
+                      child: MarkdownBody(
+                        data: _result ?? 'Could not generate questions. Please try again.',
+                        selectable: true,
+                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                          p: const TextStyle(fontSize: 14, height: 1.55),
+                          code: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
       actions: [
         if (!_loading) TextButton(onPressed: _generate, child: const Text('Regenerate')),
@@ -876,7 +932,8 @@ class _PracticeDialogState extends State<_PracticeDialog> {
 
 class _StudyNotesDialog extends StatefulWidget {
   final String topic;
-  const _StudyNotesDialog({required this.topic});
+  final bool   isSessionBased;
+  const _StudyNotesDialog({required this.topic, this.isSessionBased = false});
   @override State<_StudyNotesDialog> createState() => _StudyNotesDialogState();
 }
 class _StudyNotesDialogState extends State<_StudyNotesDialog> {
@@ -890,28 +947,63 @@ class _StudyNotesDialogState extends State<_StudyNotesDialog> {
   }
 
   Future<void> _generate() async {
+    setState(() { _loading = true; _result = null; });
     final result = await context.read<AiProvider>().generateStudyNotes(widget.topic);
     if (mounted) setState(() { _result = result; _loading = false; });
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: const Text('Study Notes'),
       content: SizedBox(
         width: double.maxFinite,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                child: MarkdownBody(
-                  data: _result ?? 'Could not generate notes. Please try again.',
-                  selectable: true,
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                    p: const TextStyle(fontSize: 14, height: 1.55),
-                    code: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.isSessionBased)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.notes_rounded, size: 12, color: scheme.primary),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Summary of this session: ${widget.topic}',
+                        style: TextStyle(fontSize: 11, color: scheme.primary, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            Flexible(
+              child: _loading
+                  ? const Center(child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(),
+                    ))
+                  : SingleChildScrollView(
+                      child: MarkdownBody(
+                        data: _result ?? 'Could not generate notes. Please try again.',
+                        selectable: true,
+                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                          p: const TextStyle(fontSize: 14, height: 1.55),
+                          code: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
       actions: [
         if (!_loading) TextButton(onPressed: _generate, child: const Text('Regenerate')),
@@ -920,6 +1012,7 @@ class _StudyNotesDialogState extends State<_StudyNotesDialog> {
     );
   }
 }
+
 
 
 // ── Not Logged In ─────────────────────────────────────────────────────────────
