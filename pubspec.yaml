@@ -16,6 +16,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
 
   # ── PDF viewer ────────────────────────────────────────────────────────────
+  # WebView used on mobile. On web, PDFs open via url_launcher in a new tab.
   webview_flutter: ^4.4.0
 
   # ── Networking & file I/O ─────────────────────────────────────────────────
@@ -26,7 +27,7 @@ dependencies:
 
   # ── Other app features ────────────────────────────────────────────────────
   cached_network_image: ^3.3.0
-  file_picker: ^8.0.0
+  file_picker: ^8.0.0          # Works on web — returns Uint8List
   firebase_core: ^3.1.0
   firebase_messaging: ^15.0.0
   flutter_local_notifications: ^17.0.0
@@ -34,12 +35,12 @@ dependencies:
   open_filex: ^4.3.4
   gal: ^2.3.0
 
-  # ── AI Tutor Phase 2 ──────────────────────────────────────────────────────
-  image_picker: ^1.1.2
+  # ── AI Tutor ──────────────────────────────────────────────────────────────
+  image_picker: ^1.1.2          # Works on web — gallery only, no camera
   flutter_markdown: ^0.7.4
 
   # ── Study Planner ─────────────────────────────────────────────────────────
-  intl: ^0.19.0   # Date formatting for study planner sessions and calendars
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
@@ -48,3 +49,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Flutter Web renderer — auto selects HTML for mobile, CanvasKit for desktop
+  # Override with: flutter build web --web-renderer canvaskit

@@ -1,15 +1,22 @@
 // lib/providers/ai_provider.dart
 //
-// Platform-adaptive AI provider.
+// Platform-adaptive AI provider — Phase 4: Conversation Memory
 //
-// The only platform-specific code in this file is image handling:
+// Phase 4 changes:
+//   Every AI request now sends the live in-memory conversation history
+//   so the AI can answer follow-up questions correctly:
+//     "explain again" / "make it simpler" / "write the code" /
+//     "why?" / "continue" / "solve question 2"
 //
-//   Mobile: askWithImage(File)       — reads bytes from dart:io File
-//   Web:    askWithImageBytes(Uint8List) — bytes already in memory
-//           from file_picker or image_picker web result
+//   _buildConversationHistory() serialises _messages into
+//   [{role, content}] and caps at the last _kMaxHistoryTurns turns.
 //
-// Everything else (text chat, PDF context, practice questions,
-// study notes, session memory) is identical on all platforms.
+//   PDF AI uses a separate history list (_pdfMessages) so the
+//   general chat and PDF tutoring session memories don't mix.
+//
+// Platform image handling (unchanged):
+//   Mobile: askWithImage(File)          — dart:io shim
+//   Web:    askWithImageBytes(Uint8List) — bytes from file_picker
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show Uint8List;
@@ -17,30 +24,42 @@ import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../models/ai_model.dart';
 
-// dart:io is not available on web — conditional import
 import 'ai_provider_io.dart' if (dart.library.html) 'ai_provider_web.dart';
 
 enum AiState { idle, loading, error }
 
-class AiProvider extends ChangeNotifier {
-  final List<AiMessage> _messages = [];
-  AiState          _state          = AiState.idle;
-  String?          _error;
-  AiMode           _mode           = AiMode.normal;
-  ExplanationLevel _level          = ExplanationLevel.intermediate;
-  AiPlanInfo?      _plan;
-  int              _questionsToday  = 0;
-  int              _questionsMonth  = 0;
+// Rolling window: last 20 turns sent to the AI (10 exchanges).
+// Keeps token usage reasonable while covering enough context.
+const int _kMaxHistoryTurns = 20;
 
-  // ── Phase 3: Session memory ───────────────────────────────────────────────
-  // Tracks topics and concepts discussed in this session so that
-  // Practice Questions and Study Notes are generated from actual session
-  // content rather than random topics.
-  final List<String> _sessionTopics   = [];  // subjects detected (e.g. "Computer Science")
-  final List<String> _sessionConcepts = [];  // key terms extracted from AI responses
-  String?            _sessionSummary;        // running plain-text summary of recent questions
+class AiProvider extends ChangeNotifier {
+
+  // ── General AI chat messages ──────────────────────────────────────────────
+  final List<AiMessage> _messages = [];
+
+  // ── PDF AI chat messages (separate memory per PDF session) ───────────────
+  // The PDF AI keeps its own conversation history so a student can ask
+  // continuous follow-up questions while studying a specific material,
+  // without mixing context with the general AI chat.
+  final List<AiMessage> _pdfMessages = [];
+
+  AiState          _state         = AiState.idle;
+  String?          _error;
+  AiMode           _mode          = AiMode.normal;
+  ExplanationLevel _level         = ExplanationLevel.intermediate;
+  AiPlanInfo?      _plan;
+  int              _questionsToday = 0;
+  int              _questionsMonth = 0;
+
+  // ── Phase 3: Session memory (topics / concepts for practice & notes) ─────
+  final List<String> _sessionTopics   = [];
+  final List<String> _sessionConcepts = [];
+  String?            _sessionSummary;
+
+  // ── Public getters ────────────────────────────────────────────────────────
 
   List<AiMessage>  get messages        => List.unmodifiable(_messages);
+  List<AiMessage>  get pdfMessages     => List.unmodifiable(_pdfMessages);
   AiState          get state           => _state;
   String?          get error           => _error;
   bool             get loading         => _state == AiState.loading;
@@ -51,11 +70,9 @@ class AiProvider extends ChangeNotifier {
   int              get questionsMonth  => _questionsMonth;
   bool             get isExamPrep      => _mode == AiMode.examPrep;
 
-  // Session memory — exposed so UI can show "X topics studied" and
-  // so dialogs know whether to show the "From this session" badge.
-  List<String> get sessionTopics    => List.unmodifiable(_sessionTopics);
-  List<String> get sessionConcepts  => List.unmodifiable(_sessionConcepts);
-  bool         get hasSessionContext => _sessionTopics.isNotEmpty;
+  List<String>     get sessionTopics   => List.unmodifiable(_sessionTopics);
+  List<String>     get sessionConcepts => List.unmodifiable(_sessionConcepts);
+  bool             get hasSessionContext => _sessionTopics.isNotEmpty;
 
   // ── Mode & Level ──────────────────────────────────────────────────────────
 
@@ -84,10 +101,10 @@ class AiProvider extends ChangeNotifier {
 
   Future<void> loadUsage() async {
     try {
-      final data = await ApiClient.getAiUsage();
-      _questionsToday = (data['questions_today']      as num?)?.toInt() ?? 0;
-      _questionsMonth = (data['questions_this_month'] as num?)?.toInt() ?? 0;
-      final savedLevel = data['preferred_level'] as String?;
+      final data        = await ApiClient.getAiUsage();
+      _questionsToday   = (data['questions_today']      as num?)?.toInt() ?? 0;
+      _questionsMonth   = (data['questions_this_month'] as num?)?.toInt() ?? 0;
+      final savedLevel  = data['preferred_level'] as String?;
       if (savedLevel != null) {
         _level = ExplanationLevel.values.firstWhere(
           (e) => e.name == savedLevel,
@@ -98,15 +115,42 @@ class AiProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  // ── Ask (text only) ───────────────────────────────────────────────────────
+  // ── Phase 4: Build conversation history ──────────────────────────────────
+  //
+  // Converts the in-memory AiMessage list into the [{role, content}] format
+  // the backend expects.
+  //
+  // Rules:
+  //   - Image messages are excluded (can't be replayed as text turns).
+  //   - Capped at _kMaxHistoryTurns most recent turns.
+  //   - Does NOT include the current message being sent (that's the question).
+
+  List<Map<String, String>> _buildConversationHistory([
+    List<AiMessage>? source,
+  ]) {
+    final src = source ?? _messages;
+    // Exclude the last message if it's the user turn we're about to send
+    // (it hasn't received a response yet, so we take all completed pairs).
+    final completed = src.where((m) => !m.isImage).toList();
+
+    // Take the last _kMaxHistoryTurns turns
+    final window = completed.length > _kMaxHistoryTurns
+        ? completed.sublist(completed.length - _kMaxHistoryTurns)
+        : completed;
+
+    return window.map((m) => {
+      'role':    m.isUser ? 'user' : 'assistant',
+      'content': m.text,
+    }).toList();
+  }
+
+  // ── Ask (text only — General AI) ─────────────────────────────────────────
 
   Future<void> ask(String question) async {
     await _sendRequest(question: question);
   }
 
   // ── Ask with image — MOBILE path ─────────────────────────────────────────
-  // Uses dart:io File via the conditional import shim.
-  // Not called on web — use askWithImageBytes() instead.
 
   Future<void> askWithImage(dynamic imageFile, {String extraText = ''}) async {
     final bytes = await readImageBytes(imageFile);
@@ -122,8 +166,6 @@ class AiProvider extends ChangeNotifier {
   }
 
   // ── Ask with image — WEB path ─────────────────────────────────────────────
-  // file_picker and image_picker return Uint8List on web.
-  // Called from ai_tutor_screen.dart when kIsWeb is true.
 
   Future<void> askWithImageBytes(
     Uint8List bytes, {
@@ -139,7 +181,9 @@ class AiProvider extends ChangeNotifier {
     );
   }
 
-  // ── Ask from PDF Reader (Phase 2C) ────────────────────────────────────────
+  // ── Ask from PDF Reader ───────────────────────────────────────────────────
+  // Uses _pdfMessages for its own conversation history so the PDF tutoring
+  // session is independent from the general AI chat session.
 
   Future<void> askFromPdf({
     required String question,
@@ -156,6 +200,7 @@ class AiProvider extends ChangeNotifier {
       pdfCourseCode:    courseCode,
       pdfLevelName:     levelName,
       pdfCategoryName:  categoryName,
+      isPdfRequest:     true,
     );
   }
 
@@ -183,11 +228,13 @@ class AiProvider extends ChangeNotifier {
 
     try {
       final data = await ApiClient.askAi(
-        question:         prompt,
-        mode:             'normal',
-        level:            _level.name,
-        pdfMaterialTitle: materialTitle,
-        pdfCourseCode:    courseCode,
+        question:             prompt,
+        mode:                 'normal',
+        level:                _level.name,
+        pdfMaterialTitle:     materialTitle,
+        pdfCourseCode:        courseCode,
+        // Include PDF session history so the AI has context for quick actions
+        conversationHistory:  _buildConversationHistory(_pdfMessages),
       );
       _state = AiState.idle;
       notifyListeners();
@@ -201,9 +248,7 @@ class AiProvider extends ChangeNotifier {
     return null;
   }
 
-  // ── Practice questions (Phase 3: session-context aware) ──────────────────
-  // Priority 1: session topics + concepts from this session.
-  // Priority 2: falls back to the plain topic string.
+  // ── Practice questions (session-context aware) ────────────────────────────
 
   Future<String?> generatePracticeQuestions(String topic) async {
     _state = AiState.loading;
@@ -228,8 +273,7 @@ class AiProvider extends ChangeNotifier {
     return null;
   }
 
-  // ── Study notes (Phase 3: session-context aware) ─────────────────────────
-  // When session topics exist, notes summarise the actual session content.
+  // ── Study notes (session-context aware) ──────────────────────────────────
 
   Future<String?> generateStudyNotes(String topic) async {
     _state = AiState.loading;
@@ -261,6 +305,7 @@ class AiProvider extends ChangeNotifier {
     String? imageBase64,
     String? imageMimeType,
     bool    isImage          = false,
+    bool    isPdfRequest     = false,
     int?    pdfMaterialId,
     String? pdfMaterialTitle,
     String? pdfCourseCode,
@@ -270,31 +315,42 @@ class AiProvider extends ChangeNotifier {
     final trimmed = question.trim();
     if (trimmed.isEmpty && imageBase64 == null) return;
 
-    _messages.add(AiMessage(
-      text: isImage
+    // Add user message to the correct message list
+    final messageList = isPdfRequest ? _pdfMessages : _messages;
+    final userMsg = AiMessage(
+      text:      isImage
           ? (trimmed.isEmpty ? '📷 Image question' : '📷 $trimmed')
           : trimmed,
       isUser:    true,
       timestamp: DateTime.now(),
       isImage:   isImage,
       mode:      _mode,
-    ));
+    );
+    messageList.add(userMsg);
+
     _state = AiState.loading;
     _error = null;
     notifyListeners();
 
+    // ── Phase 4: Build history from all messages BEFORE this new question ──
+    // We exclude the user message we just added (it's the question being sent).
+    // The history is everything before it — completed exchanges only.
+    final historySource = messageList.sublist(0, messageList.length - 1);
+    final history = _buildConversationHistory(historySource);
+
     try {
       final data = await ApiClient.askAi(
-        question:         trimmed,
-        mode:             _mode == AiMode.examPrep ? 'exam_prep' : 'normal',
-        level:            _level.name,
-        imageBase64:      imageBase64,
-        imageMimeType:    imageMimeType,
-        pdfMaterialId:    pdfMaterialId,
-        pdfMaterialTitle: pdfMaterialTitle,
-        pdfCourseCode:    pdfCourseCode,
-        pdfLevelName:     pdfLevelName,
-        pdfCategoryName:  pdfCategoryName,
+        question:            trimmed,
+        mode:                _mode == AiMode.examPrep ? 'exam_prep' : 'normal',
+        level:               _level.name,
+        imageBase64:         imageBase64,
+        imageMimeType:       imageMimeType,
+        pdfMaterialId:       pdfMaterialId,
+        pdfMaterialTitle:    pdfMaterialTitle,
+        pdfCourseCode:       pdfCourseCode,
+        pdfLevelName:        pdfLevelName,
+        pdfCategoryName:     pdfCategoryName,
+        conversationHistory: history,
       );
 
       final aiMessage = AiMessage(
@@ -305,50 +361,45 @@ class AiProvider extends ChangeNotifier {
         mode:      _mode,
       );
 
-      _messages.add(aiMessage);
+      messageList.add(aiMessage);
       _questionsToday++;
       _questionsMonth++;
       _state = AiState.idle;
 
-      // ── Phase 3: Update session memory after every successful response ──
-      _updateSessionMemory(
-        userQuestion: trimmed,
-        aiResponse:   aiMessage.text,
-        subject:      aiMessage.subject,
-      );
+      // Update session memory (general chat only — not PDF sessions)
+      if (!isPdfRequest) {
+        _updateSessionMemory(
+          userQuestion: trimmed,
+          aiResponse:   aiMessage.text,
+          subject:      aiMessage.subject,
+        );
+      }
 
     } on ApiException catch (e) {
       _error = e.message;
       _state = AiState.error;
-      if (_messages.isNotEmpty && _messages.last.isUser) _messages.removeLast();
+      if (messageList.isNotEmpty && messageList.last.isUser) messageList.removeLast();
     } catch (_) {
       _error = 'AI service is temporarily unavailable. Please try again later.';
       _state = AiState.error;
-      if (_messages.isNotEmpty && _messages.last.isUser) _messages.removeLast();
+      if (messageList.isNotEmpty && messageList.last.isUser) messageList.removeLast();
     }
     notifyListeners();
   }
 
-  // ── Phase 3: Session memory update ───────────────────────────────────────
-  // Called after each successful AI response.
-  // Records the subject, extracts key term labels from the structured
-  // markdown response, and keeps a rolling summary of recent questions.
+  // ── Session memory update ─────────────────────────────────────────────────
 
   void _updateSessionMemory({
-    required String  userQuestion,
-    required String  aiResponse,
-    String?          subject,
+    required String userQuestion,
+    required String aiResponse,
+    String?         subject,
   }) {
-    // 1. Track unique subjects / topics
-    if (subject != null &&
-        subject.isNotEmpty &&
-        !_sessionTopics.contains(subject)) {
+    // Track unique subjects
+    if (subject != null && subject.isNotEmpty && !_sessionTopics.contains(subject)) {
       _sessionTopics.add(subject);
     }
 
-    // 2. Extract labelled concepts from the AI's structured response.
-    //    Looks for lines like "**Term**:" or "Term:" that appear in the
-    //    teaching format the AI uses (Definition, Key Point, etc.).
+    // Extract labelled concepts from the AI's structured response
     final conceptPattern = RegExp(
       r'(?:^|\n)\*{0,2}([A-Z][A-Za-z\s]{2,30})\*{0,2}:(?!\s*/)',
       multiLine: true,
@@ -364,7 +415,7 @@ class AiProvider extends ChangeNotifier {
       }
     }
 
-    // 3. Rolling summary — last 5 non-image user questions
+    // Rolling summary of last 5 non-image user questions
     final recentQuestions = _messages
         .where((m) => m.isUser && m.text.isNotEmpty && !m.isImage)
         .map((m) => m.text)
@@ -385,14 +436,21 @@ class AiProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears the general AI chat and all session memory.
   void clearConversation() {
     _messages.clear();
-    _error = null;
-    _state = AiState.idle;
-    // Clear session memory alongside the conversation
     _sessionTopics.clear();
     _sessionConcepts.clear();
     _sessionSummary = null;
+    _error = null;
+    _state = AiState.idle;
+    notifyListeners();
+  }
+
+  /// Clears only the PDF tutoring session history.
+  /// Call this when the student opens a different PDF material.
+  void clearPdfSession() {
+    _pdfMessages.clear();
     notifyListeners();
   }
 }

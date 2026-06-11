@@ -859,26 +859,32 @@ class ApiClient {
     String level              = 'intermediate',
     String? imageBase64,
     String? imageMimeType,
-    // ── PDF Reader context (Phase 2C) ──────────────────────────────────────
-    // Pass these when the question originates from inside the PDF viewer.
+    // ── PDF Reader context ─────────────────────────────────────────────────
     int?    pdfMaterialId,
     String? pdfMaterialTitle,
     String? pdfCourseCode,
     String? pdfLevelName,
     String? pdfCategoryName,
+    // ── Phase 4: Live conversation history ────────────────────────────────
+    // List of {role, content} maps built from the in-memory _messages list.
+    // Sending this gives the AI full session context so follow-up questions
+    // ("explain again", "write the code", "why?", "continue") work correctly.
+    List<Map<String, String>>? conversationHistory,
   }) async {
     try {
       final body = <String, dynamic>{
         'question':          question,
         'mode':              mode,
         'explanation_level': level,
-        if (imageBase64       != null) 'image_base64':       imageBase64,
-        if (imageMimeType     != null) 'image_mime_type':    imageMimeType,
-        if (pdfMaterialId     != null) 'pdf_material_id':    pdfMaterialId,
-        if (pdfMaterialTitle  != null) 'pdf_material_title': pdfMaterialTitle,
-        if (pdfCourseCode     != null) 'pdf_course_code':    pdfCourseCode,
-        if (pdfLevelName      != null) 'pdf_level_name':     pdfLevelName,
-        if (pdfCategoryName   != null) 'pdf_category_name':  pdfCategoryName,
+        if (imageBase64      != null) 'image_base64':       imageBase64,
+        if (imageMimeType    != null) 'image_mime_type':    imageMimeType,
+        if (pdfMaterialId    != null) 'pdf_material_id':    pdfMaterialId,
+        if (pdfMaterialTitle != null) 'pdf_material_title': pdfMaterialTitle,
+        if (pdfCourseCode    != null) 'pdf_course_code':    pdfCourseCode,
+        if (pdfLevelName     != null) 'pdf_level_name':     pdfLevelName,
+        if (pdfCategoryName  != null) 'pdf_category_name':  pdfCategoryName,
+        // Always send history — empty list means no prior context (first message)
+        'conversation_history': conversationHistory ?? [],
       };
       final res = await http.post(
         Uri.parse('$_base/ai/ask'),

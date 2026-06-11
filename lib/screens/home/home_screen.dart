@@ -1,3 +1,15 @@
+// lib/screens/home/home_screen.dart
+//
+// Responsive shell.
+//
+// Mobile (<900px):  current bottom NavigationBar — unchanged.
+// Desktop (≥900px): left NavigationRail replaces bottom nav.
+//                   On web, the Offline tab is hidden (no filesystem).
+//
+// The IndexedStack and all tab screens are identical on both layouts.
+// Only the navigation chrome changes.
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -29,6 +41,9 @@ import '../profile/profile_screen.dart';
 import '../ai/ai_tutor_screen.dart';
 import '../study_planner/study_planner_screen.dart';
 
+// ── Responsive breakpoint ─────────────────────────────────────────────────────
+const _kDesktopBreakpoint = 900.0;
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -47,34 +62,43 @@ class _HomeScreenState extends State<HomeScreen> {
   final _profileTab  = const ProfileScreen();
   final _adminTab    = const AdminDashboard();
 
-  // Tab order: Home · Search · Saved · Offline · Planner · [Admin] · Profile
-  List<Widget> _screens(bool isAdmin) => isAdmin
-      ? [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _plannerTab, _adminTab, _profileTab]
-      : [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _plannerTab, _profileTab];
+  // On web, the Offline tab is hidden — no local filesystem.
+  // Tab order: Home · Search · Saved · [Offline on mobile] · Planner · [Admin] · Profile
+  List<Widget> _screens(bool isAdmin) {
+    final base = kIsWeb
+        ? [_homeTab, _searchTab, _bookmarkTab, _plannerTab, _profileTab]
+        : [_homeTab, _searchTab, _bookmarkTab, _offlineTab, _plannerTab, _profileTab];
+    if (isAdmin) {
+      final adminPos = kIsWeb ? 4 : 5;
+      return [...base.sublist(0, adminPos), _adminTab, ...base.sublist(adminPos)];
+    }
+    return base;
+  }
 
-  int _adminTabIndex(bool isAdmin) => isAdmin ? 5 : -1;
+  int _adminTabIndex(bool isAdmin) {
+    if (!isAdmin) return -1;
+    return kIsWeb ? 4 : 5;
+  }
 
-  // Track whether we have already fetched stats for this login session
+  // Planner tab index depends on platform and admin status
+  int _plannerTabIndex(bool isAdmin) {
+    if (kIsWeb) return isAdmin ? 5 : 3;
+    return isAdmin ? 6 : 4;
+  }
+
   bool _statsFetched = false;
 
   @override
   void initState() {
     super.initState();
-    // Listen to AuthProvider — the moment isAdmin becomes true (either from
-    // loadFromStorage() completing or after login), fetch stats immediately.
-    // Using addListener is more reliable than addPostFrameCallback because
-    // it fires even if the widget is already built before isAdmin is true.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
       auth.addListener(_onAuthChanged);
-      // Also try immediately in case isAdmin is already true
       _tryFetchStats();
     });
   }
 
-  void _onAuthChanged() {
-    _tryFetchStats();
-  }
+  void _onAuthChanged() => _tryFetchStats();
 
   void _tryFetchStats() {
     if (!mounted) return;
@@ -83,23 +107,17 @@ class _HomeScreenState extends State<HomeScreen> {
       _statsFetched = true;
       context.read<AdminStatsProvider>().fetchStats();
     }
-    // Reset flag on logout so next login fetches fresh
     if (!isAdmin) _statsFetched = false;
   }
 
   @override
   void dispose() {
-    // Safe removal — addPostFrameCallback may not have fired yet if widget
-    // is disposed very quickly, so guard with try/catch
-    try {
-      context.read<AuthProvider>().removeListener(_onAuthChanged);
-    } catch (_) {}
+    try { context.read<AuthProvider>().removeListener(_onAuthChanged); } catch (_) {}
     super.dispose();
   }
 
   void _onTabSelected(int i, bool isAdmin) {
     setState(() => _index = i);
-    // Re-fetch every time admin tab is tapped so badges stay live
     if (i == _adminTabIndex(isAdmin)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) context.read<AdminStatsProvider>().fetchStats();
@@ -109,13 +127,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth    = context.watch<AuthProvider>();
-    final isAdmin = auth.isAdmin;
-    final screens = _screens(isAdmin);
-
-    // Total unread items — drives the nav bar badge dot
-    final adminStats   = context.watch<AdminStatsProvider>();
-    final totalUnread  = isAdmin
+    final auth       = context.watch<AuthProvider>();
+    final isAdmin    = auth.isAdmin;
+    final screens    = _screens(isAdmin);
+    final adminStats = context.watch<AdminStatsProvider>();
+    final totalUnread = isAdmin
         ? adminStats.pendingRequests +
           adminStats.openSupportTickets +
           adminStats.unreadFeedback
@@ -128,59 +144,202 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop   = screenWidth >= _kDesktopBreakpoint;
+
+    if (isDesktop) {
+      return _DesktopShell(
+        index:        safeIndex,
+        screens:      screens,
+        isAdmin:      isAdmin,
+        totalUnread:  totalUnread,
+        onSelect:     (i) => _onTabSelected(i, isAdmin),
+        plannerIndex: _plannerTabIndex(isAdmin),
+      );
+    }
+
+    // ── Mobile layout — unchanged ────────────────────────────────────────────
     return Scaffold(
       body: IndexedStack(index: safeIndex, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
         onDestinationSelected: (i) => _onTabSelected(i, isAdmin),
-        destinations: [
-          const NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home'),
-          const NavigationDestination(
-              icon: Icon(Icons.search_outlined),
-              selectedIcon: Icon(Icons.search_rounded),
-              label: 'Search'),
-          const NavigationDestination(
-              icon: Icon(Icons.bookmark_outline),
-              selectedIcon: Icon(Icons.bookmark_rounded),
-              label: 'Saved'),
-          const NavigationDestination(
-              icon: Icon(Icons.download_for_offline_outlined),
-              selectedIcon: Icon(Icons.download_for_offline_rounded),
-              label: 'Offline'),
-          const NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined),
-              selectedIcon: Icon(Icons.calendar_today_rounded),
-              label: 'Planner'),
-          if (isAdmin)
-            NavigationDestination(
-                icon: _AdminNavIcon(
-                    icon: Icons.admin_panel_settings_outlined,
-                    badge: totalUnread,
-                    selected: false),
-                selectedIcon: _AdminNavIcon(
-                    icon: Icons.admin_panel_settings_rounded,
-                    badge: totalUnread,
-                    selected: true),
-                label: 'Admin'),
-          const NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Profile'),
+        destinations: _buildDestinations(isAdmin, totalUnread),
+      ),
+    );
+  }
+
+  List<NavigationDestination> _buildDestinations(bool isAdmin, int totalUnread) {
+    return [
+      const NavigationDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home_rounded),
+          label: 'Home'),
+      const NavigationDestination(
+          icon: Icon(Icons.search_outlined),
+          selectedIcon: Icon(Icons.search_rounded),
+          label: 'Search'),
+      const NavigationDestination(
+          icon: Icon(Icons.bookmark_outline),
+          selectedIcon: Icon(Icons.bookmark_rounded),
+          label: 'Saved'),
+      if (!kIsWeb)
+        const NavigationDestination(
+            icon: Icon(Icons.download_for_offline_outlined),
+            selectedIcon: Icon(Icons.download_for_offline_rounded),
+            label: 'Offline'),
+      const NavigationDestination(
+          icon: Icon(Icons.calendar_today_outlined),
+          selectedIcon: Icon(Icons.calendar_today_rounded),
+          label: 'Planner'),
+      if (isAdmin)
+        NavigationDestination(
+            icon: _AdminNavIcon(
+                icon: Icons.admin_panel_settings_outlined,
+                badge: totalUnread, selected: false),
+            selectedIcon: _AdminNavIcon(
+                icon: Icons.admin_panel_settings_rounded,
+                badge: totalUnread, selected: true),
+            label: 'Admin'),
+      const NavigationDestination(
+          icon: Icon(Icons.person_outline),
+          selectedIcon: Icon(Icons.person_rounded),
+          label: 'Profile'),
+    ];
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Desktop Shell — NavigationRail + content
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _DesktopShell extends StatelessWidget {
+  final int           index;
+  final List<Widget>  screens;
+  final bool          isAdmin;
+  final int           totalUnread;
+  final void Function(int) onSelect;
+  final int           plannerIndex;
+
+  const _DesktopShell({
+    required this.index,
+    required this.screens,
+    required this.isAdmin,
+    required this.totalUnread,
+    required this.onSelect,
+    required this.plannerIndex,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      body: Row(
+        children: [
+          // ── Left navigation rail ────────────────────────────────────────
+          NavigationRail(
+            selectedIndex:    index,
+            onDestinationSelected: onSelect,
+            labelType:        NavigationRailLabelType.all,
+            backgroundColor: isDark
+                ? const Color(0xFF1E1E1E)
+                : const Color(0xFFF8F8F8),
+            indicatorColor:  scheme.primary.withOpacity(0.15),
+            selectedIconTheme: IconThemeData(color: scheme.primary),
+            selectedLabelTextStyle: TextStyle(
+              color: scheme.primary,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+            unselectedLabelTextStyle: TextStyle(
+              color: isDark ? Colors.white60 : Colors.black54,
+              fontSize: 11,
+            ),
+            leading: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Text('CS',
+                        style: TextStyle(color: Colors.white,
+                            fontWeight: FontWeight.bold, fontSize: 14)),
+                  ),
+                ),
+              ]),
+            ),
+            destinations: _buildRailDestinations(context),
+          ),
+
+          // Vertical divider
+          VerticalDivider(
+            width: 1,
+            color: isDark ? Colors.white12 : Colors.black.withOpacity(0.08),
+          ),
+
+          // ── Main content ────────────────────────────────────────────────
+          Expanded(
+            child: IndexedStack(index: index, children: screens),
+          ),
         ],
       ),
     );
   }
+
+  List<NavigationRailDestination> _buildRailDestinations(BuildContext context) {
+    final dests = <NavigationRailDestination>[
+      const NavigationRailDestination(
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home_rounded),
+          label: Text('Home')),
+      const NavigationRailDestination(
+          icon: Icon(Icons.search_outlined),
+          selectedIcon: Icon(Icons.search_rounded),
+          label: Text('Search')),
+      const NavigationRailDestination(
+          icon: Icon(Icons.bookmark_outline),
+          selectedIcon: Icon(Icons.bookmark_rounded),
+          label: Text('Saved')),
+      const NavigationRailDestination(
+          icon: Icon(Icons.calendar_today_outlined),
+          selectedIcon: Icon(Icons.calendar_today_rounded),
+          label: Text('Planner')),
+    ];
+
+    if (isAdmin) {
+      dests.add(NavigationRailDestination(
+          icon: _AdminNavIcon(
+              icon: Icons.admin_panel_settings_outlined,
+              badge: totalUnread, selected: false),
+          selectedIcon: _AdminNavIcon(
+              icon: Icons.admin_panel_settings_rounded,
+              badge: totalUnread, selected: true),
+          label: const Text('Admin')));
+    }
+
+    dests.add(const NavigationRailDestination(
+        icon: Icon(Icons.person_outline),
+        selectedIcon: Icon(Icons.person_rounded),
+        label: Text('Profile')));
+
+    return dests;
+  }
 }
 
-// ── Admin nav icon with red dot badge ────────────────────────────────────────
+
+// ── Admin nav icon with badge ─────────────────────────────────────────────────
 
 class _AdminNavIcon extends StatelessWidget {
   final IconData icon;
-  final int badge;
-  final bool selected;
+  final int      badge;
+  final bool     selected;
   const _AdminNavIcon({
     required this.icon,
     required this.badge,
@@ -195,23 +354,17 @@ class _AdminNavIcon extends StatelessWidget {
         Icon(icon),
         if (badge > 0)
           Positioned(
-            top: -4,
-            right: -6,
+            top: -4, right: -6,
             child: Container(
               constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
               padding: const EdgeInsets.symmetric(horizontal: 4),
               decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
+                  color: Colors.red, shape: BoxShape.circle),
               child: Text(
                 badge > 99 ? '99+' : '$badge',
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  height: 1.6,
-                ),
+                    color: Colors.white, fontSize: 9,
+                    fontWeight: FontWeight.bold, height: 1.6),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -221,7 +374,10 @@ class _AdminNavIcon extends StatelessWidget {
   }
 }
 
-// ── Home tab ──────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Home Tab (content — identical on mobile and desktop)
+// ══════════════════════════════════════════════════════════════════════════════
 
 class _HomeTab extends StatefulWidget {
   const _HomeTab();
@@ -240,7 +396,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       context.read<NotificationProvider>().fetchNotifications();
       context.read<HomeProvider>().fetchHome();
       context.read<HomeProvider>().pingStreak();
-      context.read<OfflineProvider>().loadFromStorage();
+      if (!kIsWeb) context.read<OfflineProvider>().loadFromStorage();
     });
   }
 
@@ -264,11 +420,12 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     ]);
   }
 
-  void _goToExamPrep() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ExamPrepScreen()),
-    );
+  void _goToExamPrep() => Navigator.push(
+      context, MaterialPageRoute(builder: (_) => const ExamPrepScreen()));
+
+  int _plannerIndex(BuildContext context) {
+    final isAdmin = context.read<AuthProvider>().isAdmin;
+    return kIsWeb ? (isAdmin ? 5 : 3) : (isAdmin ? 6 : 4);
   }
 
   @override
@@ -278,6 +435,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     final home     = context.watch<HomeProvider>();
     final scheme   = Theme.of(context).colorScheme;
     final name     = auth.user?.fullName.split(' ').first ?? 'Student';
+    final isDesktop = MediaQuery.of(context).size.width >= _kDesktopBreakpoint;
 
     return Scaffold(
       body: RefreshIndicator(
@@ -287,10 +445,9 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
 
             // ── 1. Hero header ──────────────────────────────────────────────
             SliverToBoxAdapter(
-              child: _buildHeader(context, scheme, name, home),
+              child: _buildHeader(context, scheme, name, home, isDesktop),
             ),
 
-            // ── Loading shimmer ─────────────────────────────────────────────
             if (home.loading && home.data == null)
               const SliverToBoxAdapter(child: HomeShimmer()),
 
@@ -300,28 +457,27 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
                   child: ExamPrepBanner(
-                    count: home.data!.examPrepCount,
-                    onTap: _goToExamPrep,
-                  ),
+                      count: home.data!.examPrepCount, onTap: _goToExamPrep),
                 ),
               ),
 
-            // ── 3. Leaderboard entry card ────────────────────────────────
+            // ── 3. Leaderboard entry card ────────────────────────────────────
             if (home.data != null)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                   child: _LeaderboardEntryCard(
                     streak: home.data!.streak.currentStreak,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const StudyChampionsScreen())),
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(
+                            builder: (_) => const StudyChampionsScreen())),
                   ),
                 ),
               ),
 
-            // ── 3. Trending materials ───────────────────────────────────────
+            // ── 4. Trending materials ───────────────────────────────────────
             if (home.data != null &&
-                home.data!.trendingMaterials.isNotEmpty) ...[
+                home.data!.trendingMaterials.isNotEmpty) ...  [
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
@@ -336,15 +492,15 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     itemCount: home.data!.trendingMaterials.length,
                     itemBuilder: (_, i) => MaterialCard.horizontal(
-                      material: home.data!.trendingMaterials[i],
-                    ),
+                        material: home.data!.trendingMaterials[i]),
                   ),
                 ),
               ),
             ],
 
-            // ── 4. Continue reading ─────────────────────────────────────────
-            if (home.data != null && home.data!.recentlyViewed.isNotEmpty) ...[
+            // ── 5. Continue reading ─────────────────────────────────────────
+            if (home.data != null &&
+                home.data!.recentlyViewed.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
@@ -356,15 +512,14 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (_, i) => MaterialCard.vertical(
-                      material: home.data!.recentlyViewed[i],
-                    ),
+                        material: home.data!.recentlyViewed[i]),
                     childCount: home.data!.recentlyViewed.length,
                   ),
                 ),
               ),
             ],
 
-            // ── 5. Daily quote ──────────────────────────────────────────────
+            // ── 6. Daily quote ──────────────────────────────────────────────
             if (home.data?.dailyQuote != null)
               SliverToBoxAdapter(
                 child: Padding(
@@ -373,7 +528,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // ── 6a. Quick Actions ───────────────────────────────────────────
+            // ── 7. Quick Actions ────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -390,12 +545,10 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                         icon: Icons.add_comment_outlined,
                         label: 'Request\nMaterial',
                         color: Colors.teal,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RequestMaterialScreen(),
-                          ),
-                        ),
+                        onTap: () => Navigator.push(context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const RequestMaterialScreen())),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -411,25 +564,28 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                         },
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _QuickActionCard(
-                        icon: Icons.download_done_rounded,
-                        label: 'Downloaded',
-                        color: Colors.green,
-                        onTap: () {
-                          final shell = context
-                              .findAncestorStateOfType<_HomeScreenState>();
-                          shell?.setState(() => shell._index = 3);
-                        },
+                    // Hide "Downloaded" quick action on web
+                    if (!kIsWeb) ...[
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _QuickActionCard(
+                          icon: Icons.download_done_rounded,
+                          label: 'Downloaded',
+                          color: Colors.green,
+                          onTap: () {
+                            final shell = context
+                                .findAncestorStateOfType<_HomeScreenState>();
+                            shell?.setState(() => shell._index = 3);
+                          },
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
             ),
 
-            // ── 6a-2. AI Tutor action card ──────────────────────────────────
+            // AI Tutor card
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -438,16 +594,14 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                   label: 'AI Tutor',
                   color: const Color(0xFF1A3C6E),
                   wide: true,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const AiTutorScreen()),
-                  ),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(
+                          builder: (_) => const AiTutorScreen())),
                 ),
               ),
             ),
 
-            // ── 6a-3. Study Planner action card ─────────────────────────────
+            // Study Planner card
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -457,15 +611,18 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                   color: const Color(0xFF6C63FF),
                   wide: true,
                   onTap: () {
-                    final shell = context
-                        .findAncestorStateOfType<_HomeScreenState>();
-                    shell?.setState(() => shell._index = 4);
+                    final shell =
+                        context.findAncestorStateOfType<_HomeScreenState>();
+                    if (shell != null) {
+                      shell.setState(() =>
+                          shell._index = _plannerIndex(context));
+                    }
                   },
                 ),
               ),
             ),
 
-            // ── 6b. Browse by level ─────────────────────────────────────────
+            // ── 8. Browse by level ──────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
@@ -489,12 +646,10 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                       final level = academic.levels[i];
                       return _LevelCard(
                         level: level,
-                        onTap: () => Navigator.push(
-                          ctx,
-                          MaterialPageRoute(
-                            builder: (_) => LevelsScreen(level: level),
-                          ),
-                        ),
+                        onTap: () => Navigator.push(ctx,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    LevelsScreen(level: level))),
                       );
                     },
                     childCount: academic.levels.length,
@@ -502,7 +657,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
 
-            // Error state
             if (home.error != null && home.data == null)
               SliverToBoxAdapter(
                 child: Padding(
@@ -522,20 +676,14 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     );
   }
 
-  // ── Header builder ──────────────────────────────────────────────────────────
-
-  Widget _buildHeader(
-    BuildContext context,
-    ColorScheme scheme,
-    String name,
-    HomeProvider home,
-  ) {
+  Widget _buildHeader(BuildContext context, ColorScheme scheme,
+      String name, HomeProvider home, bool isDesktop) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 56, 24, 28),
+      padding: EdgeInsets.fromLTRB(
+          24, isDesktop ? 32 : 56, 24, 28),
       decoration: BoxDecoration(
         color: scheme.primary,
-        borderRadius:
-            const BorderRadius.vertical(bottom: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -546,20 +694,15 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Hello, $name 👋',
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 14),
-                    ),
+                    Text('Hello, $name 👋',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 14)),
                     const SizedBox(height: 2),
-                    const Text(
-                      'CS Simplified',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    const Text('CS Simplified',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -570,38 +713,27 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               Consumer<NotificationProvider>(
                 builder: (_, notifs, __) => GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const NotificationsScreen(),
-                    ),
-                  ),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(
+                          builder: (_) => const NotificationsScreen())),
                   child: Stack(
                     children: [
                       Container(
-                        width: 42,
-                        height: 42,
+                        width: 42, height: 42,
                         decoration: BoxDecoration(
                           color: Colors.white24,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(
-                          Icons.notifications_outlined,
-                          color: Colors.white,
-                          size: 20,
-                        ),
+                        child: const Icon(Icons.notifications_outlined,
+                            color: Colors.white, size: 20),
                       ),
                       if (notifs.unreadCount > 0)
                         Positioned(
-                          top: 6,
-                          right: 6,
+                          top: 6, right: 6,
                           child: Container(
-                            width: 9,
-                            height: 9,
+                            width: 9, height: 9,
                             decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
+                                color: Colors.red, shape: BoxShape.circle),
                           ),
                         ),
                     ],
@@ -613,20 +745,17 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
 
           if (home.data != null && home.data!.streak.currentStreak > 0) ...[
             const SizedBox(height: 10),
-            Text(
-              home.data!.streak.motivationalMessage,
-              style: const TextStyle(
-                color: Colors.white60,
-                fontSize: 12,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
+            Text(home.data!.streak.motivationalMessage,
+                style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic)),
           ],
 
           const SizedBox(height: 16),
-
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white12,
               borderRadius: BorderRadius.circular(12),
@@ -634,10 +763,8 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             child: const Row(children: [
               Icon(Icons.lightbulb_outline, color: Colors.white70, size: 17),
               SizedBox(width: 10),
-              Text(
-                'Browse materials by level',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
+              Text('Browse materials by level',
+                  style: TextStyle(color: Colors.white70, fontSize: 13)),
             ]),
           ),
         ],
@@ -646,10 +773,11 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
   }
 }
 
+
 // ── Level card ────────────────────────────────────────────────────────────────
 
 class _LevelCard extends StatelessWidget {
-  final LevelModel level;
+  final LevelModel   level;
   final VoidCallback onTap;
   const _LevelCard({required this.level, required this.onTap});
 
@@ -668,16 +796,14 @@ class _LevelCard extends StatelessWidget {
         ),
         child: Row(children: [
           Container(
-            width: 52,
-            height: 52,
+            width: 52, height: 52,
             decoration: BoxDecoration(
               color: scheme.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Center(
-              child: Text(level.emoji,
-                  style: const TextStyle(fontSize: 26)),
-            ),
+                child: Text(level.emoji,
+                    style: const TextStyle(fontSize: 26))),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -701,10 +827,11 @@ class _LevelCard extends StatelessWidget {
   }
 }
 
+
 // ── Error banner ──────────────────────────────────────────────────────────────
 
 class _ErrorBanner extends StatelessWidget {
-  final String message;
+  final String       message;
   final VoidCallback onRetry;
   const _ErrorBanner({required this.message, required this.onRetry});
 
@@ -720,27 +847,25 @@ class _ErrorBanner extends StatelessWidget {
       child: Row(children: [
         const Icon(Icons.error_outline, color: Colors.red, size: 18),
         const SizedBox(width: 10),
-        Expanded(
-          child: Text(message,
-              style: const TextStyle(fontSize: 13, color: Colors.red)),
-        ),
+        Expanded(child: Text(message,
+            style: const TextStyle(fontSize: 13, color: Colors.red))),
         TextButton(
-          onPressed: onRetry,
-          child: const Text('Retry', style: TextStyle(fontSize: 12)),
-        ),
+            onPressed: onRetry,
+            child: const Text('Retry', style: TextStyle(fontSize: 12))),
       ]),
     );
   }
 }
 
+
 // ── Quick action card ─────────────────────────────────────────────────────────
 
 class _QuickActionCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
+  final IconData     icon;
+  final String       label;
+  final Color        color;
   final VoidCallback onTap;
-  final bool wide;
+  final bool         wide;
 
   const _QuickActionCard({
     required this.icon,
@@ -752,75 +877,66 @@ class _QuickActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: wide
-            ? const EdgeInsets.symmetric(vertical: 14, horizontal: 20)
-            : const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.2)),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: wide
+              ? const EdgeInsets.symmetric(vertical: 14, horizontal: 20)
+              : const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withOpacity(0.2)),
+          ),
+          child: wide
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: color, size: 24),
+                    const SizedBox(width: 10),
+                    Text(label,
+                        style: TextStyle(fontSize: 13,
+                            fontWeight: FontWeight.w600, color: color)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text('PRO',
+                          style: TextStyle(fontSize: 10,
+                              fontWeight: FontWeight.bold, color: color)),
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, color: color, size: 26),
+                    const SizedBox(height: 8),
+                    Text(label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: color, height: 1.3)),
+                  ],
+                ),
         ),
-        child: wide
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, color: color, size: 24),
-                  const SizedBox(width: 10),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: color,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'PRO',
-                      style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: color),
-                    ),
-                  ),
-                ],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, color: color, size: 26),
-                  const SizedBox(height: 8),
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: color,
-                      height: 1.3,
-                    ),
-                  ),
-                ],
-              ),
       ),
     );
   }
 }
 
+
 // ── Leaderboard entry card ────────────────────────────────────────────────────
 
 class _LeaderboardEntryCard extends StatelessWidget {
-  final int streak;
+  final int          streak;
   final VoidCallback onTap;
   const _LeaderboardEntryCard({required this.streak, required this.onTap});
 
@@ -832,12 +948,10 @@ class _LeaderboardEntryCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.amber.withOpacity(0.15),
-              scheme.primary.withOpacity(0.08),
-            ],
-          ),
+          gradient: LinearGradient(colors: [
+            Colors.amber.withOpacity(0.15),
+            scheme.primary.withOpacity(0.08),
+          ]),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.amber.withOpacity(0.3)),
         ),
@@ -863,31 +977,32 @@ class _LeaderboardEntryCard extends StatelessWidget {
           ),
           Row(children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: Colors.amber.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Text('View',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold,
-                      color: Colors.amber)),
+                  style: TextStyle(fontSize: 12,
+                      fontWeight: FontWeight.bold, color: Colors.amber)),
             ),
             const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const ShareProgressScreen())),
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
+            if (!kIsWeb)
+              GestureDetector(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(
+                        builder: (_) => const ShareProgressScreen())),
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.share_rounded,
+                      size: 14, color: Colors.amber),
                 ),
-                child: const Icon(Icons.share_rounded,
-                    size: 14, color: Colors.amber),
               ),
-            ),
           ]),
         ]),
       ),

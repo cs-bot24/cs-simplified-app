@@ -30,7 +30,7 @@ void main() async {
   await AppStorage.loadTokenToCache();
   await AppStorage.loadUserToCache();
 
-  await FcmService.init();
+  //await FcmService.init();
 
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();

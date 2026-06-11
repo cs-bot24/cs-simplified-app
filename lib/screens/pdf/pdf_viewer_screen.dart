@@ -27,16 +27,20 @@
 
 import 'dart:async';
 import 'dart:developer' as dev;
-import 'dart:io';
 
-import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+
+// Platform-conditional imports:
+//   Mobile → pdf_viewer_mobile.dart  (uses dart:io, Dio, WebView, etc.)
+//   Web    → pdf_viewer_web.dart     (stubs — no dart:io)
+import 'pdf_viewer_mobile.dart' if (dart.library.html) 'pdf_viewer_web.dart';
+
+// Web split-screen panels (safe on all platforms; uses kIsWeb guards internally)
+import 'pdf_web_panels.dart';
 
 import '../../core/api_client.dart';
 import '../../models/offline_material.dart';
@@ -86,11 +90,10 @@ class PdfViewerScreen extends StatefulWidget {
 }
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
-  // ── WebView ───────────────────────────────────────────────────────────────
-  late final WebViewController _webController;
-
-  // ── Dio for downloads ─────────────────────────────────────────────────────
-  final Dio _dio = Dio();
+  // ── WebView (mobile only — wrapped behind conditional import) ───────────
+  // WebViewControllerWrapper is defined in pdf_viewer_mobile.dart (mobile)
+  // and as a no-op stub in pdf_viewer_web.dart (web).
+  late final WebViewControllerWrapper _webController;
 
   // ── UI state ──────────────────────────────────────────────────────────────
   bool _isLoading     = true;
@@ -100,6 +103,19 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   // ── AI bottom sheet ───────────────────────────────────────────────────────
   bool _aiSheetOpen = false;
+
+  // ── Web AI overlay panel state ───────────────────────────────────────────
+  bool _webAiOpen = false;
+
+  void _openWebAiPanel() {
+    if (!mounted) return;
+    setState(() => _webAiOpen = true);
+  }
+
+  void _closeWebAiPanel() {
+    if (!mounted) return;
+    setState(() => _webAiOpen = false);
+  }
 
   // ── Study Tools panel expansion state ────────────────────────────────────
   // Shared with _StudyToolsPanel so the FAB lifts when the panel expands.
@@ -226,36 +242,31 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   void dispose() {
     _studyTimer?.cancel();
     _studyPanelExpanded.dispose();
-    _dio.close();
     super.dispose();
   }
 
   // ── WebView init ──────────────────────────────────────────────────────────
 
   void _initWebView() {
-    _webController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(_kBackground)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageStarted: (_) {
-          if (mounted) setState(() { _isLoading = true; _hasError = false; });
-        },
-        onPageFinished: (_) {
-          if (mounted) setState(() => _isLoading = false);
-        },
-        onWebResourceError: (error) {
-          dev.log('[PDF] error: ${error.description}', name: 'PdfViewer');
-          if (error.isForMainFrame ?? true) {
-            if (mounted) setState(() { _isLoading = false; _hasError = true; });
-          }
-        },
-      ))
-      ..loadRequest(Uri.parse(_viewerUrl));
+    if (kIsWeb) return;
+    _webController = createWebViewController(
+      _viewerUrl,
+      onLoadState: (loading) {
+        if (mounted) setState(() {
+          _isLoading = loading;
+          if (loading) _hasError = false;
+        });
+      },
+      onError: () {
+        dev.log('[PDF] WebView error', name: 'PdfViewer');
+        if (mounted) setState(() { _isLoading = false; _hasError = true; });
+      },
+    );
   }
 
   void _retryLoad() {
     setState(() { _isLoading = true; _hasError = false; });
-    _webController.loadRequest(Uri.parse(_viewerUrl));
+    _webController.loadUrl(_viewerUrl);
   }
 
   // ── AI Sheet ──────────────────────────────────────────────────────────────
@@ -325,63 +336,37 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // ── Download ──────────────────────────────────────────────────────────────
 
   Future<void> _downloadPdf() async {
-    final rawUrl = widget.url.trim();
-    if (rawUrl.isEmpty) { _toast('No download URL.', success: false); return; }
     setState(() { _isDownloading = true; _downloadProgress = 0; });
     try {
-      if (Platform.isAndroid) {
-        final sdk = await _androidSdkInt();
-        if (sdk < 29) {
-          final status = await Permission.storage.request();
-          if (status.isDenied) {
-            _toast('Storage permission denied.', success: false);
-            return;
+      // downloadPdf() is resolved by the conditional import:
+      //   • Mobile: uses Dio + dart:io (pdf_viewer_mobile.dart)
+      //   • Web:    opens via url_launcher (pdf_viewer_web.dart)
+      await downloadPdf(
+        url:   widget.url,
+        title: widget.title,
+        onProgress: (p) {
+          if (mounted) setState(() => _downloadProgress = p);
+        },
+        onToast: (msg, {required bool success}) =>
+            _toast(msg, success: success),
+        onSaved: (filePath) async {
+          if (widget.materialId != null) {
+            ApiClient.logDownload(widget.materialId!);
           }
-        }
-      }
-      final saveDir  = await _resolveDownloadsDirectory();
-      final safeName = widget.title
-          .replaceAll(RegExp(r'[^\w\s\-]'), '')
-          .trim()
-          .replaceAll(RegExp(r'\s+'), '_');
-      final destPath = '${saveDir.path}/$safeName.pdf';
-      await _dio.download(
-        rawUrl, destPath,
-        options: Options(
-          headers: {'Accept': 'application/pdf,*/*'},
-          followRedirects: true,
-          receiveTimeout: const Duration(seconds: 120),
-        ),
-        onReceiveProgress: (received, total) {
-          if (total > 0 && mounted) {
-            setState(() => _downloadProgress = received / total);
+          if (widget.materialId != null && mounted) {
+            // File size tracking only makes sense on mobile, but OfflineMaterial
+            // accepts 0 gracefully on web (never reached because web stub
+            // doesn't call onSaved).
+            context.read<OfflineProvider>().addDownload(OfflineMaterial(
+              materialId:    widget.materialId!,
+              title:         widget.title,
+              filePath:      filePath,
+              fileSizeBytes: 0,
+              downloadedAt:  DateTime.now(),
+            ));
           }
         },
       );
-      _toast('Saved to Downloads ✓', success: true);
-      if (widget.materialId != null) ApiClient.logDownload(widget.materialId!);
-      if (widget.materialId != null && mounted) {
-        final fileSize = await File(destPath).length();
-        context.read<OfflineProvider>().addDownload(OfflineMaterial(
-          materialId:    widget.materialId!,
-          title:         widget.title,
-          filePath:      destPath,
-          fileSizeBytes: fileSize,
-          downloadedAt:  DateTime.now(),
-        ));
-      }
-    } on DioException catch (e) {
-      final reason = e.type == DioExceptionType.connectionTimeout ||
-              e.type == DioExceptionType.receiveTimeout
-          ? 'Connection timed out.'
-          : e.type == DioExceptionType.badResponse
-              ? 'Server error ${e.response?.statusCode}.'
-              : 'Network error. Check your connection.';
-      _toast(reason, success: false);
-    } on FileSystemException catch (e) {
-      _toast('Could not save file: ${e.message}', success: false);
-    } catch (e) {
-      _toast('Download failed.', success: false);
     } finally {
       if (mounted) setState(() { _isDownloading = false; _downloadProgress = 0; });
     }
@@ -400,36 +385,6 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-
-  Future<Directory> _resolveDownloadsDirectory() async {
-    if (Platform.isAndroid) {
-      try {
-        final dl = await getDownloadsDirectory();
-        if (dl != null) { if (!await dl.exists()) await dl.create(recursive: true); return dl; }
-      } catch (_) {}
-      for (final path in ['/storage/emulated/0/Downloads', '/storage/emulated/0/Download']) {
-        try {
-          final dir = Directory(path);
-          if (!await dir.exists()) await dir.create(recursive: true);
-          return dir;
-        } catch (_) {}
-      }
-      try {
-        final ext = await getExternalStorageDirectory();
-        if (ext != null) { if (!await ext.exists()) await ext.create(recursive: true); return ext; }
-      } catch (_) {}
-    }
-    return getApplicationDocumentsDirectory();
-  }
-
-  Future<int> _androidSdkInt() async {
-    try {
-      final version = Platform.operatingSystemVersion;
-      final match   = RegExp(r'(?:SDK\s*|API\s*)(\d+)').firstMatch(version);
-      if (match != null) return int.parse(match.group(1)!);
-    } catch (_) {}
-    return 33;
-  }
 
   void _toast(String msg, {required bool success}) {
     if (!mounted) return;
@@ -459,55 +414,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       child: Scaffold(
         backgroundColor: _kBackground,
         appBar: _buildAppBar(),
-        body: Stack(
-          children: [
-            // WebView — always mounted to preserve scroll position
-            // Bottom padding reserves space so the PDF zoom controls
-            // are never hidden behind the Study Tools panel.
-            if (!_hasError)
-              Positioned.fill(
-                bottom: MediaQuery.of(context).padding.bottom + 52,
-                child: WebViewWidget(controller: _webController),
-              ),
-
-            if (_isLoading && !_hasError) _buildLoadingOverlay(),
-            if (_hasError)               _buildErrorView(),
-            if (_isDownloading)          _buildDownloadOverlay(),
-
-            // ── Phase 4/5/6: Collapsible Study Tools panel ───────────────
-            // Rendered first (lower z-order) so the AI FAB floats above it
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _StudyToolsPanel(
-                onAction: _quickAction,
-                expandedNotifier: _studyPanelExpanded,
-              ),
-            ),
-
-            // ── Phase 1: Floating AI button ──────────────────────────────
-            // Lifts higher when Study Tools panel is expanded so it never
-            // overlaps the action buttons.
-            ValueListenableBuilder<bool>(
-              valueListenable: _studyPanelExpanded,
-              builder: (_, expanded, __) {
-                final bottomPad = MediaQuery.of(context).padding.bottom;
-                // collapsed: pill ~44px. expanded: pill + buttons ~130px
-                final fabBottom = expanded
-                    ? bottomPad + 140
-                    : bottomPad + 56;
-                return AnimatedPositioned(
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOutCubic,
-                  right: 16,
-                  bottom: fabBottom.toDouble(),
-                  child: _FloatingAiButton(onTap: _openAiSheet),
-                );
-              },
-            ),
-          ],
-        ),
+        body: kIsWeb ? _buildWebLayout() : _buildMobileLayout(),
       ),
     );
   }
@@ -550,6 +457,166 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           icon: const Icon(Icons.download_rounded, color: Colors.white),
           onPressed: _isDownloading ? null : _downloadPdf,
           tooltip: 'Download PDF',
+        ),
+      ],
+    );
+  }
+
+  // ── Web layout: full-width PDF, AI available on demand ──────────────────
+  Widget _buildWebLayout() {
+    // FAB footprint reserved as a "hole" in the iframe so that the iframe
+    // (a real DOM element via HtmlElementView) cannot intercept clicks
+    // meant for the Flutter-rendered floating AI button on top of it.
+    const double fabSize = 56;
+    const double fabMargin = 16;
+    final double reservedWidth  = fabSize + fabMargin * 2;
+    final double reservedHeight = fabSize + fabMargin * 2;
+
+    final width = MediaQuery.of(context).size.width;
+    final double aiPanelWidth = _webAiPanelWidth(width);
+
+    // When the AI panel/backdrop is open, also shrink the iframe's right
+    // edge by the panel width so it can't intercept clicks on the panel
+    // or backdrop (same HtmlElementView click-through issue as the FAB).
+    final double iframeRight  = _webAiOpen ? aiPanelWidth : reservedWidth;
+    final double iframeBottom = _webAiOpen ? 0 : reservedHeight;
+
+    return Stack(
+      children: [
+        // PDF fills the screen except for a reserved area (see above).
+        Positioned.fill(
+          right: iframeRight,
+          bottom: iframeBottom,
+          child: WebPdfPanel(url: widget.url, title: widget.title),
+        ),
+        // Fill the reserved area with a plain background so there's
+        // no visual gap.
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: iframeRight,
+          child: Container(color: _kBackground),
+        ),
+        if (!_webAiOpen)
+          Positioned(
+            right: iframeRight,
+            bottom: 0,
+            width: MediaQuery.of(context).size.width - iframeRight,
+            height: reservedHeight,
+            child: Container(color: _kBackground),
+          ),
+
+        // Floating AI button (mirrors Android FAB)
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 200),
+            scale: _webAiOpen ? 0.0 : 1.0,
+            curve: Curves.easeOut,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 150),
+              opacity: _webAiOpen ? 0.0 : 1.0,
+              child: _FloatingAiButton(onTap: _openWebAiPanel),
+            ),
+          ),
+        ),
+
+        // Backdrop (dims the PDF when the AI panel is open)
+        if (_webAiOpen)
+          Positioned.fill(
+            right: aiPanelWidth,
+            child: GestureDetector(
+              onTap: _closeWebAiPanel,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 220),
+                opacity: _webAiOpen ? 1.0 : 0.0,
+                curve: Curves.easeOut,
+                child: Container(color: Colors.black54),
+              ),
+            ),
+          ),
+
+        // AI panel — responsive: right drawer / wide drawer / full-screen
+        _buildWebAiOverlay(),
+      ],
+    );
+  }
+
+  // Desktop: right-side drawer. Tablet: wider drawer. Mobile: full-screen.
+  double _webAiPanelWidth(double screenWidth) {
+    if (screenWidth >= 900) return 420;
+    if (screenWidth >= 600) return screenWidth * 0.7;
+    return screenWidth;
+  }
+
+  Widget _buildWebAiOverlay() {
+    final width = MediaQuery.of(context).size.width;
+    final double panelWidth = _webAiPanelWidth(width);
+
+    final aiPanel = Material(
+      elevation: 16,
+      color: Colors.transparent,
+      child: SizedBox(
+        width: panelWidth,
+        height: double.infinity,
+        child: WebAiPanel(
+          materialId:    widget.materialId,
+          materialTitle: widget.title,
+          courseCode:    widget.courseCode,
+          levelName:     widget.levelName,
+          categoryName:  widget.categoryName,
+          onClose:       _closeWebAiPanel,
+        ),
+      ),
+    );
+
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+      top: 0,
+      bottom: 0,
+      right: _webAiOpen ? 0 : -panelWidth,
+      width: panelWidth,
+      child: aiPanel,
+    );
+  }
+
+  // ── Mobile layout: WebView + floating AI + study tools ───────────────────
+  Widget _buildMobileLayout() {
+    return Stack(
+      children: [
+        if (!_hasError)
+          Positioned.fill(
+            bottom: MediaQuery.of(context).padding.bottom + 52,
+            child: buildWebViewWidget(_webController),
+          ),
+        if (_isLoading && !_hasError) _buildLoadingOverlay(),
+        if (_hasError)               _buildErrorView(),
+        if (_isDownloading)          _buildDownloadOverlay(),
+        Positioned(
+          left: 0, right: 0, bottom: 0,
+          child: _StudyToolsPanel(
+            onAction: _quickAction,
+            expandedNotifier: _studyPanelExpanded,
+          ),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: _studyPanelExpanded,
+          builder: (_, expanded, __) {
+            final bottomPad = MediaQuery.of(context).padding.bottom;
+            final fabBottom = expanded
+                ? bottomPad + 140.0
+                : bottomPad + 56.0;
+            return AnimatedPositioned(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              right: 16,
+              bottom: fabBottom,
+              child: _FloatingAiButton(onTap: _openAiSheet),
+            );
+          },
         ),
       ],
     );

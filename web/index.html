@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="CS Simplified — AI-powered study platform for Computer Science students.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Favicon -->
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>CS Simplified</title>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background-color: #1A1A2E;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    /* Loading screen shown while Flutter initialises */
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      background: #1A1A2E;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.4s ease;
+    }
+
+    #loading-screen.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .logo-wrap {
+      width: 72px;
+      height: 72px;
+      background: #6C63FF;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 32px rgba(108, 99, 255, 0.4);
+    }
+
+    .logo-text {
+      color: white;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .app-name {
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .app-tagline {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 13px;
+      margin-bottom: 40px;
+    }
+
+    /* Animated spinner */
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(108, 99, 255, 0.2);
+      border-top-color: #6C63FF;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Branded loading screen — hidden once Flutter renders -->
+  <div id="loading-screen">
+    <div class="logo-wrap">
+      <span class="logo-text">CS</span>
+    </div>
+    <div class="app-name">CS Simplified</div>
+    <div class="app-tagline">AI-Powered Study Platform</div>
+    <div class="spinner"></div>
+  </div>
+
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var loadingScreen = document.getElementById('loading-screen');
+      if (loadingScreen) {
+        loadingScreen.classList.add('fade-out');
+        setTimeout(function () {
+          loadingScreen.style.display = 'none';
+        }, 450);
+      }
+    });
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
