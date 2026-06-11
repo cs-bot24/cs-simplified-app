@@ -8,26 +8,38 @@ enum AiState { idle, loading, error }
 
 class AiProvider extends ChangeNotifier {
   final List<AiMessage> _messages = [];
-  AiState       _state            = AiState.idle;
-  String?       _error;
-  AiMode        _mode             = AiMode.normal;
-  ExplanationLevel _level         = ExplanationLevel.intermediate;
-  AiPlanInfo?   _plan;
-  int           _questionsToday   = 0;
-  int           _questionsMonth   = 0;
+  AiState          _state          = AiState.idle;
+  String?          _error;
+  AiMode           _mode           = AiMode.normal;
+  ExplanationLevel _level          = ExplanationLevel.intermediate;
+  AiPlanInfo?      _plan;
+  int              _questionsToday  = 0;
+  int              _questionsMonth  = 0;
 
-  List<AiMessage>  get messages         => List.unmodifiable(_messages);
-  AiState          get state            => _state;
-  String?          get error            => _error;
-  bool             get loading          => _state == AiState.loading;
-  AiMode           get mode             => _mode;
-  ExplanationLevel get level            => _level;
-  AiPlanInfo?      get plan             => _plan;
-  int              get questionsToday   => _questionsToday;
-  int              get questionsMonth   => _questionsMonth;
-  bool             get isExamPrep       => _mode == AiMode.examPrep;
+  // ── Phase 3: Session memory ───────────────────────────────────────────────
+  // Tracks topics and concepts discussed in this session so that
+  // Practice Questions and Study Notes are generated from actual session content.
+  final List<String> _sessionTopics   = [];   // subjects detected (e.g. "Computer Science")
+  final List<String> _sessionConcepts = [];   // key terms from AI responses (parsed)
+  String?            _sessionSummary;         // running plain-text summary (optional)
 
-  // ── Mode & Level ─────────────────────────────────────────────────────────
+  List<AiMessage>  get messages        => List.unmodifiable(_messages);
+  AiState          get state           => _state;
+  String?          get error           => _error;
+  bool             get loading         => _state == AiState.loading;
+  AiMode           get mode            => _mode;
+  ExplanationLevel get level           => _level;
+  AiPlanInfo?      get plan            => _plan;
+  int              get questionsToday  => _questionsToday;
+  int              get questionsMonth  => _questionsMonth;
+  bool             get isExamPrep      => _mode == AiMode.examPrep;
+
+  // Session memory — exposed so UI can show "X topics studied"
+  List<String> get sessionTopics   => List.unmodifiable(_sessionTopics);
+  List<String> get sessionConcepts => List.unmodifiable(_sessionConcepts);
+  bool         get hasSessionContext => _sessionTopics.isNotEmpty;
+
+  // ── Mode & Level ──────────────────────────────────────────────────────────
 
   void setMode(AiMode m) {
     _mode = m;
@@ -80,8 +92,7 @@ class AiProvider extends ChangeNotifier {
   }
 
   // ── Ask from inside the PDF Reader (Phase 2C) ─────────────────────────────
-  // Identical to ask() but forwards course context so the AI knows
-  // which material the student is currently reading.
+
   Future<void> askFromPdf({
     required String question,
     int?    materialId,
@@ -91,18 +102,17 @@ class AiProvider extends ChangeNotifier {
     String? categoryName,
   }) async {
     await _sendRequest(
-      question:        question,
-      pdfMaterialId:   materialId,
+      question:         question,
+      pdfMaterialId:    materialId,
       pdfMaterialTitle: materialTitle,
-      pdfCourseCode:   courseCode,
-      pdfLevelName:    levelName,
-      pdfCategoryName: categoryName,
+      pdfCourseCode:    courseCode,
+      pdfLevelName:     levelName,
+      pdfCategoryName:  categoryName,
     );
   }
 
   // ── Generate page-level content from inside PDF Reader ────────────────────
-  // Used by Explain Page, Generate Notes, Quiz Me buttons.
-  // The page text is injected directly as the question body.
+
   Future<String?> generateFromPageText({
     required String pageText,
     required String action,   // 'explain' | 'notes' | 'quiz'
@@ -146,9 +156,9 @@ class AiProvider extends ChangeNotifier {
   // ── Ask with image ────────────────────────────────────────────────────────
 
   Future<void> askWithImage(File imageFile, {String extraText = ''}) async {
-    final bytes    = await imageFile.readAsBytes();
-    final b64      = base64Encode(bytes);
-    final mime     = imageFile.path.toLowerCase().endsWith('.png')
+    final bytes = await imageFile.readAsBytes();
+    final b64   = base64Encode(bytes);
+    final mime  = imageFile.path.toLowerCase().endsWith('.png')
         ? 'image/png'
         : 'image/jpeg';
     await _sendRequest(
@@ -159,7 +169,9 @@ class AiProvider extends ChangeNotifier {
     );
   }
 
-  // ── Practice questions ────────────────────────────────────────────────────
+  // ── Practice questions (Phase 3: context-aware) ───────────────────────────
+  // Priority 1: Use current session topics & concepts.
+  // Priority 2: Fall back to topic string (subject from last AI message).
 
   Future<String?> generatePracticeQuestions(String topic) async {
     _state = AiState.loading;
@@ -167,8 +179,10 @@ class AiProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final data = await ApiClient.generatePracticeQuestions(
-        topic: topic,
-        level: _level.name,
+        topic:           topic,
+        level:           _level.name,
+        sessionTopics:   _sessionTopics.isNotEmpty ? _sessionTopics : null,
+        sessionConcepts: _sessionConcepts.isNotEmpty ? _sessionConcepts : null,
       );
       _state = AiState.idle;
       notifyListeners();
@@ -182,7 +196,8 @@ class AiProvider extends ChangeNotifier {
     return null;
   }
 
-  // ── Study notes ───────────────────────────────────────────────────────────
+  // ── Study notes (Phase 3: context-aware) ─────────────────────────────────
+  // When session topics exist, notes summarise the actual session content.
 
   Future<String?> generateStudyNotes(String topic) async {
     _state = AiState.loading;
@@ -190,8 +205,10 @@ class AiProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final data = await ApiClient.generateStudyNotes(
-        topic: topic,
-        level: _level.name,
+        topic:          topic,
+        level:          _level.name,
+        sessionTopics:  _sessionTopics.isNotEmpty ? _sessionTopics : null,
+        sessionSummary: _sessionSummary,
       );
       _state = AiState.idle;
       notifyListeners();
@@ -212,7 +229,6 @@ class AiProvider extends ChangeNotifier {
     String? imageBase64,
     String? imageMimeType,
     bool isImage = false,
-    // PDF Reader context — forwarded straight to the API
     int?    pdfMaterialId,
     String? pdfMaterialTitle,
     String? pdfCourseCode,
@@ -226,10 +242,10 @@ class AiProvider extends ChangeNotifier {
       text: isImage
           ? (trimmed.isEmpty ? '📷 Image question' : '📷 $trimmed')
           : trimmed,
-      isUser: true,
+      isUser:    true,
       timestamp: DateTime.now(),
-      isImage: isImage,
-      mode: _mode,
+      isImage:   isImage,
+      mode:      _mode,
     ));
     _state = AiState.loading;
     _error = null;
@@ -237,27 +253,38 @@ class AiProvider extends ChangeNotifier {
 
     try {
       final data = await ApiClient.askAi(
-        question:        trimmed,
-        mode:            _mode == AiMode.examPrep ? 'exam_prep' : 'normal',
-        level:           _level.name,
-        imageBase64:     imageBase64,
-        imageMimeType:   imageMimeType,
-        pdfMaterialId:   pdfMaterialId,
+        question:         trimmed,
+        mode:             _mode == AiMode.examPrep ? 'exam_prep' : 'normal',
+        level:            _level.name,
+        imageBase64:      imageBase64,
+        imageMimeType:    imageMimeType,
+        pdfMaterialId:    pdfMaterialId,
         pdfMaterialTitle: pdfMaterialTitle,
-        pdfCourseCode:   pdfCourseCode,
-        pdfLevelName:    pdfLevelName,
-        pdfCategoryName: pdfCategoryName,
+        pdfCourseCode:    pdfCourseCode,
+        pdfLevelName:     pdfLevelName,
+        pdfCategoryName:  pdfCategoryName,
       );
-      _messages.add(AiMessage(
+
+      final aiMessage = AiMessage(
         text:      data['response'] as String,
         isUser:    false,
         timestamp: DateTime.now(),
         subject:   data['subject'] as String?,
         mode:      _mode,
-      ));
+      );
+
+      _messages.add(aiMessage);
       _questionsToday++;
       _questionsMonth++;
       _state = AiState.idle;
+
+      // ── Phase 3: Update session memory ─────────────────────────────────
+      _updateSessionMemory(
+        userQuestion: trimmed,
+        aiResponse:   aiMessage.text,
+        subject:      aiMessage.subject,
+      );
+
     } on ApiException catch (e) {
       _error = e.message;
       _state = AiState.error;
@@ -270,8 +297,73 @@ class AiProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Phase 3: Session memory update ───────────────────────────────────────
+  // Called after each successful AI response.
+  // Tracks topics (subjects) and extracts key concepts from the response.
+
+  void _updateSessionMemory({
+    required String  userQuestion,
+    required String  aiResponse,
+    String? subject,
+  }) {
+    // 1. Track unique subjects/topics
+    if (subject != null &&
+        subject.isNotEmpty &&
+        !_sessionTopics.contains(subject)) {
+      _sessionTopics.add(subject);
+    }
+
+    // 2. Extract concepts — look for text after common definition markers.
+    //    This is lightweight client-side parsing; the AI uses these labels
+    //    in its structured responses (e.g. "🔰 What is it?", "📌").
+    final conceptPatterns = [
+      // Matches "Term:" at start of a line followed by a short definition
+      RegExp(r'(?:^|\n)\*{0,2}([A-Z][A-Za-z\s]{2,30})\*{0,2}:(?!\s*/)', multiLine: true),
+    ];
+
+    for (final pattern in conceptPatterns) {
+      final matches = pattern.allMatches(aiResponse);
+      for (final match in matches) {
+        final concept = match.group(1)?.trim();
+        if (concept != null &&
+            concept.length > 2 &&
+            concept.length < 40 &&
+            !_sessionConcepts.contains(concept) &&
+            _sessionConcepts.length < 30) {
+          _sessionConcepts.add(concept);
+        }
+      }
+    }
+
+    // 3. Build a brief running session summary (last 5 questions)
+    final recentQuestions = _messages
+        .where((m) => m.isUser && m.text.isNotEmpty && !m.isImage)
+        .map((m) => m.text)
+        .toList();
+    if (recentQuestions.length > 5) {
+      recentQuestions.removeRange(0, recentQuestions.length - 5);
+    }
+    if (recentQuestions.isNotEmpty) {
+      _sessionSummary = 'Topics asked: ${recentQuestions.join('; ')}';
+    }
+  }
+
   // ── Utility ───────────────────────────────────────────────────────────────
 
-  void clearError()        { _error = null; _state = AiState.idle; notifyListeners(); }
-  void clearConversation() { _messages.clear(); _error = null; _state = AiState.idle; notifyListeners(); }
+  void clearError() {
+    _error = null;
+    _state = AiState.idle;
+    notifyListeners();
+  }
+
+  void clearConversation() {
+    _messages.clear();
+    _error = null;
+    _state = AiState.idle;
+    // Also clear session memory when the conversation is cleared
+    _sessionTopics.clear();
+    _sessionConcepts.clear();
+    _sessionSummary = null;
+    notifyListeners();
+  }
 }
