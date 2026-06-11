@@ -40,8 +40,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'pdf_viewer_mobile.dart' if (dart.library.html) 'pdf_viewer_web.dart';
 
 // Web split-screen panels (safe on all platforms; uses kIsWeb guards internally)
-import 'pdf_web_panels.dart';
-
+import 'pdf_web_panels_stub.dart' if (dart.library.html) 'pdf_web_panels.dart';
+    
 import '../../core/api_client.dart';
 import '../../models/offline_material.dart';
 import '../../models/rating_model.dart';
