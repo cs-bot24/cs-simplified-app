@@ -890,30 +890,57 @@ class ApiClient {
   }
 
   /// Generate practice questions on a topic.
+  /// Generate practice questions.
+  /// Phase 3: Pass sessionTopics + sessionConcepts for context-aware questions
+  /// generated from what the student actually studied this session.
   static Future<Map<String, dynamic>> generatePracticeQuestions({
     required String topic,
     String level = 'intermediate',
+    // Session context — from AiProvider session memory
+    List<String>? sessionTopics,
+    List<String>? sessionConcepts,
   }) async {
     try {
+      final body = <String, dynamic>{
+        'topic':             topic,
+        'explanation_level': level,
+        if (sessionTopics   != null && sessionTopics.isNotEmpty)
+          'session_topics':   sessionTopics,
+        if (sessionConcepts != null && sessionConcepts.isNotEmpty)
+          'session_concepts': sessionConcepts,
+      };
       final res = await http.post(
         Uri.parse('$_base/ai/practice'),
         headers: _headers(auth: true),
-        body: jsonEncode({'question': topic, 'explanation_level': level}),
+        body: jsonEncode(body),
       );
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
   /// Generate study notes on a topic.
+  /// Phase 3: Pass sessionTopics + sessionSummary for personalised notes
+  /// that summarise what was actually learned in this session.
   static Future<Map<String, dynamic>> generateStudyNotes({
     required String topic,
     String level = 'intermediate',
+    // Session context — from AiProvider session memory
+    List<String>? sessionTopics,
+    String?       sessionSummary,
   }) async {
     try {
+      final body = <String, dynamic>{
+        'topic':             topic,
+        'explanation_level': level,
+        if (sessionTopics   != null && sessionTopics.isNotEmpty)
+          'session_topics':   sessionTopics,
+        if (sessionSummary  != null)
+          'session_summary':  sessionSummary,
+      };
       final res = await http.post(
         Uri.parse('$_base/ai/study-notes'),
         headers: _headers(auth: true),
-        body: jsonEncode({'question': topic, 'explanation_level': level}),
+        body: jsonEncode(body),
       );
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
