@@ -7,29 +7,59 @@
 //   import 'pdf_web_panels_stub.dart'
 //       if (dart.library.html) 'pdf_web_panels.dart';
 //
-// Exposes the same API as pdf_web_panels.dart but does nothing —
-// mobile uses webview_flutter instead of an iframe.
+// Exposes the same public API as pdf_web_panels.dart but does nothing —
+// mobile uses webview_flutter instead of an iframe, and _buildWebLayout()
+// is only called when kIsWeb is true so these stubs are never rendered.
 // This file must NEVER import dart:ui_web or dart:html.
 
 import 'package:flutter/material.dart';
 
-/// No-op on mobile/desktop — mobile uses WebViewWidget instead.
+/// No-op on mobile/desktop — mobile uses WebViewController instead.
 void registerPdfViewFactory(String viewType, String url) {
   // Not used on mobile. WebViewController handles PDF display.
 }
 
-/// Placeholder widget — never actually rendered on mobile/desktop.
-/// The pdf_viewer_screen conditionally shows WebViewWidget on mobile
-/// and PdfWebView on web.
+/// Placeholder — never actually rendered on mobile/desktop.
+/// pdf_viewer_screen.dart guards _buildWebLayout() behind kIsWeb.
 class PdfWebView extends StatelessWidget {
   final String viewType;
-
   const PdfWebView({super.key, required this.viewType});
 
   @override
-  Widget build(BuildContext context) {
-    // This widget is never built on mobile — the screen uses WebViewWidget.
-    // Returning a SizedBox ensures no crash if somehow reached.
-    return const SizedBox.shrink();
-  }
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Stub for the PDF iframe panel — never rendered on mobile/desktop.
+/// The real implementation is in pdf_web_panels.dart (web only).
+class WebPdfPanel extends StatelessWidget {
+  final String url;
+  final String title;
+  const WebPdfPanel({super.key, required this.url, required this.title});
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// Stub for the AI side-panel — never rendered on mobile/desktop.
+/// The real implementation is in pdf_web_panels.dart (web only).
+class WebAiPanel extends StatelessWidget {
+  final int?    materialId;
+  final String  materialTitle;
+  final String? courseCode;
+  final String? levelName;
+  final String? categoryName;
+  final VoidCallback onClose;
+
+  const WebAiPanel({
+    super.key,
+    required this.materialId,
+    required this.materialTitle,
+    required this.courseCode,
+    required this.levelName,
+    required this.categoryName,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
