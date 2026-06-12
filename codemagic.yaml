@@ -41,50 +41,25 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
 
-      # ── 2. Analyze (non-fatal — warnings don't block build) ────────────────
+      # ── 2. Analyze (non-fatal) ─────────────────────────────────────────────
       - name: Analyze
         script: flutter analyze --no-fatal-infos
         ignore_failure: true
 
-      # ── 3. Build release APK ───────────────────────────────────────────────
+      # ── 3. Decode keystore so Gradle can sign during the build ─────────────
+      - name: Decode keystore
+        script: |
+          KEYSTORE_PATH="$CM_BUILD_DIR/cs_simplified.jks"
+          echo "$CM_KEYSTORE" | base64 --decode > "$KEYSTORE_PATH"
+          echo "CM_KEYSTORE_PATH=$KEYSTORE_PATH" >> $CM_ENV
+          echo "✅ Keystore decoded to $KEYSTORE_PATH"
+
+      # ── 4. Build and sign release APK ──────────────────────────────────────
       - name: Build APK
         script: |
           flutter build apk --release \
             --build-name=$(grep "^version:" pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1) \
-            --build-number=${CM_BUILD_NUMBER:-1}
-
-      # ── 4. Sign APK with your keystore ─────────────────────────────────────
-      # CM_KEYSTORE is base64-encoded. We decode it to a temp .jks file first,
-      # then sign the APK with apksigner, then delete the temp file.
-      - name: Sign APK
-        script: |
-          APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
-          KEYSTORE_PATH="/tmp/cs_simplified.jks"
-
-          # Decode base64 keystore to a real .jks file
-          echo "$CM_KEYSTORE" | base64 --decode > "$KEYSTORE_PATH"
-
-          # Find the latest available build-tools version automatically
-          BUILD_TOOLS=$(ls "$ANDROID_SDK_ROOT/build-tools" | sort -V | tail -1)
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/apksigner"
-
-          echo "Using build-tools: $BUILD_TOOLS"
-          echo "Key alias: $KEY_ALIAS"
-
-          # Sign in-place
-          "$APKSIGNER" sign \
-            --ks "$KEYSTORE_PATH" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:$KEYSTORE_PASSWORD" \
-            --key-pass "pass:$KEY_PASSWORD" \
-            "$APK_PATH"
-
-          # Verify
-          "$APKSIGNER" verify --verbose "$APK_PATH"
-          echo "✅ APK signed successfully."
-
-          # Clean up temp keystore
-          rm -f "$KEYSTORE_PATH"
+            --build-number=$((${CM_BUILD_NUMBER} + 100000))
 
       # ── 5. Publish to GitHub Releases ──────────────────────────────────────
       - name: Publish to GitHub Releases
@@ -92,16 +67,14 @@ workflows:
           set -e
 
           VERSION=$(grep "^version:" pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1)
-          BUILD=${CM_BUILD_NUMBER:-1}
+          BUILD=$((${CM_BUILD_NUMBER} + 100000))
           TAG="v${VERSION}-build-${BUILD}"
           APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
           APK_NAME="CS-Simplified-${TAG}.apk"
           REPO="cs-bot24/cs-simplified-app"
 
           echo "Publishing $APK_NAME as $TAG to $REPO"
-          echo "Token present: $([ -n "$GITHUB_TOKEN" ] && echo YES || echo NO)"
 
-          # ── If the tag/release already exists, delete it first ──────────────
           EXISTING=$(curl -s \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -111,22 +84,18 @@ workflows:
             python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || true)
 
           if [ -n "$EXISTING_ID" ]; then
-            echo "Release $TAG already exists (id=$EXISTING_ID) — deleting it first."
-
+            echo "Release $TAG already exists — deleting it first."
             curl -s -X DELETE \
               -H "Authorization: token ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/${REPO}/releases/${EXISTING_ID}"
-
             curl -s -X DELETE \
               -H "Authorization: token ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/${REPO}/git/refs/tags/${TAG}"
-
-            echo "Old release and tag deleted."
+            echo "Old release deleted."
           fi
 
-          # ── Create the fresh release ────────────────────────────────────────
           RELEASE_RESPONSE=$(curl -s -X POST \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -151,8 +120,6 @@ workflows:
             exit 1
           fi
 
-          echo "Uploading APK to: $UPLOAD_URL"
-
           curl -s -X POST \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Content-Type: application/vnd.android.package-archive" \
@@ -160,7 +127,7 @@ workflows:
             "${UPLOAD_URL}?name=${APK_NAME}&label=Download+APK"
 
           echo ""
-          echo "✅ Done! Download at: https://github.com/${REPO}/releases/tag/${TAG}"
+          echo "✅ Done! https://github.com/${REPO}/releases/tag/${TAG}"
 
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
