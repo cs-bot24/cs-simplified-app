@@ -1216,7 +1216,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('AI Tutor', style: TextStyle(
+              Text('AI Tutor', style: TextStyle(
                 color: _kTextPrimary(context), fontSize: 14, fontWeight: FontWeight.w700,
               )),
               Text(
@@ -1342,11 +1342,11 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
               style: TextStyle(color: _kTextPrimary(context), fontSize: 14),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Ask about this material…',
                 hintStyle: TextStyle(color: _kTextSecondary(context), fontSize: 14),
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
           ),
