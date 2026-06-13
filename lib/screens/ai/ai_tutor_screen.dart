@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../providers/ai_provider.dart';
@@ -19,7 +17,6 @@ class _AiTutorScreenState extends State<AiTutorScreen>
   final _controller  = TextEditingController();
   final _scrollCtrl  = ScrollController();
   final _inputFocus  = FocusNode();
-  File? _pickedImage;
   bool  _showSettings = false;
 
   @override
@@ -55,64 +52,32 @@ class _AiTutorScreenState extends State<AiTutorScreen>
   Future<void> _send() async {
     final ai   = context.read<AiProvider>();
     final text = _controller.text.trim();
-    if (text.isEmpty && _pickedImage == null) return;
+    if (text.isEmpty) return;
     _controller.clear();
     _inputFocus.unfocus();
-    final img = _pickedImage;
-    setState(() => _pickedImage = null);
-
-    if (img != null) {
-      await ai.askWithImage(img, extraText: text);
-    } else {
-      await ai.ask(text);
-    }
+    await ai.ask(text);
     _scrollToBottom();
   }
 
-  Future<void> _pickImage(ImageSource source) async {
-    try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
-        source: source,
-        imageQuality: 85,
-        maxWidth: 1200,
-      );
-      if (picked != null) {
-        setState(() => _pickedImage = File(picked.path));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not access camera or gallery.')),
-        );
-      }
-    }
-  }
-
-  void _showImageOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_rounded),
-              title: const Text('Take Photo'),
-              onTap: () { Navigator.pop(context); _pickImage(ImageSource.camera); },
+  // Image upload is temporarily disabled — feature under development.
+  void _onImageTap() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(children: [
+          Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Image upload is currently under development. '
+              'Please type your question as text.',
+              style: TextStyle(fontSize: 13),
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_rounded),
-              title: const Text('Choose from Gallery'),
-              onTap: () { Navigator.pop(context); _pickImage(ImageSource.gallery); },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+          ),
+        ]),
+        backgroundColor: const Color(0xFF1A3C6E),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -120,7 +85,6 @@ class _AiTutorScreenState extends State<AiTutorScreen>
   void _showPracticeDialog(BuildContext context) {
     final ai = context.read<AiProvider>();
 
-    // Phase 3: use session topics if available; fall back to last subject
     final String topic;
     if (ai.hasSessionContext) {
       topic = ai.sessionTopics.join(', ');
@@ -145,7 +109,6 @@ class _AiTutorScreenState extends State<AiTutorScreen>
   void _showStudyNotesDialog(BuildContext context) {
     final ai = context.read<AiProvider>();
 
-    // Phase 3: use session topics if available; fall back to last subject
     final String topic;
     if (ai.hasSessionContext) {
       topic = ai.sessionTopics.join(', ');
@@ -187,18 +150,12 @@ class _AiTutorScreenState extends State<AiTutorScreen>
                     onDismiss: () => context.read<AiProvider>().clearError())
                 : const SizedBox.shrink(),
           ),
-          if (_pickedImage != null) _ImagePreview(
-            image: _pickedImage!,
-            onRemove: () => setState(() => _pickedImage = null),
-            scheme: scheme,
-          ),
           _InputBar(
             controller: _controller,
-            focusNode: _inputFocus,
-            hasImage: _pickedImage != null,
-            onSend: _send,
-            onImageTap: _showImageOptions,
-            scheme: scheme,
+            focusNode:  _inputFocus,
+            onSend:     _send,
+            onImageTap: _onImageTap,
+            scheme:     scheme,
           ),
         ],
       ),
@@ -231,9 +188,9 @@ class _AiTutorScreenState extends State<AiTutorScreen>
               icon: const Icon(Icons.more_vert_rounded),
               onSelected: (val) {
                 switch (val) {
-                  case 'practice':   _showPracticeDialog(context); break;
-                  case 'notes':      _showStudyNotesDialog(context); break;
-                  case 'clear':      _confirmClear(context); break;
+                  case 'practice': _showPracticeDialog(context); break;
+                  case 'notes':    _showStudyNotesDialog(context); break;
+                  case 'clear':    _confirmClear(context); break;
                 }
               },
               itemBuilder: (_) => [
@@ -338,15 +295,14 @@ class _SettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ai = context.watch<AiProvider>();
+    final ai     = context.watch<AiProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF1A1A2E)
-            : const Color(0xFFF8F9FF),
+        color: isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF8F9FF),
         border: Border(bottom: BorderSide(color: scheme.primary.withOpacity(0.1))),
       ),
       child: Column(
@@ -511,11 +467,9 @@ class _MessageBubble extends StatelessWidget {
                           color: isDark ? Colors.white : Colors.black87),
                       h3: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                           color: isDark ? Colors.white : Colors.black87),
-                      strong: TextStyle(
-                          fontWeight: FontWeight.bold,
+                      strong: TextStyle(fontWeight: FontWeight.bold,
                           color: isDark ? Colors.white : Colors.black87),
-                      em: TextStyle(
-                          fontStyle: FontStyle.italic,
+                      em: TextStyle(fontStyle: FontStyle.italic,
                           color: isDark ? Colors.white.withOpacity(0.87) : Colors.black87),
                       code: TextStyle(
                         fontFamily: 'monospace',
@@ -532,39 +486,26 @@ class _MessageBubble extends StatelessWidget {
                       codeblockPadding: const EdgeInsets.all(12),
                       blockquote: TextStyle(
                           fontSize: 14,
-                          color: isDark
-                              ? Colors.white.withOpacity(0.7)
-                              : Colors.black54,
+                          color: isDark ? Colors.white.withOpacity(0.7) : Colors.black54,
                           fontStyle: FontStyle.italic),
                       blockquoteDecoration: BoxDecoration(
                         border: Border(
                           left: BorderSide(
-                              color: isDark
-                                  ? Colors.white.withOpacity(0.3)
-                                  : Colors.black26,
+                              color: isDark ? Colors.white.withOpacity(0.3) : Colors.black26,
                               width: 3),
                         ),
                       ),
-                      blockquotePadding:
-                          const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+                      blockquotePadding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
                       listBullet: TextStyle(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.87)
-                              : Colors.black87),
-                      tableHead: TextStyle(
-                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white.withOpacity(0.87) : Colors.black87),
+                      tableHead: TextStyle(fontWeight: FontWeight.bold,
                           color: isDark ? Colors.white : Colors.black87),
                       tableBody: TextStyle(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.87)
-                              : Colors.black87),
+                          color: isDark ? Colors.white.withOpacity(0.87) : Colors.black87),
                       tableBorder: TableBorder.all(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.15)
-                              : Colors.black12),
+                          color: isDark ? Colors.white.withOpacity(0.15) : Colors.black12),
                       tableColumnWidth: const FlexColumnWidth(),
-                      tableCellsPadding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      tableCellsPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       h1Padding: const EdgeInsets.only(top: 8, bottom: 4),
                       h2Padding: const EdgeInsets.only(top: 6, bottom: 3),
                       h3Padding: const EdgeInsets.only(top: 4, bottom: 2),
@@ -624,62 +565,23 @@ class _TypingIndicatorState extends State<_TypingIndicator> with SingleTickerPro
 }
 
 
-// ── Image Preview ─────────────────────────────────────────────────────────────
-
-class _ImagePreview extends StatelessWidget {
-  final File image;
-  final VoidCallback onRemove;
-  final ColorScheme scheme;
-  const _ImagePreview({required this.image, required this.onRemove, required this.scheme});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: scheme.primary.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: scheme.primary.withOpacity(0.2)),
-      ),
-      child: Row(children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Image.file(image, width: 48, height: 48, fit: BoxFit.cover),
-        ),
-        const SizedBox(width: 10),
-        Expanded(child: Text('Image attached — add a note or send as-is',
-            style: TextStyle(fontSize: 12, color: scheme.primary))),
-        IconButton(
-          icon: const Icon(Icons.close_rounded, size: 18),
-          color: scheme.primary,
-          onPressed: onRemove,
-        ),
-      ]),
-    );
-  }
-}
-
-
 // ── Input Bar ─────────────────────────────────────────────────────────────────
 
 class _InputBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
-  final bool hasImage;
-  final bool loading;
   final VoidCallback onSend;
   final VoidCallback onImageTap;
   final ColorScheme scheme;
 
   const _InputBar({
-    required this.controller, required this.focusNode,
-    required this.hasImage,   required this.onSend,
-    required this.onImageTap, required this.scheme,
-    this.loading = false,
+    required this.controller,
+    required this.focusNode,
+    required this.onSend,
+    required this.onImageTap,
+    required this.scheme,
   });
 
-  // Extract loading from provider at build time
   @override
   Widget build(BuildContext context) {
     final loading = context.watch<AiProvider>().loading;
@@ -692,14 +594,14 @@ class _InputBar extends StatelessWidget {
       ),
       padding: EdgeInsets.only(left: 8, right: 12, top: 8, bottom: MediaQuery.of(context).padding.bottom + 8),
       child: Row(children: [
-        // Image attach button
+        // Image button — feature under development
         IconButton(
           icon: Icon(
-            hasImage ? Icons.image_rounded : Icons.add_photo_alternate_outlined,
-            color: hasImage ? scheme.primary : Colors.grey,
+            Icons.add_photo_alternate_outlined,
+            color: Colors.grey.shade400,
           ),
           onPressed: loading ? null : onImageTap,
-          tooltip: 'Attach image question',
+          tooltip: 'Image upload — coming soon',
         ),
         Expanded(
           child: TextField(
@@ -1012,7 +914,6 @@ class _StudyNotesDialogState extends State<_StudyNotesDialog> {
     );
   }
 }
-
 
 
 // ── Not Logged In ─────────────────────────────────────────────────────────────

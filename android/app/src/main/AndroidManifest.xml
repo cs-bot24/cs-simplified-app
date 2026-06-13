@@ -3,6 +3,9 @@
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Push notifications (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <!-- Storage (Android 12 and below) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -25,6 +28,21 @@
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
         android:hardwareAccelerated="true">
+
+        <!-- FCM: use our custom high-importance channel for all messages -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="cs_simplified_channel"/>
+
+        <!-- FCM: default notification icon -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher"/>
+
+        <!-- FCM: default notification color -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_color"/>
 
         <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"

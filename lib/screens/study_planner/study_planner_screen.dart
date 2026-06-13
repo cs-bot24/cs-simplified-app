@@ -1,27 +1,30 @@
 // lib/screens/study_planner/study_planner_screen.dart
 //
-// AI-powered Study Planner.
-// Students create a study plan for a course, the AI generates a full
-// schedule broken into daily sessions. Students mark sessions as complete,
-// track progress, and get study reminders.
+// AI-powered Study Planner — fully theme-aware (light + dark).
 
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../../core/api_client.dart';
 import '../../core/fcm_service.dart';
 
-// ── Colour constants ──────────────────────────────────────────────────────────
-const _kBg        = Color(0xFF1A1A1A);
-const _kSurface   = Color(0xFF2C2C2C);
-const _kSurface2  = Color(0xFF383838);
-const _kAccent    = Color(0xFF6C63FF);
-const _kAccentLt  = Color(0xFF8B85FF);
-const _kGreen     = Color(0xFF4CAF50);
-const _kTextPri   = Colors.white;
-const _kTextSec   = Color(0xFFAAAAAA);
+// ── Accent color (brand, not theme-dependent) ─────────────────────────────────
+const _kAccent   = Color(0xFF6C63FF);
+const _kAccentLt = Color(0xFF8B85FF);
+const _kGreen    = Color(0xFF4CAF50);
+
+// ── Theme helpers (call inside build) ────────────────────────────────────────
+Color _bg(BuildContext ctx)  => Theme.of(ctx).scaffoldBackgroundColor;
+Color _surface(BuildContext ctx) => Theme.of(ctx).cardColor;
+Color _surface2(BuildContext ctx) {
+  final isDark = Theme.of(ctx).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF2A2A2A) : const Color(0xFFEEEEEE);
+}
+Color _textPri(BuildContext ctx) => Theme.of(ctx).colorScheme.onSurface;
+Color _textSec(BuildContext ctx) {
+  final isDark = Theme.of(ctx).brightness == Brightness.dark;
+  return isDark ? const Color(0xFFAAAAAA) : Colors.black54;
+}
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -202,18 +205,14 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: _kBg,
       appBar: AppBar(
-        backgroundColor: _kSurface,
-        elevation: 0,
-        title: const Text('Study Planner',
-            style: TextStyle(color: _kTextPri, fontWeight: FontWeight.w700)),
-        iconTheme: const IconThemeData(color: _kTextPri),
+        title: const Text('Study Planner', style: TextStyle(fontWeight: FontWeight.w700)),
         bottom: TabBar(
           controller: _tabs,
           labelColor: _kAccentLt,
-          unselectedLabelColor: _kTextSec,
+          unselectedLabelColor: _textSec(context),
           indicatorColor: _kAccent,
           tabs: const [
             Tab(text: 'My Plans'),
@@ -229,7 +228,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _kAccentLt))
+          ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _buildError()
               : TabBarView(
@@ -247,9 +246,9 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+        Icon(Icons.error_outline, color: _textSec(context), size: 48),
         const SizedBox(height: 12),
-        Text(_error!, style: const TextStyle(color: _kTextSec)),
+        Text(_error!, style: TextStyle(color: _textSec(context))),
         const SizedBox(height: 16),
         ElevatedButton(onPressed: _load, child: const Text('Retry')),
       ],
@@ -272,12 +271,10 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
       setState(() {
         session.isCompleted = true;
         session.completedAt = DateTime.now();
-        // Recalculate progress locally
         final total = plan.sessions.length;
         final done  = plan.sessions.where((s) => s.isCompleted).length;
         plan.progress = total > 0 ? ((done / total) * 100).round() : 0;
       });
-      // Show local notification
       await FcmService.showStudyReminder(
         id:    session.id,
         title: '✅ Session Complete!',
@@ -318,14 +315,14 @@ class _PlansTab extends StatelessWidget {
               Icon(Icons.calendar_today_rounded,
                   color: _kAccent.withOpacity(0.4), size: 56),
               const SizedBox(height: 16),
-              const Text('No study plans yet',
-                  style: TextStyle(color: _kTextPri, fontSize: 16,
+              Text('No study plans yet',
+                  style: TextStyle(color: _textPri(context), fontSize: 16,
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Tap "New Plan" to let AI create a personalised\nstudy schedule for your course.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: _kTextSec, fontSize: 13, height: 1.5),
+                style: TextStyle(color: _textSec(context), fontSize: 13, height: 1.5),
               ),
             ],
           ),
@@ -336,7 +333,6 @@ class _PlansTab extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () async => onRefresh(),
       color: _kAccentLt,
-      backgroundColor: _kSurface,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         itemCount: plans.length,
@@ -356,11 +352,11 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total     = plan.sessions.length;
-    final done      = plan.sessions.where((s) => s.isCompleted).length;
-    final daysLeft  = plan.endDate.difference(DateTime.now()).inDays;
-    final isActive  = plan.status == 'active';
-    final fmt       = DateFormat('MMM d');
+    final total    = plan.sessions.length;
+    final done     = plan.sessions.where((s) => s.isCompleted).length;
+    final daysLeft = plan.endDate.difference(DateTime.now()).inDays;
+    final isActive = plan.status == 'active';
+    final fmt      = DateFormat('MMM d');
 
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -369,7 +365,7 @@ class _PlanCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
         decoration: BoxDecoration(
-          color: _kSurface,
+          color: _surface(context),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: plan.progress == 100
@@ -380,7 +376,6 @@ class _PlanCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
               child: Row(
@@ -404,20 +399,19 @@ class _PlanCard extends StatelessWidget {
                                     fontWeight: FontWeight.w600)),
                           ),
                         Text(plan.title,
-                            style: const TextStyle(
-                                color: _kTextPri, fontSize: 15,
+                            style: TextStyle(
+                                color: _textPri(context), fontSize: 15,
                                 fontWeight: FontWeight.w700)),
                         const SizedBox(height: 2),
                         Text(plan.courseName,
-                            style: const TextStyle(
-                                color: _kTextSec, fontSize: 12)),
+                            style: TextStyle(
+                                color: _textSec(context), fontSize: 12)),
                       ],
                     ),
                   ),
                   PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert_rounded,
-                        color: _kTextSec, size: 20),
-                    color: _kSurface2,
+                    icon: Icon(Icons.more_vert_rounded,
+                        color: _textSec(context), size: 20),
                     onSelected: (val) {
                       if (val == 'delete') onDelete();
                     },
@@ -435,7 +429,6 @@ class _PlanCard extends StatelessWidget {
               ),
             ),
 
-            // Progress bar
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Column(
@@ -445,8 +438,8 @@ class _PlanCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('$done / $total sessions',
-                          style: const TextStyle(
-                              color: _kTextSec, fontSize: 12)),
+                          style: TextStyle(
+                              color: _textSec(context), fontSize: 12)),
                       Text('${plan.progress}%',
                           style: TextStyle(
                               color: plan.progress == 100
@@ -461,7 +454,7 @@ class _PlanCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
                       value: plan.progress / 100,
-                      backgroundColor: _kSurface2,
+                      backgroundColor: _surface2(context),
                       valueColor: AlwaysStoppedAnimation(
                         plan.progress == 100 ? _kGreen : _kAccent,
                       ),
@@ -472,17 +465,16 @@ class _PlanCard extends StatelessWidget {
               ),
             ),
 
-            // Footer
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
               child: Row(
                 children: [
                   Icon(Icons.calendar_month_rounded,
-                      color: _kTextSec, size: 14),
+                      color: _textSec(context), size: 14),
                   const SizedBox(width: 4),
                   Text(
                     '${fmt.format(plan.startDate)} – ${fmt.format(plan.endDate)}',
-                    style: const TextStyle(color: _kTextSec, fontSize: 12),
+                    style: TextStyle(color: _textSec(context), fontSize: 12),
                   ),
                   const Spacer(),
                   if (plan.progress == 100)
@@ -502,7 +494,7 @@ class _PlanCard extends StatelessWidget {
                         style: TextStyle(
                             color: daysLeft <= 3
                                 ? Colors.orange
-                                : _kTextSec,
+                                : _textSec(context),
                             fontSize: 12)),
                 ],
               ),
@@ -526,35 +518,31 @@ class _TodayTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Collect all today's sessions across all plans
     final todaySessions = <MapEntry<StudyPlan, StudySession>>[];
     for (final plan in plans) {
       for (final s in plan.todaySessions) {
         todaySessions.add(MapEntry(plan, s));
       }
     }
-    // Sort: incomplete first
-    todaySessions.sort((a, b) =>
-        a.value.isCompleted ? 1 : -1);
+    todaySessions.sort((a, b) => a.value.isCompleted ? 1 : -1);
 
     final today = DateFormat('EEEE, MMMM d').format(DateTime.now());
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
       children: [
-        Text(today,
-            style: const TextStyle(color: _kTextSec, fontSize: 13)),
+        Text(today, style: TextStyle(color: _textSec(context), fontSize: 13)),
         const SizedBox(height: 4),
         Text(
           todaySessions.isEmpty
               ? 'No sessions today'
               : "${todaySessions.length} session${todaySessions.length > 1 ? 's' : ''} scheduled",
-          style: const TextStyle(color: _kTextPri, fontSize: 20,
+          style: TextStyle(color: _textPri(context), fontSize: 20,
               fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 20),
         if (todaySessions.isEmpty)
-          _buildEmptyToday()
+          _buildEmptyToday(context)
         else
           ...todaySessions.map((entry) => _SessionCard(
             plan:       entry.key,
@@ -565,25 +553,24 @@ class _TodayTab extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyToday() => Container(
+  Widget _buildEmptyToday(BuildContext context) => Container(
     margin: const EdgeInsets.only(top: 16),
     padding: const EdgeInsets.all(24),
     decoration: BoxDecoration(
-      color: _kSurface,
+      color: _surface(context),
       borderRadius: BorderRadius.circular(16),
     ),
     child: Column(
       children: [
-        Icon(Icons.coffee_rounded,
-            color: _kAccent.withOpacity(0.4), size: 40),
+        Icon(Icons.coffee_rounded, color: _kAccent.withOpacity(0.4), size: 40),
         const SizedBox(height: 12),
-        const Text('No sessions today',
-            style: TextStyle(color: _kTextPri, fontSize: 15,
+        Text('No sessions today',
+            style: TextStyle(color: _textPri(context), fontSize: 15,
                 fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
-        const Text('Enjoy your rest day or create a new study plan.',
+        Text('Enjoy your rest day or create a new study plan.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: _kTextSec, fontSize: 13)),
+            style: TextStyle(color: _textSec(context), fontSize: 13)),
       ],
     ),
   );
@@ -604,7 +591,7 @@ class _SessionCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: _kSurface,
+        color: _surface(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: session.isCompleted
@@ -639,14 +626,10 @@ class _SessionCard extends StatelessWidget {
         title: Text(
           session.title,
           style: TextStyle(
-            color: session.isCompleted
-                ? _kTextSec
-                : _kTextPri,
+            color: session.isCompleted ? _textSec(context) : _textPri(context),
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            decoration: session.isCompleted
-                ? TextDecoration.lineThrough
-                : null,
+            decoration: session.isCompleted ? TextDecoration.lineThrough : null,
           ),
         ),
         subtitle: Padding(
@@ -668,11 +651,10 @@ class _SessionCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
               ],
-              Icon(Icons.timer_outlined, color: _kTextSec, size: 13),
+              Icon(Icons.timer_outlined, color: _textSec(context), size: 13),
               const SizedBox(width: 3),
               Text('${session.durationMins} min',
-                  style: const TextStyle(
-                      color: _kTextSec, fontSize: 12)),
+                  style: TextStyle(color: _textSec(context), fontSize: 12)),
             ],
           ),
         ),
@@ -709,49 +691,42 @@ class _PlanDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Group sessions by date
     final grouped = <String, List<StudySession>>{};
     for (final s in plan.sessions) {
       final key = DateFormat('yyyy-MM-dd').format(s.scheduledDate);
       grouped.putIfAbsent(key, () => []).add(s);
     }
     final dates = grouped.keys.toList()..sort();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: _kBg,
       appBar: AppBar(
-        backgroundColor: _kSurface,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: _kTextPri),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(plan.title,
-                style: const TextStyle(color: _kTextPri, fontSize: 15,
-                    fontWeight: FontWeight.w700)),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             if (plan.courseCode != null)
               Text(plan.courseCode!,
-                  style: const TextStyle(color: _kTextSec, fontSize: 11)),
+                  style: TextStyle(color: _textSec(context), fontSize: 11)),
           ],
         ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Progress card
           _ProgressCard(plan: plan),
           const SizedBox(height: 16),
 
-          // AI Plan overview
           if (plan.aiPlan != null && plan.aiPlan!.isNotEmpty) ...[
-            const Text('AI Study Plan',
-                style: TextStyle(color: _kTextPri, fontSize: 15,
+            Text('AI Study Plan',
+                style: TextStyle(color: _textPri(context), fontSize: 15,
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _kSurface,
+                color: _surface(context),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: _kAccent.withOpacity(0.2)),
               ),
@@ -759,26 +734,26 @@ class _PlanDetailScreen extends StatelessWidget {
                 data: plan.aiPlan!,
                 selectable: true,
                 styleSheet: MarkdownStyleSheet(
-                  p: const TextStyle(color: Color(0xFFDDDDDD),
+                  p: TextStyle(
+                      color: isDark ? const Color(0xFFDDDDDD) : Colors.black87,
                       fontSize: 13, height: 1.5),
-                  h1: const TextStyle(color: _kTextPri, fontSize: 16,
+                  h1: TextStyle(color: _textPri(context), fontSize: 16,
                       fontWeight: FontWeight.bold),
-                  h2: const TextStyle(color: _kTextPri, fontSize: 14,
+                  h2: TextStyle(color: _textPri(context), fontSize: 14,
                       fontWeight: FontWeight.bold),
-                  h3: const TextStyle(color: _kTextPri, fontSize: 13,
+                  h3: TextStyle(color: _textPri(context), fontSize: 13,
                       fontWeight: FontWeight.w600),
-                  strong: const TextStyle(color: _kTextPri,
+                  strong: TextStyle(color: _textPri(context),
                       fontWeight: FontWeight.bold),
-                  listBullet: const TextStyle(color: Color(0xFFDDDDDD)),
+                  listBullet: TextStyle(color: _textSec(context)),
                 ),
               ),
             ),
             const SizedBox(height: 20),
           ],
 
-          // Sessions by date
-          const Text('Sessions',
-              style: TextStyle(color: _kTextPri, fontSize: 15,
+          Text('Sessions',
+              style: TextStyle(color: _textPri(context), fontSize: 15,
                   fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           ...dates.map((dateKey) {
@@ -795,7 +770,7 @@ class _PlanDetailScreen extends StatelessWidget {
                       Text(
                         DateFormat('EEE, MMM d').format(date),
                         style: TextStyle(
-                          color: isToday ? _kAccentLt : _kTextSec,
+                          color: isToday ? _kAccentLt : _textSec(context),
                           fontSize: 12,
                           fontWeight: isToday
                               ? FontWeight.w700
@@ -825,12 +800,12 @@ class _PlanDetailScreen extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: _kSurface,
+                    color: _surface(context),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: s.isCompleted
                           ? _kGreen.withOpacity(0.3)
-                          : Colors.white.withOpacity(0.07),
+                          : _surface2(context).withOpacity(0.5),
                     ),
                   ),
                   child: Row(
@@ -839,7 +814,7 @@ class _PlanDetailScreen extends StatelessWidget {
                         s.isCompleted
                             ? Icons.check_circle_rounded
                             : Icons.radio_button_unchecked_rounded,
-                        color: s.isCompleted ? _kGreen : _kTextSec,
+                        color: s.isCompleted ? _kGreen : _textSec(context),
                         size: 18,
                       ),
                       const SizedBox(width: 10),
@@ -847,8 +822,8 @@ class _PlanDetailScreen extends StatelessWidget {
                         child: Text(s.title,
                             style: TextStyle(
                               color: s.isCompleted
-                                  ? _kTextSec
-                                  : _kTextPri,
+                                  ? _textSec(context)
+                                  : _textPri(context),
                               fontSize: 13,
                               decoration: s.isCompleted
                                   ? TextDecoration.lineThrough
@@ -856,8 +831,8 @@ class _PlanDetailScreen extends StatelessWidget {
                             )),
                       ),
                       Text('${s.durationMins}m',
-                          style: const TextStyle(
-                              color: _kTextSec, fontSize: 12)),
+                          style: TextStyle(
+                              color: _textSec(context), fontSize: 12)),
                     ],
                   ),
                 )),
@@ -890,7 +865,7 @@ class _ProgressCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [_kAccent.withOpacity(0.3), _kSurface],
+          colors: [_kAccent.withOpacity(0.3), _surface(context)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -904,7 +879,7 @@ class _ProgressCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('${plan.progress}% Complete',
-                  style: const TextStyle(color: _kTextPri, fontSize: 16,
+                  style: TextStyle(color: _textPri(context), fontSize: 16,
                       fontWeight: FontWeight.w700)),
               Text(
                 plan.progress == 100
@@ -919,7 +894,7 @@ class _ProgressCard extends StatelessWidget {
                           ? Colors.orange
                           : days < 0
                               ? Colors.red
-                              : _kTextSec,
+                              : _textSec(context),
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -931,7 +906,7 @@ class _ProgressCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: plan.progress / 100,
-              backgroundColor: _kSurface2,
+              backgroundColor: _surface2(context),
               valueColor: AlwaysStoppedAnimation(
                   plan.progress == 100 ? _kGreen : _kAccent),
               minHeight: 8,
@@ -940,16 +915,16 @@ class _ProgressCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              _Stat(label: 'Sessions', value: '$done/$total'),
+              _Stat(label: 'Sessions', value: '$done/$total', context: context),
               const SizedBox(width: 20),
-              _Stat(
-                  label: 'Hours/day',
-                  value: '${plan.studyHoursPerDay}h'),
+              _Stat(label: 'Hours/day',
+                  value: '${plan.studyHoursPerDay}h', context: context),
               const SizedBox(width: 20),
               _Stat(
                   label: 'Status',
                   value: plan.status[0].toUpperCase() +
-                      plan.status.substring(1)),
+                      plan.status.substring(1),
+                  context: context),
             ],
           ),
         ],
@@ -961,17 +936,16 @@ class _ProgressCard extends StatelessWidget {
 class _Stat extends StatelessWidget {
   final String label;
   final String value;
-  const _Stat({required this.label, required this.value});
+  final BuildContext context;
+  const _Stat({required this.label, required this.value, required this.context});
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext ctx) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label,
-          style: const TextStyle(color: _kTextSec, fontSize: 11)),
-      Text(value,
-          style: const TextStyle(color: _kTextPri, fontSize: 14,
-              fontWeight: FontWeight.w600)),
+      Text(label, style: TextStyle(color: _textSec(context), fontSize: 11)),
+      Text(value, style: TextStyle(color: _textPri(context), fontSize: 14,
+          fontWeight: FontWeight.w600)),
     ],
   );
 }
@@ -1010,17 +984,20 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
   }
 
   Future<void> _pickDate({required bool isStart}) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final picked = await showDatePicker(
       context: context,
       initialDate: isStart ? _startDate : _endDate,
       firstDate: DateTime.now().subtract(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (ctx, child) => Theme(
-        data: ThemeData.dark().copyWith(
-          colorScheme: const ColorScheme.dark(primary: _kAccent),
-        ),
-        child: child!,
-      ),
+      builder: (ctx, child) => isDark
+          ? Theme(
+              data: ThemeData.dark().copyWith(
+                colorScheme: const ColorScheme.dark(primary: _kAccent),
+              ),
+              child: child!,
+            )
+          : child!,
     );
     if (picked == null) return;
     setState(() {
@@ -1077,12 +1054,13 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final fmt = DateFormat('MMM d, yyyy');
+    final fmt    = DateFormat('MMM d, yyyy');
+    final scheme = Theme.of(context).colorScheme;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: _kSurface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: _surface(context),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       padding: EdgeInsets.only(
         left: 20, right: 20, top: 8,
@@ -1093,19 +1071,17 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
             Center(
               child: Container(
                 width: 40, height: 4,
                 margin: const EdgeInsets.only(top: 8, bottom: 16),
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: _textSec(context).withOpacity(0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
 
-            // Title
             Row(
               children: [
                 Container(
@@ -1120,14 +1096,14 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
                       color: Colors.white, size: 18),
                 ),
                 const SizedBox(width: 10),
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Create Study Plan',
-                        style: TextStyle(color: _kTextPri, fontSize: 16,
+                        style: TextStyle(color: _textPri(context), fontSize: 16,
                             fontWeight: FontWeight.w700)),
                     Text('AI will generate your schedule',
-                        style: TextStyle(color: _kTextSec, fontSize: 12)),
+                        style: TextStyle(color: _textSec(context), fontSize: 12)),
                   ],
                 ),
               ],
@@ -1149,10 +1125,10 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
             ],
 
             _Field(
-              label:       'Course Code (optional)',
-              hint:        'e.g. MTH104',
-              controller:  _courseCodeCtrl,
-              capitalize:  TextCapitalization.characters,
+              label:      'Course Code (optional)',
+              hint:       'e.g. MTH104',
+              controller: _courseCodeCtrl,
+              capitalize: TextCapitalization.characters,
             ),
             const SizedBox(height: 12),
             _Field(
@@ -1175,7 +1151,6 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Date pickers
             Row(
               children: [
                 Expanded(child: _DateTile(
@@ -1193,11 +1168,10 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Hours per day
             Row(
               children: [
-                const Text('Study hours per day:',
-                    style: TextStyle(color: _kTextSec, fontSize: 13)),
+                Text('Study hours per day:',
+                    style: TextStyle(color: _textSec(context), fontSize: 13)),
                 const Spacer(),
                 IconButton(
                   onPressed: _hoursPerDay > 1
@@ -1207,7 +1181,7 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
                       color: _kAccentLt),
                 ),
                 Text('$_hoursPerDay',
-                    style: const TextStyle(color: _kTextPri, fontSize: 16,
+                    style: TextStyle(color: _textPri(context), fontSize: 16,
                         fontWeight: FontWeight.w700)),
                 IconButton(
                   onPressed: _hoursPerDay < 8
@@ -1258,17 +1232,17 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
 }
 
 class _Field extends StatelessWidget {
-  final String             label;
-  final String             hint;
+  final String              label;
+  final String              hint;
   final TextEditingController controller;
-  final int                maxLines;
-  final TextCapitalization capitalize;
+  final int                 maxLines;
+  final TextCapitalization  capitalize;
 
   const _Field({
     required this.label,
     required this.hint,
     required this.controller,
-    this.maxLines  = 1,
+    this.maxLines   = 1,
     this.capitalize = TextCapitalization.sentences,
   });
 
@@ -1276,22 +1250,14 @@ class _Field extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label,
-          style: const TextStyle(color: _kTextSec, fontSize: 12)),
+      Text(label, style: TextStyle(color: _textSec(context), fontSize: 12)),
       const SizedBox(height: 4),
       TextField(
-        controller:          controller,
-        maxLines:            maxLines,
-        textCapitalization:  capitalize,
-        style: const TextStyle(color: _kTextPri, fontSize: 14),
+        controller:         controller,
+        maxLines:           maxLines,
+        textCapitalization: capitalize,
         decoration: InputDecoration(
-          hintText:      hint,
-          hintStyle:     const TextStyle(color: Color(0xFF666666)),
-          filled:        true,
-          fillColor:     _kSurface2,
-          border:        OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none),
+          hintText: hint,
           contentPadding: const EdgeInsets.symmetric(
               horizontal: 14, vertical: 10),
         ),
@@ -1313,15 +1279,14 @@ class _DateTile extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: _kSurface2,
+        color: _surface2(context),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _kAccent.withOpacity(0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: const TextStyle(color: _kTextSec, fontSize: 11)),
+          Text(label, style: TextStyle(color: _textSec(context), fontSize: 11)),
           const SizedBox(height: 2),
           Row(
             children: [
@@ -1329,7 +1294,7 @@ class _DateTile extends StatelessWidget {
                   color: _kAccentLt, size: 14),
               const SizedBox(width: 5),
               Text(date,
-                  style: const TextStyle(color: _kTextPri, fontSize: 13,
+                  style: TextStyle(color: _textPri(context), fontSize: 13,
                       fontWeight: FontWeight.w600)),
             ],
           ),

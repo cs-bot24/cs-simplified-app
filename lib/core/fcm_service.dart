@@ -6,19 +6,16 @@
 //         topic subscription, foreground handler, token registration.
 //
 // Web:    FCM is skipped entirely for the MVP.
-//         Push notifications on web require a VAPID key, a service worker
-//         (firebase-messaging-sw.js), and HTTPS. These are post-MVP concerns.
 //         The in-app notification feed (NotificationProvider) works on web
 //         without any FCM involvement.
-//
-// All callers use FcmService.init() and FcmService.showStudyReminder() —
-// both are safe to call on web (they return immediately without crashing).
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
+import '../firebase_options.dart';
 import '../core/api_client.dart';
 import '../core/storage.dart';
 import '../models/notification_model.dart';
@@ -26,34 +23,53 @@ import '../providers/notification_provider.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+// ── Background handler ────────────────────────────────────────────────────────
+// MUST be a top-level function (not a method).
+// MUST call Firebase.initializeApp() — the isolate has no Flutter binding yet.
+// MUST be annotated with @pragma('vm:entry-point').
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('[FCM] background message: ${message.messageId}');
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  debugPrint('[FCM] background/terminated message: ${message.messageId}');
+  // flutter_local_notifications cannot show a notification here on Android
+  // because the isolate has no UI context.
+  // FCM will show the notification automatically from the `notification` payload
+  // as long as the default_notification_channel_id in AndroidManifest.xml
+  // matches the channel we created (cs_simplified_channel).
 }
 
 class FcmService {
   static final _messaging          = FirebaseMessaging.instance;
   static final _localNotifications = FlutterLocalNotificationsPlugin();
 
+  static const _channelId   = 'cs_simplified_channel';
+  static const _channelName = 'CS Simplified Notifications';
+  static const _channelDesc =
+      'Notifications for new materials, announcements and study reminders';
+
   static const _androidChannel = AndroidNotificationChannel(
-    'cs_simplified_channel',
-    'CS Simplified Notifications',
-    description: 'Notifications for new materials, announcements and study reminders',
+    _channelId,
+    _channelName,
+    description: _channelDesc,
     importance: Importance.high,
     playSound: true,
     enableVibration: true,
   );
 
+  // ── Public entry point ─────────────────────────────────────────────────────
+
   static Future<void> init() async {
-    // Skip all FCM setup on web — not needed for MVP.
-    // The in-app notification feed still works via NotificationProvider.
     if (kIsWeb) {
       debugPrint('[FCM] Web platform — FCM initialisation skipped for MVP.');
       return;
     }
 
+    // Register background handler FIRST — before any other Firebase call.
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
+    // Request permission (Android 13+ shows a system dialog).
     final settings = await _messaging.requestPermission(
       alert:         true,
       badge:         true,
@@ -63,14 +79,16 @@ class FcmService {
       criticalAlert: false,
       provisional:   false,
     );
+    debugPrint('[FCM] permission: ${settings.authorizationStatus}');
 
-    debugPrint('[FCM] permission status: ${settings.authorizationStatus}');
-
+    // Ensure the high-importance notification channel exists on Android.
+    // This must match android:value in AndroidManifest.xml meta-data.
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(_androidChannel);
 
+    // Initialise flutter_local_notifications (used for foreground display).
     const initSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: DarwinInitializationSettings(
@@ -79,24 +97,25 @@ class FcmService {
         requestSoundPermission: false,
       ),
     );
-
     await _localNotifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
-    final token = await _messaging.getToken();
-    debugPrint('[FCM] token: $token');
-    if (token != null) {
-      await AppStorage.saveFcmToken(token);
-      try {
-        await ApiClient.registerFcmToken(token);
-      } catch (e) {
-        debugPrint('[FCM] token registration failed: $e');
-      }
-    }
+    // On Android, FCM suppresses the heads-up notification when the app is
+    // in the foreground. We must show it ourselves via flutter_local_notifications.
+    await FirebaseMessaging.instance
+        .setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
-    // Subscribe to all_users topic for global announcements
+    // Fetch and register the FCM token.
+    await _registerToken();
+
+    // Subscribe to the all_users topic so admin broadcasts reach this device
+    // even if the token was never individually registered.
     try {
       await _messaging.subscribeToTopic('all_users');
       debugPrint('[FCM] subscribed to topic: all_users');
@@ -104,6 +123,7 @@ class FcmService {
       debugPrint('[FCM] topic subscription failed: $e');
     }
 
+    // Keep the token fresh.
     _messaging.onTokenRefresh.listen((newToken) async {
       debugPrint('[FCM] token refreshed');
       await AppStorage.saveFcmToken(newToken);
@@ -114,45 +134,70 @@ class FcmService {
       }
     });
 
+    // Foreground messages — must be shown manually.
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+
+    // User tapped a notification while app was backgrounded.
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpen);
 
+    // App was launched by tapping a notification (terminated state).
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) _handleNotificationOpen(initialMessage);
   }
 
+  // ── Token registration ─────────────────────────────────────────────────────
+
+  static Future<void> _registerToken() async {
+    try {
+      final token = await _messaging.getToken();
+      debugPrint('[FCM] token: $token');
+      if (token != null) {
+        await AppStorage.saveFcmToken(token);
+        await ApiClient.registerFcmToken(token);
+      }
+    } catch (e) {
+      debugPrint('[FCM] token registration failed: $e');
+    }
+  }
+
+  // ── Foreground message handler ─────────────────────────────────────────────
+
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
     if (kIsWeb) return;
     final notification = message.notification;
-    if (notification == null) return;
 
-    await _localNotifications.show(
-      notification.hashCode,
-      notification.title,
-      notification.body,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          _androidChannel.id,
-          _androidChannel.name,
-          channelDescription: _androidChannel.description,
-          icon: '@mipmap/ic_launcher',
-          importance: Importance.high,
-          priority: Priority.high,
-          playSound: true,
-          enableVibration: true,
-          color: const Color(0xFF6C63FF),
+    // Show the heads-up notification that FCM suppresses in foreground.
+    if (notification != null) {
+      await _localNotifications.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId,
+            _channelName,
+            channelDescription: _channelDesc,
+            icon: '@mipmap/ic_launcher',
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            color: const Color(0xFF6C63FF),
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         ),
-        iOS: const DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-        ),
-      ),
-    );
+      );
+    }
 
+    // Also update the in-app notification feed immediately.
     final ctx = navigatorKey.currentContext;
-    if (ctx != null) {
-      final category = message.data['category'] as String? ?? 'announcement';
+    if (ctx != null && notification != null) {
+      final category =
+          message.data['category'] as String? ?? 'announcement';
       final newItem = NotificationModel(
         id:        DateTime.now().millisecondsSinceEpoch,
         title:     notification.title ?? '',
@@ -164,6 +209,8 @@ class FcmService {
       ctx.read<NotificationProvider>().addLocal(newItem);
     }
   }
+
+  // ── Notification tap handlers ──────────────────────────────────────────────
 
   static void _handleNotificationOpen(RemoteMessage message) {
     if (kIsWeb) return;
@@ -179,22 +226,21 @@ class FcmService {
     ctx.read<NotificationProvider>().fetchNotifications();
   }
 
-  // ── Study reminder ────────────────────────────────────────────────────────
-  // Safe to call on web — returns immediately without crashing.
+  // ── Study reminder (local only) ────────────────────────────────────────────
 
   static Future<void> showStudyReminder({
     required int id,
     required String title,
     required String body,
   }) async {
-    if (kIsWeb) return; // No local notifications on web for MVP
+    if (kIsWeb) return;
     await _localNotifications.show(
       id, title, body,
       NotificationDetails(
         android: AndroidNotificationDetails(
-          _androidChannel.id,
-          _androidChannel.name,
-          channelDescription: _androidChannel.description,
+          _channelId,
+          _channelName,
+          channelDescription: _channelDesc,
           icon: '@mipmap/ic_launcher',
           importance: Importance.high,
           priority: Priority.high,

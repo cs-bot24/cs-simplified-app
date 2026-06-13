@@ -610,14 +610,11 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                   label: 'Study Planner',
                   color: const Color(0xFF6C63FF),
                   wide: true,
-                  onTap: () {
-                    final shell =
-                        context.findAncestorStateOfType<_HomeScreenState>();
-                    if (shell != null) {
-                      shell.setState(() =>
-                          shell._index = _plannerIndex(context));
-                    }
-                  },
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const StudyPlannerScreen()),
+                  ),
                 ),
               ),
             ),

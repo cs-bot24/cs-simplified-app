@@ -52,15 +52,27 @@ import '../../providers/achievement_provider.dart';
 import '../../widgets/rating_dialog.dart';
 
 // ── Colour constants (matches app dark theme) ─────────────────────────────────
-const _kBackground    = Color(0xFF1A1A1A);
-const _kSurface       = Color(0xFF2C2C2C);
-const _kSurfaceLight  = Color(0xFF383838);
-const _kAccent        = Color(0xFF6C63FF);   // matches existing AI screen accent
-const _kAccentLight   = Color(0xFF8B85FF);
-const _kTextPrimary   = Colors.white;
-const _kTextSecondary = Color(0xFFAAAAAA);
-const _kUserBubble    = Color(0xFF6C63FF);
-const _kAiBubble      = Color(0xFF2C2C2C);
+// Brand accent — same in light and dark
+const _kAccent      = Color(0xFF6C63FF);
+const _kAccentLight = Color(0xFF8B85FF);
+const _kUserBubble  = Color(0xFF6C63FF);
+
+// Theme-aware helpers (call inside build methods only)
+Color _kBackground(BuildContext ctx) => Theme.of(ctx).scaffoldBackgroundColor;
+Color _kSurface(BuildContext ctx)    => Theme.of(ctx).cardColor;
+Color _kSurfaceLight(BuildContext ctx) {
+  final isDark = Theme.of(ctx).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF2A2A2A) : const Color(0xFFEEEEEE);
+}
+Color _kTextPrimary(BuildContext ctx)   => Theme.of(ctx).colorScheme.onSurface;
+Color _kTextSecondary(BuildContext ctx) {
+  final isDark = Theme.of(ctx).brightness == Brightness.dark;
+  return isDark ? const Color(0xFFAAAAAA) : Colors.black54;
+}
+Color _kAiBubble(BuildContext ctx) {
+  final isDark = Theme.of(ctx).brightness == Brightness.dark;
+  return isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF0F4FF);
+}
 
 
 class PdfViewerScreen extends StatefulWidget {
@@ -412,7 +424,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) { if (!didPop) _handleClose(); },
       child: Scaffold(
-        backgroundColor: _kBackground,
+        backgroundColor: _kBackground(context),
         appBar: _buildAppBar(),
         body: kIsWeb ? _buildWebLayout() : _buildMobileLayout(),
       ),
@@ -421,7 +433,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: _kSurface,
+      backgroundColor: _kSurface(context),
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.white),
       title: Text(
@@ -496,7 +508,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           top: 0,
           bottom: 0,
           width: iframeRight,
-          child: Container(color: _kBackground),
+          child: Container(color: _kBackground(context)),
         ),
         if (!_webAiOpen)
           Positioned(
@@ -504,7 +516,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             bottom: 0,
             width: MediaQuery.of(context).size.width - iframeRight,
             height: reservedHeight,
-            child: Container(color: _kBackground),
+            child: Container(color: _kBackground(context)),
           ),
 
         // Floating AI button (mirrors Android FAB)
@@ -623,7 +635,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   Widget _buildLoadingOverlay() => Container(
-    color: _kBackground,
+    color: _kBackground(context),
     child: const Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -637,7 +649,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   );
 
   Widget _buildErrorView() => Container(
-    color: _kBackground,
+    color: _kBackground(context),
     padding: const EdgeInsets.symmetric(horizontal: 32),
     child: Center(
       child: Column(
@@ -690,7 +702,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     color: Colors.black54,
     child: Center(
       child: Card(
-        color: _kSurface,
+        color: _kSurface(context),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -856,7 +868,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
           child: FadeTransition(
             opacity: _fadeAnim,
             child: Container(
-              color: _kSurface.withOpacity(0.97),
+              color: _kSurface(context).withOpacity(0.97),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
@@ -893,7 +905,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
               bottom: bottomPad > 0 ? bottomPad : 8,
             ),
             decoration: BoxDecoration(
-              color: _kSurface,
+              color: _kSurface(context),
               border: Border(
                 top: BorderSide(color: Colors.white.withOpacity(0.10)),
               ),
@@ -1153,7 +1165,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
         snapSizes: const [0.30, 0.52, 0.92],
         builder: (ctx, scrollController) => Container(
           decoration: const BoxDecoration(
-            color: _kSurface,
+            color: _kSurface(context),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -1205,13 +1217,13 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('AI Tutor', style: TextStyle(
-                color: _kTextPrimary, fontSize: 14, fontWeight: FontWeight.w700,
+                color: _kTextPrimary(context), fontSize: 14, fontWeight: FontWeight.w700,
               )),
               Text(
                 widget.courseCode != null
                     ? '${widget.courseCode} · ${widget.materialTitle}'
                     : widget.materialTitle,
-                style: const TextStyle(color: _kTextSecondary, fontSize: 11),
+                style: TextStyle(color: _kTextSecondary(context), fontSize: 11),
                 overflow: TextOverflow.ellipsis,
               ),
             ],
@@ -1273,7 +1285,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
                 ? 'Ask anything about ${widget.courseCode}'
                 : 'Ask anything about this material',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: _kTextSecondary, fontSize: 13),
+            style: TextStyle(color: _kTextSecondary(context), fontSize: 13),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -1293,7 +1305,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: _kAiBubble,
+            color: _kAiBubble(context),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
@@ -1310,7 +1322,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     // lifts the entire panel above the keyboard.
     padding: const EdgeInsets.only(left: 12, right: 8, top: 8, bottom: 10),
     decoration: BoxDecoration(
-      color: _kSurface,
+      color: _kSurface(context),
       border: Border(top: BorderSide(color: Colors.white.withOpacity(0.07))),
     ),
     child: Row(
@@ -1318,7 +1330,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: _kSurfaceLight,
+              color: _kSurfaceLight(context),
               borderRadius: BorderRadius.circular(24),
             ),
             child: TextField(
@@ -1329,10 +1341,10 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
               minLines:    1,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _send(),
-              style: const TextStyle(color: _kTextPrimary, fontSize: 14),
+              style: TextStyle(color: _kTextPrimary(context), fontSize: 14),
               decoration: const InputDecoration(
                 hintText: 'Ask about this material…',
-                hintStyle: TextStyle(color: _kTextSecondary, fontSize: 14),
+                hintStyle: TextStyle(color: _kTextSecondary(context), fontSize: 14),
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
@@ -1396,7 +1408,7 @@ class _MessageBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: message.isError
               ? Colors.red.withOpacity(0.15)
-              : isUser ? _kUserBubble : _kAiBubble,
+              : isUser ? _kUserBubble : _kAiBubble(context),
           borderRadius: BorderRadius.only(
             topLeft:     const Radius.circular(16),
             topRight:    const Radius.circular(16),
