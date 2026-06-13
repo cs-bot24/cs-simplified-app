@@ -1164,7 +1164,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
         snap: true,
         snapSizes: const [0.30, 0.52, 0.92],
         builder: (ctx, scrollController) => Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: _kSurface(context),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
