@@ -923,6 +923,85 @@ class ApiClient {
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+      // ── AI Lecturer: Generate curriculum ──────────────────────────────────────
+  static Future<Map<String, dynamic>> getLecturerCurriculum({
+    required String courseName,
+    String?         courseCode,
+    String          level = 'intermediate',
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_name': courseName,
+        'level':       level,
+        if (courseCode != null && courseCode.isNotEmpty)
+          'course_code': courseCode,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/lecturer/curriculum'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── AI Lecturer: Teach one chapter ────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> teachChapter({
+    required String       courseName,
+    String?               courseCode,
+    required int          chapterIndex,
+    required String       chapterTitle,
+    required List<String> chapterTopics,
+    String                level               = 'intermediate',
+    List<Map<String, String>> conversationHistory = const [],
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_name':          courseName,
+        'chapter_index':        chapterIndex,
+        'chapter_title':        chapterTitle,
+        'chapter_topics':       chapterTopics,
+        'level':                level,
+        'conversation_history': conversationHistory,
+        if (courseCode != null && courseCode.isNotEmpty)
+          'course_code': courseCode,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/lecturer/teach'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── AI Lecturer: Evaluate check answer ────────────────────────────────────
+
+  static Future<Map<String, dynamic>> evaluateCheckAnswer({
+    required String       chapterTitle,
+    required String       checkQuestion,
+    required String       studentAnswer,
+    String                level               = 'intermediate',
+    List<Map<String, String>> conversationHistory = const [],
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'chapter_title':        chapterTitle,
+        'check_question':       checkQuestion,
+        'student_answer':       studentAnswer,
+        'level':                level,
+        'conversation_history': conversationHistory,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/lecturer/check'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
 
   /// Generate study notes on a topic.
   /// Phase 3: Pass sessionTopics + sessionSummary for personalised notes
