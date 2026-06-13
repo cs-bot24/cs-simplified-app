@@ -40,6 +40,7 @@ import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
 import '../ai/ai_tutor_screen.dart';
 import '../study_planner/study_planner_screen.dart';
+import '../lecturer/ai_lecturer_screen.dart';
 
 // ── Responsive breakpoint ─────────────────────────────────────────────────────
 const _kDesktopBreakpoint = 900.0;
@@ -580,6 +581,19 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                         ),
                       ),
                     ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _QuickActionCard(
+                        icon: Icons.school_rounded,
+                        label: 'AI Lecturer',
+                        color: const Color(0xFF1A3C6E),
+                        wide: false,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AiLecturerScreen()),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
