@@ -9,24 +9,27 @@ plugins {
 }
 
 // ── Load signing config ───────────────────────────────────────────────────────
-// Local dev: reads from android/key.properties
-// CI (Codemagic): reads from environment variables
 val keystorePropertiesFile = rootProject.file("key.properties")
 
-val storeFilePath: String
-val storePass: String
-val keyPass: String
-
-if (keystorePropertiesFile.exists()) {
-    val props = Properties()
-    props.load(FileInputStream(keystorePropertiesFile))
-    storeFilePath = props["storeFile"] as String
-    storePass     = props["storePassword"] as String
-    keyPass       = props["keyPassword"] as String
+val storeFilePath: String = if (keystorePropertiesFile.exists()) {
+    val props = Properties().apply { load(FileInputStream(keystorePropertiesFile)) }
+    props["storeFile"] as String
 } else {
-    storeFilePath = System.getenv("CM_KEYSTORE_PATH") ?: ""
-    storePass     = System.getenv("KEYSTORE_PASSWORD") ?: ""
-    keyPass       = System.getenv("KEY_PASSWORD") ?: ""
+    System.getenv("CM_KEYSTORE_PATH") ?: ""
+}
+
+val storePass: String = if (keystorePropertiesFile.exists()) {
+    val props = Properties().apply { load(FileInputStream(keystorePropertiesFile)) }
+    props["storePassword"] as String
+} else {
+    System.getenv("KEYSTORE_PASSWORD") ?: ""
+}
+
+val keyPass: String = if (keystorePropertiesFile.exists()) {
+    val props = Properties().apply { load(FileInputStream(keystorePropertiesFile)) }
+    props["keyPassword"] as String
+} else {
+    System.getenv("KEY_PASSWORD") ?: ""
 }
 
 android {
@@ -41,7 +44,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17"
     }
 
     signingConfigs {
