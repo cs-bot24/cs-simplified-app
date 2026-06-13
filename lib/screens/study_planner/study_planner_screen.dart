@@ -5,8 +5,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../core/api_client.dart';
 import '../../core/fcm_service.dart';
+import '../../providers/study_planner_provider.dart';
 
 // ── Accent color (brand, not theme-dependent) ─────────────────────────────────
 const _kAccent   = Color(0xFF6C63FF);
@@ -176,6 +178,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
             .toList();
         _loading = false;
       });
+      if (mounted) context.read<StudyPlannerProvider>().refresh();
     } catch (e) {
       setState(() { _error = 'Could not load plans.'; _loading = false; });
     }
@@ -191,6 +194,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
     if (created != null) {
       setState(() => _plans.insert(0, created));
       _showSnack('Study plan created! 🎯', success: true);
+      if (mounted) context.read<StudyPlannerProvider>().refresh();
     }
   }
 
@@ -260,6 +264,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
       await ApiClient.deleteStudyPlan(planId);
       setState(() => _plans.removeWhere((p) => p.id == planId));
       _showSnack('Plan deleted.', success: true);
+      if (mounted) context.read<StudyPlannerProvider>().refresh();
     } catch (_) {
       _showSnack('Could not delete plan.', success: false);
     }
@@ -275,6 +280,11 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
         final done  = plan.sessions.where((s) => s.isCompleted).length;
         plan.progress = total > 0 ? ((done / total) * 100).round() : 0;
       });
+      if (mounted) {
+        final planner = context.read<StudyPlannerProvider>();
+        planner.markCompletedLocally(session.id);
+        planner.refresh();
+      }
       await FcmService.showStudyReminder(
         id:    session.id,
         title: '✅ Session Complete!',

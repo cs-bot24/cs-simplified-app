@@ -12,6 +12,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
@@ -19,6 +20,7 @@ import '../../providers/notification_provider.dart';
 import '../../providers/home_provider.dart';
 import '../../providers/offline_provider.dart';
 import '../../providers/admin_stats_provider.dart';
+import '../../providers/study_planner_provider.dart';
 import '../../models/level_model.dart';
 import '../../widgets/skeleton_loader.dart';
 import '../../widgets/streak_badge.dart';
@@ -145,6 +147,8 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
 
+    final plannerBadge = context.watch<StudyPlannerProvider>().unfinishedCount;
+
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop   = screenWidth >= _kDesktopBreakpoint;
 
@@ -156,6 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
         totalUnread:  totalUnread,
         onSelect:     (i) => _onTabSelected(i, isAdmin),
         plannerIndex: _plannerTabIndex(isAdmin),
+        plannerBadge: plannerBadge,
       );
     }
 
@@ -165,12 +170,13 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
         onDestinationSelected: (i) => _onTabSelected(i, isAdmin),
-        destinations: _buildDestinations(isAdmin, totalUnread),
+        destinations: _buildDestinations(isAdmin, totalUnread, plannerBadge),
       ),
     );
   }
 
-  List<NavigationDestination> _buildDestinations(bool isAdmin, int totalUnread) {
+  List<NavigationDestination> _buildDestinations(
+      bool isAdmin, int totalUnread, int plannerBadge) {
     return [
       const NavigationDestination(
           icon: Icon(Icons.home_outlined),
@@ -189,9 +195,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.download_for_offline_outlined),
             selectedIcon: Icon(Icons.download_for_offline_rounded),
             label: 'Offline'),
-      const NavigationDestination(
-          icon: Icon(Icons.calendar_today_outlined),
-          selectedIcon: Icon(Icons.calendar_today_rounded),
+      NavigationDestination(
+          icon: _PlannerNavIcon(
+              icon: Icons.calendar_today_outlined, badge: plannerBadge),
+          selectedIcon: _PlannerNavIcon(
+              icon: Icons.calendar_today_rounded, badge: plannerBadge),
           label: 'Planner'),
       if (isAdmin)
         NavigationDestination(
@@ -222,6 +230,7 @@ class _DesktopShell extends StatelessWidget {
   final int           totalUnread;
   final void Function(int) onSelect;
   final int           plannerIndex;
+  final int           plannerBadge;
 
   const _DesktopShell({
     required this.index,
@@ -230,6 +239,7 @@ class _DesktopShell extends StatelessWidget {
     required this.totalUnread,
     required this.onSelect,
     required this.plannerIndex,
+    required this.plannerBadge,
   });
 
   @override
@@ -308,10 +318,12 @@ class _DesktopShell extends StatelessWidget {
           icon: Icon(Icons.bookmark_outline),
           selectedIcon: Icon(Icons.bookmark_rounded),
           label: Text('Saved')),
-      const NavigationRailDestination(
-          icon: Icon(Icons.calendar_today_outlined),
-          selectedIcon: Icon(Icons.calendar_today_rounded),
-          label: Text('Planner')),
+      NavigationRailDestination(
+          icon: _PlannerNavIcon(
+              icon: Icons.calendar_today_outlined, badge: plannerBadge),
+          selectedIcon: _PlannerNavIcon(
+              icon: Icons.calendar_today_rounded, badge: plannerBadge),
+          label: const Text('Planner')),
     ];
 
     if (isAdmin) {
@@ -331,6 +343,42 @@ class _DesktopShell extends StatelessWidget {
         label: Text('Profile')));
 
     return dests;
+  }
+}
+
+
+// ── Planner nav icon with unfinished-sessions badge ───────────────────────────
+
+class _PlannerNavIcon extends StatelessWidget {
+  final IconData icon;
+  final int      badge;
+  const _PlannerNavIcon({required this.icon, required this.badge});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon),
+        if (badge > 0)
+          Positioned(
+            top: -4, right: -6,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: const BoxDecoration(
+                  color: Colors.red, shape: BoxShape.circle),
+              child: Text(
+                badge > 99 ? '99+' : '$badge',
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 9,
+                    fontWeight: FontWeight.bold, height: 1.6),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -397,6 +445,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       context.read<NotificationProvider>().fetchNotifications();
       context.read<HomeProvider>().fetchHome();
       context.read<HomeProvider>().pingStreak();
+      context.read<StudyPlannerProvider>().refresh();
       if (!kIsWeb) context.read<OfflineProvider>().loadFromStorage();
     });
   }
@@ -411,6 +460,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
       context.read<HomeProvider>().pingStreak();
+      context.read<StudyPlannerProvider>().refreshIfNewDay();
     }
   }
 
@@ -461,6 +511,9 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                       count: home.data!.examPrepCount, onTap: _goToExamPrep),
                 ),
               ),
+
+            // ── 2b. Study Reminders card ─────────────────────────────────────
+            const SliverToBoxAdapter(child: _StudyRemindersCard()),
 
             // ── 3. Leaderboard entry card ────────────────────────────────────
             if (home.data != null)
@@ -1016,6 +1069,245 @@ class _LeaderboardEntryCard extends StatelessWidget {
               ),
           ]),
         ]),
+      ),
+    );
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Study Reminders Card — Home screen visibility for today's study sessions
+// ══════════════════════════════════════════════════════════════════════════════
+
+const _kPlannerAccent = Color(0xFF6C63FF);
+
+class _StudyRemindersCard extends StatelessWidget {
+  const _StudyRemindersCard();
+
+  void _openSheet(BuildContext context, List<TodayStudySession> sessions) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _TodaySessionsSheet(sessions: sessions),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final planner     = context.watch<StudyPlannerProvider>();
+    final unfinished  = planner.unfinishedToday;
+
+    // Conditions: only render when there's at least one unfinished
+    // session scheduled today. Otherwise, render nothing at all.
+    if (unfinished.isEmpty) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final count  = unfinished.length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Material(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _openSheet(context, unfinished),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _kPlannerAccent.withOpacity(0.25)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: _kPlannerAccent.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Text('📚', style: TextStyle(fontSize: 20)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Study Reminders',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: scheme.onSurface)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'You have $count study session${count == 1 ? '' : 's'} scheduled today.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white60 : Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text("View Today's Sessions",
+                              style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: _kPlannerAccent)),
+                          const SizedBox(width: 2),
+                          const Icon(Icons.keyboard_arrow_down_rounded,
+                              size: 16, color: _kPlannerAccent),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Today's Sessions — bottom sheet
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _TodaySessionsSheet extends StatelessWidget {
+  final List<TodayStudySession> sessions;
+  const _TodaySessionsSheet({required this.sessions});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text("📚 Today's Study Sessions",
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 12),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.5,
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                itemCount: sessions.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, i) => _TodaySessionTile(session: sessions[i]),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const StudyPlannerScreen()));
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kPlannerAccent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.calendar_today_rounded,
+                    color: Colors.white, size: 16),
+                label: const Text('Open Planner',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TodaySessionTile extends StatelessWidget {
+  final TodayStudySession session;
+  const _TodaySessionTile({required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final timeFmt = DateFormat('h:mm a');
+    final timeRange =
+        '${timeFmt.format(session.start)} - ${timeFmt.format(session.end)}';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF3F2FF),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: _kPlannerAccent.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(session.courseLabel,
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _kPlannerAccent)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(session.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+          ),
+          const SizedBox(width: 8),
+          Text(timeRange,
+              style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark ? Colors.white60 : Colors.black54)),
+        ],
       ),
     );
   }

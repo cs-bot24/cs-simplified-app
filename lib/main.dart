@@ -15,6 +15,7 @@ import 'providers/support_provider.dart';
 import 'providers/leaderboard_provider.dart';
 import 'providers/achievement_provider.dart';
 import 'providers/ai_provider.dart';
+import 'providers/study_planner_provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'core/fcm_service.dart' show navigatorKey;
@@ -59,6 +60,7 @@ class CsSimplifiedApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AchievementProvider()),
         ChangeNotifierProvider(create: (_) => AiProvider()),
         ChangeNotifierProvider(create: (_) => LecturerProvider()),
+        ChangeNotifierProvider(create: (_) => StudyPlannerProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, __) => MaterialApp(
@@ -103,6 +105,7 @@ class _AppBootstrapState extends State<_AppBootstrap>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshNotifications();
+      _refreshStudyPlanner();
     });
   }
 
@@ -116,12 +119,23 @@ class _AppBootstrapState extends State<_AppBootstrap>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshNotifications();
+      _refreshStudyPlanner(newDayOnly: true);
     }
   }
 
   void _refreshNotifications() {
     if (!mounted) return;
     context.read<NotificationProvider>().fetchNotifications();
+  }
+
+  void _refreshStudyPlanner({bool newDayOnly = false}) {
+    if (!mounted) return;
+    final planner = context.read<StudyPlannerProvider>();
+    if (newDayOnly) {
+      planner.refreshIfNewDay();
+    } else {
+      planner.refresh();
+    }
   }
 
   @override

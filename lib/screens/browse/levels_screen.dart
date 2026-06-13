@@ -6,6 +6,7 @@ import '../../widgets/loading_view.dart';
 import '../../widgets/error_view.dart';
 import 'semesters_screen.dart';
 import '../request/request_material_screen.dart';
+import '../lecturer/ai_lecturer_screen.dart';
 
 class LevelsScreen extends StatefulWidget {
   final LevelModel level;
@@ -25,13 +26,30 @@ class _LevelsScreenState extends State<LevelsScreen> {
   Widget build(BuildContext context) {
     final a = context.watch<AcademicProvider>();
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const RequestMaterialScreen())),
-        icon: const Icon(Icons.add_comment_outlined),
-        label: const Text('Request Material'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'ai_lecturer_fab',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const AiLecturerScreen())),
+            icon: const Icon(Icons.school_rounded),
+            label: const Text('AI Lecturer'),
+            backgroundColor: Theme.of(context).colorScheme.secondary,
+            foregroundColor: Colors.white,
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'request_material_fab',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const RequestMaterialScreen())),
+            icon: const Icon(Icons.add_comment_outlined),
+            label: const Text('Request Material'),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Colors.white,
+          ),
+        ],
       ),
       appBar: AppBar(title: Text('${widget.level.emoji} ${widget.level.levelName}')),
       body: a.loading ? const LoadingView()

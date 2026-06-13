@@ -218,7 +218,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   Future<void> _handleClose() async {
     _stopwatch.stop();
+    final alreadyRated = _rating?.userRating != null;
     if (widget.materialId != null &&
+        !alreadyRated &&
         _stopwatch.elapsed.inSeconds >= 10 &&
         mounted) {
       await showModalBottomSheet(
@@ -232,6 +234,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           onSubmit: (stars) async {
             await ApiClient.rateMaterial(widget.materialId!, stars);
             if (mounted) {
+              setState(() {
+                _rating = (_rating ?? const RatingModel(averageRating: 0, totalRatings: 0))
+                    .copyWith(userRating: stars);
+              });
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content: const Row(children: [
                   Icon(Icons.star_rounded, color: Colors.white, size: 16),
