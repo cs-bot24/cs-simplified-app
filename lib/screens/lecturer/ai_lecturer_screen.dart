@@ -1,10 +1,7 @@
 // lib/screens/lecturer/ai_lecturer_screen.dart
 //
-// AI Lecturer — Structured Teaching Mode
-//
-// The student selects a course, picks their level, and the AI teaches
-// the entire course chapter by chapter, ending each lesson with a
-// check question before allowing the student to advance.
+// AI Lecturer — Phase 4: Persistent progress, post-lesson Q&A,
+// "I don't know" handling, optional custom topics, and a final exam.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -12,11 +9,12 @@ import 'package:provider/provider.dart';
 
 import '../../models/lecturer_model.dart';
 import '../../providers/lecturer_provider.dart';
-import '../../theme/app_theme.dart';
 
-// ── Brand colours ─────────────────────────────────────────────────────────────
-const _kAccent  = Color(0xFF1A3C6E);   // matches AppTheme.primary
-const _kAccentL = Color(0xFF2E6DA4);   // matches AppTheme.primaryLight
+// ── Brand colour ─────────────────────────────────────────────────────────────
+const _kAccent  = Color(0xFF6C63FF);
+const _kAccentL = Color(0xFF8B85FF);
+const _kGreen   = Color(0xFF4CAF50);
+const _kRed     = Color(0xFFE53935);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Entry point
@@ -27,781 +25,1417 @@ class AiLecturerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => LecturerProvider(),
-      child: const _LecturerView(),
+    return Consumer<LecturerProvider>(
+      builder: (ctx, prov, _) {
+        if (prov.hasSession) return const _SessionScreen();
+        return const _EntryScreen();
+      },
     );
   }
 }
 
-class _LecturerView extends StatelessWidget {
-  const _LecturerView();
-
-  @override
-  Widget build(BuildContext context) {
-    final provider = context.watch<LecturerProvider>();
-    if (!provider.hasSession) return const _SetupScreen();
-    return const _SessionScreen();
-  }
-}
-
-
 // ══════════════════════════════════════════════════════════════════════════════
-// Setup Screen — pick course and level
+// Entry Screen — resume list + "Start New Course"
 // ══════════════════════════════════════════════════════════════════════════════
 
-class _SetupScreen extends StatefulWidget {
-  const _SetupScreen();
-  @override State<_SetupScreen> createState() => _SetupScreenState();
+class _EntryScreen extends StatefulWidget {
+  const _EntryScreen();
+  @override
+  State<_EntryScreen> createState() => _EntryScreenState();
 }
 
-class _SetupScreenState extends State<_SetupScreen> {
-  final _courseNameCtrl = TextEditingController();
-  final _courseCodeCtrl = TextEditingController();
-  String _level         = 'intermediate';
-  bool   _loading       = false;
-
-  // Predefined CS course suggestions for quick selection
-  static const _suggestions = [
-    ('Data Structures & Algorithms', 'CSC 201'),
-    ('Operating Systems',            'CSC 301'),
-    ('Computer Networks',            'CSC 311'),
-    ('Database Systems',             'CSC 321'),
-    ('Object-Oriented Programming',  'CSC 211'),
-    ('Discrete Mathematics',         'MTH 201'),
-    ('Software Engineering',         'CSC 401'),
-    ('Computer Architecture',        'CSC 231'),
-    ('Artificial Intelligence',      'CSC 421'),
-    ('Web Development',              'CSC 351'),
-  ];
-
+class _EntryScreenState extends State<_EntryScreen> {
   @override
-  void dispose() {
-    _courseNameCtrl.dispose();
-    _courseCodeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _start() async {
-    final name = _courseNameCtrl.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please enter a course name.'),
-        behavior: SnackBarBehavior.floating,
-      ));
-      return;
-    }
-
-    setState(() => _loading = true);
-    final provider = context.read<LecturerProvider>();
-    provider.setSession(
-      courseName: name,
-      courseCode: _courseCodeCtrl.text.trim(),
-      level:      _level,
-    );
-    await provider.loadCurriculum();
-    if (mounted) setState(() => _loading = false);
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<LecturerProvider>().loadHomeData();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final prov   = context.watch<LecturerProvider>();
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('AI Lecturer'),
-        centerTitle: false,
+        centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: prov.loadingHome
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: () => prov.loadHomeData(),
+              child: CustomScrollView(
+                slivers: [
+                  // ── Hero banner ────────────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [_kAccent, _kAccentL],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('🎓', style: TextStyle(fontSize: 36)),
+                          const SizedBox(height: 8),
+                          const Text('AI Lecturer',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Full-course structured teaching, chapter by chapter.',
+                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _goSetup(context),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: _kAccent,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('Start New Course',
+                                  style: TextStyle(fontWeight: FontWeight.w700)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
-            // ── Hero card ──────────────────────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [_kAccent, _kAccentL],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.school_rounded,
-                            color: Colors.white, size: 28),
+                  // ── My Courses ─────────────────────────────────────────────
+                  if (prov.savedCourses.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                        child: Text('📚 My Courses',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                                color: scheme.onSurface)),
                       ),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('AI Lecturer',
-                                style: TextStyle(color: Colors.white,
-                                    fontSize: 20, fontWeight: FontWeight.w800)),
-                            Text('Structured Course Teaching',
-                                style: TextStyle(color: Colors.white70,
-                                    fontSize: 13)),
-                          ],
+                    ),
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (ctx, i) => _SavedCourseTile(
+                          course: prov.savedCourses[i],
+                          onResume: () => _resume(context, prov.savedCourses[i].id),
+                          onDelete: () => _confirmDelete(
+                              context, prov, prov.savedCourses[i]),
+                        ),
+                        childCount: prov.savedCourses.length,
+                      ),
+                    ),
+                  ],
+
+                  // ── Popular Courses ────────────────────────────────────────
+                  if (prov.popularCourses.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                        child: Text('🔥 Popular Courses',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                                color: scheme.onSurface)),
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          childAspectRatio: 2.6,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (ctx, i) {
+                            final pc = prov.popularCourses[i];
+                            return GestureDetector(
+                              onTap: () => _goSetupWith(context, pc),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.white.withOpacity(0.07)
+                                      : _kAccent.withOpacity(0.07),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: _kAccent.withOpacity(0.2)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (pc.courseCode != null)
+                                      Text(pc.courseCode!,
+                                          style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: _kAccent)),
+                                    Text(pc.courseName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: scheme.onSurface)),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                          childCount: prov.popularCourses.length,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Your personal AI lecturer teaches entire courses '
-                    'chapter by chapter — with lessons, examples, and '
-                    'check questions to ensure you truly understand before moving on.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
-                  ),
+                    ),
+                  ],
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
                 ],
               ),
             ),
+    );
+  }
 
-            const SizedBox(height: 28),
-            Text('What would you like to study?',
-                style: TextStyle(color: scheme.onSurface,
-                    fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text('Type any course or pick a suggestion below.',
-                style: TextStyle(color: scheme.onSurface.withOpacity(0.5),
-                    fontSize: 13)),
+  void _goSetup(BuildContext context) {
+    Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const _SetupScreen()));
+  }
 
-            const SizedBox(height: 16),
+  void _goSetupWith(BuildContext context, PopularCourse pc) {
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => _SetupScreen(
+                  prefilledName: pc.courseName,
+                  prefilledCode: pc.courseCode,
+                )));
+  }
 
-            // ── Course name field ──────────────────────────────────────────
-            TextField(
-              controller: _courseNameCtrl,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: 'Course Name *',
-                hintText: 'e.g. Data Structures & Algorithms',
-                prefixIcon: const Icon(Icons.book_rounded),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 12),
+  void _resume(BuildContext context, int courseId) {
+    context.read<LecturerProvider>().resumeCourse(courseId);
+  }
 
-            // ── Course code field ──────────────────────────────────────────
-            TextField(
-              controller: _courseCodeCtrl,
-              textCapitalization: TextCapitalization.characters,
-              decoration: InputDecoration(
-                labelText: 'Course Code (optional)',
-                hintText: 'e.g. CSC 201',
-                prefixIcon: const Icon(Icons.tag_rounded),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ── Level picker ───────────────────────────────────────────────
-            Text('Your Level',
-                style: TextStyle(color: scheme.onSurface,
-                    fontSize: 14, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 10),
-            _LevelPicker(
-              selected: _level,
-              onSelect: (l) => setState(() => _level = l),
-            ),
-
-            const SizedBox(height: 24),
-
-            // ── Start button ───────────────────────────────────────────────
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _loading ? null : _start,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kAccent,
-                  disabledBackgroundColor: _kAccent.withOpacity(0.4),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: _loading
-                    ? const SizedBox(width: 22, height: 22,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5))
-                    : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.play_arrow_rounded,
-                              color: Colors.white, size: 22),
-                          SizedBox(width: 8),
-                          Text('Start Course',
-                              style: TextStyle(color: Colors.white,
-                                  fontSize: 16, fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-              ),
-            ),
-
-            const SizedBox(height: 32),
-
-            // ── Quick suggestions ──────────────────────────────────────────
-            Text('Popular Courses',
-                style: TextStyle(color: scheme.onSurface,
-                    fontSize: 14, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _suggestions.map((s) {
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    _courseNameCtrl.text = s.$1;
-                    _courseCodeCtrl.text = s.$2;
-                  }),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF2A2A2A)
-                          : const Color(0xFFF0F4FF),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: _kAccent.withOpacity(0.2)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _kAccent.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(s.$2,
-                              style: const TextStyle(
-                                  color: _kAccentL, fontSize: 10,
-                                  fontWeight: FontWeight.w700)),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(s.$1,
-                            style: TextStyle(
-                                color: scheme.onSurface, fontSize: 12,
-                                fontWeight: FontWeight.w500)),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-
-            const SizedBox(height: 40),
-          ],
-        ),
+  void _confirmDelete(
+      BuildContext context, LecturerProvider prov, LecturerCourseSummary c) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Course?'),
+        content: Text('Remove "${c.courseName}" and all progress?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              prov.deleteSavedCourse(c.id);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }
 }
 
+// ── Saved course tile ─────────────────────────────────────────────────────────
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Session Screen — the teaching experience
-// ══════════════════════════════════════════════════════════════════════════════
+class _SavedCourseTile extends StatelessWidget {
+  final LecturerCourseSummary course;
+  final VoidCallback          onResume;
+  final VoidCallback          onDelete;
+  const _SavedCourseTile(
+      {required this.course, required this.onResume, required this.onDelete});
 
-class _SessionScreen extends StatefulWidget {
-  const _SessionScreen();
-  @override State<_SessionScreen> createState() => _SessionScreenState();
+  @override
+  Widget build(BuildContext context) {
+    final scheme   = Theme.of(context).colorScheme;
+    final isDark   = Theme.of(context).brightness == Brightness.dark;
+    final pct      = course.progressPercent.round();
+    final done     = course.status == 'completed';
+    final accentFg = done ? _kGreen : _kAccent;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      child: Material(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onResume,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            child: Row(
+              children: [
+                // Icon
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: accentFg.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(done ? '✅' : '📖',
+                        style: const TextStyle(fontSize: 20)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Title + progress
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(course.courseName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: scheme.onSurface)),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (course.courseCode != null &&
+                              course.courseCode!.isNotEmpty) ...[
+                            Text(course.courseCode!,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: accentFg)),
+                            const Text(' · ',
+                                style: TextStyle(color: Colors.grey)),
+                          ],
+                          Text(_levelLabel(course.level),
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: course.progressPercent / 100,
+                          backgroundColor: (isDark ? Colors.white : Colors.black)
+                              .withOpacity(0.1),
+                          color: accentFg,
+                          minHeight: 4,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text('$pct% complete',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? Colors.white54 : Colors.black45)),
+                    ],
+                  ),
+                ),
+                // Actions
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                        done
+                            ? Icons.check_circle_rounded
+                            : Icons.play_circle_rounded,
+                        color: accentFg,
+                        size: 22),
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onTap: onDelete,
+                      child: const Icon(Icons.delete_outline,
+                          color: Colors.redAccent, size: 18),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _levelLabel(String l) {
+    switch (l) {
+      case 'beginner':  return '🟢 Beginner';
+      case 'advanced':  return '🔴 Advanced';
+      default:          return '🟡 Intermediate';
+    }
+  }
 }
 
-class _SessionScreenState extends State<_SessionScreen> {
-  final _scrollCtrl  = ScrollController();
-  final _answerCtrl  = TextEditingController();
-  final _answerFocus = FocusNode();
-  bool  _showChapters = false;
+// ══════════════════════════════════════════════════════════════════════════════
+// Setup Screen — course name, code, level, optional custom topics
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _SetupScreen extends StatefulWidget {
+  final String?  prefilledName;
+  final String?  prefilledCode;
+  const _SetupScreen({this.prefilledName, this.prefilledCode});
+
+  @override
+  State<_SetupScreen> createState() => _SetupScreenState();
+}
+
+class _SetupScreenState extends State<_SetupScreen> {
+  final _formKey   = GlobalKey<FormState>();
+  final _nameCtrl  = TextEditingController();
+  final _codeCtrl  = TextEditingController();
+  final _topicsCtrl = TextEditingController();
+  String _level    = 'intermediate';
+  bool   _showTopics = false;
+
+  static const _levels = [
+    ('beginner',     '🟢 Beginner',     'Simple explanations, real-world analogies'),
+    ('intermediate', '🟡 Intermediate', 'Core theory + worked examples'),
+    ('advanced',     '🔴 Advanced',      'Technical depth, edge cases, research'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl.text = widget.prefilledName ?? '';
+    _codeCtrl.text = widget.prefilledCode ?? '';
+  }
 
   @override
   void dispose() {
-    _scrollCtrl.dispose();
-    _answerCtrl.dispose();
-    _answerFocus.dispose();
+    _nameCtrl.dispose(); _codeCtrl.dispose(); _topicsCtrl.dispose();
     super.dispose();
-  }
-
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _submitAnswer() async {
-    final answer = _answerCtrl.text.trim();
-    if (answer.isEmpty) return;
-    _answerCtrl.clear();
-    _answerFocus.unfocus();
-    final provider = context.read<LecturerProvider>();
-    await provider.submitCheckAnswer(answer);
-    _scrollToBottom();
-  }
-
-  Future<void> _advance() async {
-    final provider = context.read<LecturerProvider>();
-    await provider.advanceToNextChapter();
-    _scrollToBottom();
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<LecturerProvider>();
-    final scheme   = Theme.of(context).colorScheme;
-    final curriculum = provider.curriculum!;
-
-    // Auto-scroll when new messages arrive
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    final prov   = context.watch<LecturerProvider>();
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final busy   = prov.state == LecturerState.loadingCurriculum;
 
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => _confirmReset(context),
+      appBar: AppBar(title: const Text('New Course'), centerTitle: true),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Course name
+              _Label('Course Name *'),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller:  _nameCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: _inputDec(context, 'e.g. Artificial Intelligence'),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Course name is required' : null,
+              ),
+
+              const SizedBox(height: 16),
+
+              // Course code
+              _Label('Course Code (optional)'),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: _codeCtrl,
+                textCapitalization: TextCapitalization.characters,
+                decoration: _inputDec(context, 'e.g. COSC 208'),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Level
+              _Label('Explanation Level'),
+              const SizedBox(height: 8),
+              Column(
+                children: _levels.map((l) {
+                  final selected = l.$1 == _level;
+                  return GestureDetector(
+                    onTap: () => setState(() => _level = l.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? _kAccent.withOpacity(0.12)
+                            : (isDark
+                                ? Colors.white.withOpacity(0.05)
+                                : Colors.grey.shade100),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected ? _kAccent : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(l.$1[0].toUpperCase() + l.$1.substring(1),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: selected
+                                      ? _kAccent
+                                      : scheme.onSurface)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(l.$3,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.black54)),
+                          ),
+                          if (selected)
+                            const Icon(Icons.check_circle_rounded,
+                                color: _kAccent, size: 20),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Custom topics (optional, expandable)
+              GestureDetector(
+                onTap: () => setState(() => _showTopics = !_showTopics),
+                child: Row(
+                  children: [
+                    Icon(_showTopics
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                        color: _kAccent, size: 20),
+                    const SizedBox(width: 6),
+                    Text('Custom Topics (optional)',
+                        style: TextStyle(
+                            color: _kAccent,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14)),
+                  ],
+                ),
+              ),
+
+              if (_showTopics) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'List specific topics you want the AI to cover, separated '
+                  'by commas or one per line. Leave blank for the AI to '
+                  'auto-generate a full curriculum.',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white54 : Colors.black54),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _topicsCtrl,
+                  maxLines: 4,
+                  decoration: _inputDec(context,
+                      'e.g. Searching algorithms, Sorting algorithms, Big O Notation...'),
+                ),
+              ],
+
+              const SizedBox(height: 28),
+
+              // Error
+              if (prov.error != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                      color: _kRed.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Text(prov.error!,
+                      style: const TextStyle(color: _kRed, fontSize: 13)),
+                ),
+
+              // Submit
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: busy ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kAccent,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: _kAccent.withOpacity(0.5),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: busy
+                      ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.school_rounded),
+                  label: Text(
+                    busy ? 'Generating curriculum…' : 'Start Course',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(curriculum.courseName,
-                style: const TextStyle(fontSize: 15,
-                    fontWeight: FontWeight.w700),
-                overflow: TextOverflow.ellipsis),
-            Text(
-              '${(provider.overallProgress * 100).toStringAsFixed(0)}% complete'
-              ' · ${curriculum.chapters.length} chapters',
-              style: TextStyle(fontSize: 11,
-                  color: scheme.primary.withOpacity(0.7)),
-            ),
-          ],
-        ),
-        actions: [
-          // Chapter list toggle
-          IconButton(
-            icon: Icon(_showChapters
-                ? Icons.list_rounded
-                : Icons.list_outlined),
-            tooltip: 'Chapter List',
-            onPressed: () => setState(
-                () => _showChapters = !_showChapters),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(4),
-          child: LinearProgressIndicator(
-            value:            provider.overallProgress,
-            backgroundColor:  scheme.primary.withOpacity(0.12),
-            valueColor:       AlwaysStoppedAnimation(scheme.primary),
-            minHeight:        4,
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          // ── Chapter list drawer ──────────────────────────────────────────
-          if (_showChapters)
-            _ChapterDrawer(
-              chapters: provider.chapters,
-              current:  provider.currentIndex,
-              onTap: (i) {
-                final ch = provider.chapters[i];
-                if (ch.state != ChapterState.locked) {
-                  setState(() => _showChapters = false);
-                  provider.loadChapter(i).then((_) => _scrollToBottom());
-                }
-              },
-            ),
-
-          // ── Error banner ─────────────────────────────────────────────────
-          if (provider.error != null)
-            _ErrorBanner(
-              error: provider.error!,
-              onDismiss: provider.clearError,
-            ),
-
-          // ── Message list ─────────────────────────────────────────────────
-          Expanded(
-            child: ListView.builder(
-              controller:  _scrollCtrl,
-              padding:     const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              itemCount:   provider.messages.length,
-              itemBuilder: (_, i) => _MessageTile(
-                  message: provider.messages[i],
-                  scheme:  scheme),
-            ),
-          ),
-
-          // ── Loading indicator ─────────────────────────────────────────────
-          if (provider.state == LecturerState.loadingLesson ||
-              provider.state == LecturerState.checking)
-            _LoadingBar(
-              label: provider.state == LecturerState.loadingLesson
-                  ? 'AI Lecturer is preparing your lesson…'
-                  : 'Evaluating your answer…',
-              scheme: scheme,
-            ),
-
-          // ── Action area ───────────────────────────────────────────────────
-          _ActionArea(
-            provider:    provider,
-            answerCtrl:  _answerCtrl,
-            answerFocus: _answerFocus,
-            scheme:      scheme,
-            onSubmit:    _submitAnswer,
-            onAdvance:   _advance,
-            onStartFirst: () {
-              provider.loadChapter(0).then((_) => _scrollToBottom());
-            },
-          ),
-        ],
       ),
     );
   }
 
-  void _confirmReset(BuildContext context) {
+  void _submit() {
+    prov.clearError();
+    if (!_formKey.currentState!.validate()) return;
+
+    List<String>? customTopics;
+    if (_showTopics && _topicsCtrl.text.trim().isNotEmpty) {
+      customTopics = _topicsCtrl.text
+          .split(RegExp(r'[,\n]'))
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+    }
+
+    context.read<LecturerProvider>()
+      ..setSession(
+        courseName: _nameCtrl.text.trim(),
+        courseCode: _codeCtrl.text.trim(),
+        level:      _level,
+      )
+      ..startNewCourse(customTopics: customTopics);
+
+    Navigator.pop(context);   // close setup; AiLecturerScreen switches to _SessionScreen
+  }
+
+  LecturerProvider get prov => context.read<LecturerProvider>();
+
+  InputDecoration _inputDec(BuildContext ctx, String hint) => InputDecoration(
+    hintText:      hint,
+    border:        OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+  );
+}
+
+class _Label extends StatelessWidget {
+  final String text;
+  const _Label(this.text);
+  @override
+  Widget build(BuildContext context) => Text(text,
+      style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75)));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Session Screen — chapter list drawer + chat-style message area
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _SessionScreen extends StatefulWidget {
+  const _SessionScreen();
+  @override
+  State<_SessionScreen> createState() => _SessionScreenState();
+}
+
+class _SessionScreenState extends State<_SessionScreen> {
+  final _scrollCtrl = ScrollController();
+
+  @override
+  void dispose() { _scrollCtrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final prov   = context.watch<LecturerProvider>();
+    final scheme = Theme.of(context).colorScheme;
+
+    // Auto-scroll to bottom when messages change.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+    final isLoading = prov.state == LecturerState.loadingCurriculum ||
+        prov.state == LecturerState.loadingLesson;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          children: [
+            Text(prov.courseName,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w700),
+                overflow: TextOverflow.ellipsis),
+            Text(_levelLabel(prov.level),
+                style: const TextStyle(fontSize: 11, color: Colors.white70)),
+          ],
+        ),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => _confirmExit(context, prov),
+        ),
+        actions: [
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.menu_book_rounded),
+              tooltip: 'Chapter list',
+              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+            ),
+          ),
+        ],
+      ),
+      endDrawer: _ChapterDrawer(prov: prov),
+      body: isLoading && prov.messages.isEmpty
+          ? const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: _kAccent),
+                  SizedBox(height: 16),
+                  Text('Generating your curriculum…',
+                      style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            )
+          : Column(
+              children: [
+                // Progress bar
+                _ProgressBar(prov: prov),
+
+                // Messages
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                    itemCount: prov.messages.length,
+                    itemBuilder: (_, i) => _MessageTile(
+                        msg: prov.messages[i]),
+                  ),
+                ),
+
+                // Loading shimmer for active AI call
+                if (prov.state == LecturerState.loadingLesson  ||
+                    prov.state == LecturerState.qaLoading       ||
+                    prov.state == LecturerState.checking        ||
+                    prov.state == LecturerState.examLoading     ||
+                    prov.state == LecturerState.examGrading)
+                  const _ThinkingIndicator(),
+
+                // Error banner
+                if (prov.error != null)
+                  _ErrorBanner(
+                    error: prov.error!,
+                    onDismiss: prov.clearError,
+                  ),
+
+                // Action area
+                _ActionArea(prov: prov),
+              ],
+            ),
+    );
+  }
+
+  void _scrollToBottom() {
+    if (_scrollCtrl.hasClients) {
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve:    Curves.easeOut,
+      );
+    }
+  }
+
+  void _confirmExit(BuildContext context, LecturerProvider prov) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Exit Course?'),
         content: const Text(
-            'Your current session progress will be lost. '
-            'Are you sure you want to go back?'),
+            'Your progress is saved. You can resume this course anytime '
+            'from the AI Lecturer home screen.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Stay')),
+              child: const Text('Keep Learning')),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              context.read<LecturerProvider>().reset();
+              prov.reset();
             },
-            child: const Text('Exit',
-                style: TextStyle(color: Colors.red)),
+            child: const Text('Exit', style: TextStyle(color: Colors.grey)),
           ),
         ],
       ),
     );
   }
+
+  String _levelLabel(String l) {
+    switch (l) {
+      case 'beginner':  return '🟢 Beginner';
+      case 'advanced':  return '🔴 Advanced';
+      default:          return '🟡 Intermediate';
+    }
+  }
 }
 
+// ── Progress bar ─────────────────────────────────────────────────────────────
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Action Area — adapts based on session state
-// ══════════════════════════════════════════════════════════════════════════════
-
-class _ActionArea extends StatelessWidget {
-  final LecturerProvider  provider;
-  final TextEditingController answerCtrl;
-  final FocusNode         answerFocus;
-  final ColorScheme       scheme;
-  final VoidCallback      onSubmit;
-  final VoidCallback      onAdvance;
-  final VoidCallback      onStartFirst;
-
-  const _ActionArea({
-    required this.provider,
-    required this.answerCtrl,
-    required this.answerFocus,
-    required this.scheme,
-    required this.onSubmit,
-    required this.onAdvance,
-    required this.onStartFirst,
-  });
+class _ProgressBar extends StatelessWidget {
+  final LecturerProvider prov;
+  const _ProgressBar({required this.prov});
 
   @override
   Widget build(BuildContext context) {
-    final isDark   = Theme.of(context).brightness == Brightness.dark;
-    final isLoading = provider.state == LecturerState.loadingLesson ||
-        provider.state == LecturerState.checking ||
-        provider.state == LecturerState.loadingCurriculum;
-    final current  = provider.currentChapter;
+    final passed  = prov.chapters.where((c) => c.isPassed).length;
+    final total   = prov.chapters.length;
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 8,
-              offset: const Offset(0, -2))
-        ],
-      ),
-      padding: EdgeInsets.only(
-        left: 16, right: 16, top: 12,
-        bottom: MediaQuery.of(context).padding.bottom + 12,
-      ),
-      child: _buildContent(context, isDark, isLoading, current),
-    );
-  }
-
-  Widget _buildContent(BuildContext context, bool isDark,
-      bool isLoading, ChapterProgress? current) {
-
-    // Course just loaded — show "Start Lesson" for chapter 1
-    if (current != null && current.lessonText == null &&
-        current.state == ChapterState.current && !isLoading) {
-      return _StartChapterButton(
-        chapter: current.chapter,
-        scheme:  scheme,
-        onTap:   onStartFirst,
-      );
-    }
-
-    // Check question phase — student must answer before advancing
-    if (current != null &&
-        current.state == ChapterState.checking &&
-        current.checkFeedback == null &&
-        !isLoading) {
-      return _AnswerInput(
-        ctrl:       answerCtrl,
-        focusNode:  answerFocus,
-        scheme:     scheme,
-        isDark:     isDark,
-        onSubmit:   onSubmit,
-        isLoading:  isLoading,
-        checkQuestion: current.checkQuestion,
-      );
-    }
-
-    // Feedback received — show Next Chapter button
-    if (current != null && current.checkFeedback != null && !isLoading) {
-      if (provider.isLastChapter && current.state != ChapterState.passed) {
-        return _CourseCompleteButton(scheme: scheme, onTap: onAdvance);
-      }
-      return _NextChapterButton(
-        nextIndex: provider.currentIndex + 2,
-        scheme:    scheme,
-        onTap:     onAdvance,
-        isLast:    provider.isLastChapter,
-      );
-    }
-
-    // Loading — show disabled placeholder
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: OutlinedButton(
-        onPressed: null,
-        style: OutlinedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-        ),
-        child: Text('Please wait…',
-            style: TextStyle(
-                color: scheme.onSurface.withOpacity(0.3))),
-      ),
-    );
-  }
-}
-
-
-// ── Start Chapter Button ──────────────────────────────────────────────────────
-
-class _StartChapterButton extends StatelessWidget {
-  final LecturerChapter chapter;
-  final ColorScheme     scheme;
-  final VoidCallback    onTap;
-  const _StartChapterButton({
-    required this.chapter,
-    required this.scheme,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _kAccent,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.play_circle_fill_rounded,
-                color: Colors.white, size: 22),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                'Start Chapter ${chapter.index}: ${chapter.title}',
-                style: const TextStyle(color: Colors.white,
-                    fontSize: 14, fontWeight: FontWeight.w700),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-// ── Answer Input ──────────────────────────────────────────────────────────────
-
-class _AnswerInput extends StatelessWidget {
-  final TextEditingController ctrl;
-  final FocusNode             focusNode;
-  final ColorScheme           scheme;
-  final bool                  isDark;
-  final VoidCallback          onSubmit;
-  final bool                  isLoading;
-  final String?               checkQuestion;
-
-  const _AnswerInput({
-    required this.ctrl,
-    required this.focusNode,
-    required this.scheme,
-    required this.isDark,
-    required this.onSubmit,
-    required this.isLoading,
-    this.checkQuestion,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Check question reminder
-        if (checkQuestion != null)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: _kAccent.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _kAccent.withOpacity(0.2)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.help_outline_rounded,
-                    color: scheme.primary, size: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    checkQuestion!,
-                    style: TextStyle(
-                        color: scheme.onSurface, fontSize: 12,
-                        fontStyle: FontStyle.italic),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        Row(children: [
+      height: 36,
+      color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        children: [
+          Text('Chapter ${prov.currentIndex + 1} / $total',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white70 : Colors.black54)),
+          const SizedBox(width: 12),
           Expanded(
-            child: TextField(
-              controller:      ctrl,
-              focusNode:       focusNode,
-              enabled:         !isLoading,
-              maxLines:        3,
-              minLines:        1,
-              textInputAction: TextInputAction.send,
-              onSubmitted:     (_) => onSubmit(),
-              decoration: InputDecoration(
-                hintText: 'Type your answer here…',
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none),
-                filled: true,
-                fillColor: isDark
-                    ? const Color(0xFF2A2A2A)
-                    : const Color(0xFFF0F4FF),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: total > 0 ? passed / total : 0,
+                backgroundColor: (isDark ? Colors.white : Colors.black)
+                    .withOpacity(0.1),
+                color: _kAccent,
+                minHeight: 6,
               ),
             ),
           ),
           const SizedBox(width: 10),
-          Material(
-            color:      _kAccent,
-            shape:      const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: isLoading ? null : onSubmit,
-              child: const Padding(
-                padding: EdgeInsets.all(12),
-                child: Icon(Icons.send_rounded,
-                    color: Colors.white, size: 20),
+          Text('$passed/$total done',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white54 : Colors.black45)),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Action Area — everything below the message list (buttons + input)
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _ActionArea extends StatefulWidget {
+  final LecturerProvider prov;
+  const _ActionArea({required this.prov});
+
+  @override
+  State<_ActionArea> createState() => _ActionAreaState();
+}
+
+class _ActionAreaState extends State<_ActionArea> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  LecturerProvider get prov => widget.prov;
+  bool get _busy => prov.state != LecturerState.idle &&
+      prov.state != LecturerState.error;
+
+  @override
+  Widget build(BuildContext context) {
+    final phase = prov.currentChapter?.phase;
+
+    // ── Exam offer ──────────────────────────────────────────────────────────
+    if (prov.courseStage == CourseStage.examOffer) {
+      return _ChoiceButtons(
+        question: 'Would you like to take the final exam?',
+        yesLabel: '📝 Take Exam',
+        noLabel:  '🏁 Finish Course',
+        onYes: () => prov.respondToExamOffer(true),
+        onNo:  () => prov.respondToExamOffer(false),
+        busy:  _busy,
+      );
+    }
+
+    // ── Exam in progress ────────────────────────────────────────────────────
+    if (prov.courseStage == CourseStage.examInProgress &&
+        prov.examQuestions.isNotEmpty) {
+      return _ExamAnswerArea(prov: prov);
+    }
+
+    // ── Exam result ─────────────────────────────────────────────────────────
+    if (prov.courseStage == CourseStage.examResult) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: SizedBox(
+          width: double.infinity,
+          child: _AccentButton(
+            label: '🎓 View Full Results',
+            onTap: () => _showResultSheet(context, prov.examResult!),
+          ),
+        ),
+      );
+    }
+
+    // ── Course completed (no exam) ──────────────────────────────────────────
+    if (prov.courseStage == CourseStage.completed) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: SizedBox(
+          width: double.infinity,
+          child: _AccentButton(
+            label: '🏠 Back to Courses',
+            onTap: prov.reset,
+          ),
+        ),
+      );
+    }
+
+    // ── Not started yet ─────────────────────────────────────────────────────
+    if (prov.curriculum != null && prov.chapters.isNotEmpty &&
+        prov.currentChapter!.phase == ChapterPhase.notStarted &&
+        prov.currentChapter!.lessonText == null) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: SizedBox(
+          width: double.infinity,
+          child: _AccentButton(
+            label: '▶ Start Chapter ${prov.currentChapter!.chapter.index}',
+            onTap: _busy ? null : () => prov.loadChapter(prov.currentIndex),
+          ),
+        ),
+      );
+    }
+
+    // ── Q&A choice: "Do you have any questions?" ────────────────────────────
+    if (phase == ChapterPhase.awaitingQaChoice) {
+      return _ChoiceButtons(
+        question: null,
+        yesLabel: '❓ I have a question',
+        noLabel:  '✅ No, continue',
+        onYes: () => prov.answerQaChoice(true),
+        onNo:  () => prov.answerQaChoice(false),
+        busy:  _busy,
+      );
+    }
+
+    // ── Q&A: waiting for student question ───────────────────────────────────
+    if (phase == ChapterPhase.awaitingQaQuestion) {
+      return _TextInput(
+        ctrl:       _ctrl,
+        hint:       'Type your question…',
+        submitLabel: 'Ask',
+        busy:       _busy,
+        onSubmit: (q) {
+          prov.submitQaQuestion(q);
+          _ctrl.clear();
+        },
+      );
+    }
+
+    // ── Check question: waiting for answer ──────────────────────────────────
+    if (phase == ChapterPhase.awaitingCheckAnswer) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _TextInput(
+            ctrl:       _ctrl,
+            hint:       'Type your answer…',
+            submitLabel: 'Submit',
+            busy:       _busy,
+            onSubmit: (a) {
+              prov.submitCheckAnswer(a);
+              _ctrl.clear();
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => prov.submitCheckAnswer('', knowsAnswer: false),
+                child: const Text('🤷 I don\'t know',
+                    style: TextStyle(color: Colors.grey)),
               ),
             ),
           ),
-        ]),
-      ],
+        ],
+      );
+    }
+
+    // ── Feedback shown → "Next Chapter" ─────────────────────────────────────
+    if (phase == ChapterPhase.feedbackShown) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: SizedBox(
+          width: double.infinity,
+          child: _AccentButton(
+            label: prov.isLastChapter
+                ? '🎓 Complete Course'
+                : '➡ Next Chapter',
+            onTap: _busy ? null : prov.advanceToNextChapter,
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  void _showResultSheet(BuildContext context, ExamResult result) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ExamResultSheet(result: result),
     );
   }
 }
 
+// ── Shared UI atoms ───────────────────────────────────────────────────────────
 
-// ── Next Chapter Button ───────────────────────────────────────────────────────
+class _AccentButton extends StatelessWidget {
+  final String    label;
+  final VoidCallback? onTap;
+  const _AccentButton({required this.label, required this.onTap});
 
-class _NextChapterButton extends StatelessWidget {
-  final int          nextIndex;
-  final ColorScheme  scheme;
-  final VoidCallback onTap;
-  final bool         isLast;
-  const _NextChapterButton({
-    required this.nextIndex,
-    required this.scheme,
-    required this.onTap,
-    required this.isLast,
+  @override
+  Widget build(BuildContext context) => ElevatedButton(
+    onPressed: onTap,
+    style: ElevatedButton.styleFrom(
+      backgroundColor: _kAccent,
+      foregroundColor: Colors.white,
+      disabledBackgroundColor: _kAccent.withOpacity(0.4),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    child: Text(label,
+        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+  );
+}
+
+class _ChoiceButtons extends StatelessWidget {
+  final String?  question;
+  final String   yesLabel;
+  final String   noLabel;
+  final VoidCallback onYes;
+  final VoidCallback onNo;
+  final bool     busy;
+  const _ChoiceButtons({
+    required this.yesLabel, required this.noLabel,
+    required this.onYes, required this.onNo, required this.busy,
+    this.question,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isLast ? Colors.green[700] : _kAccent,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton(
+              onPressed: busy ? null : onYes,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kAccent,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: _kAccent.withOpacity(0.4),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(yesLabel,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 13)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton(
+              onPressed: busy ? null : onNo,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.grey,
+                side: const BorderSide(color: Colors.grey),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(noLabel,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 13)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TextInput extends StatelessWidget {
+  final TextEditingController ctrl;
+  final String   hint;
+  final String   submitLabel;
+  final bool     busy;
+  final void Function(String) onSubmit;
+  const _TextInput({
+    required this.ctrl, required this.hint, required this.submitLabel,
+    required this.busy, required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: hint,
+                filled:   true,
+                fillColor: isDark
+                    ? Colors.white.withOpacity(0.07)
+                    : Colors.grey.shade100,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: _kAccent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: busy
+                  ? null
+                  : () {
+                      final t = ctrl.text.trim();
+                      if (t.isNotEmpty) onSubmit(t);
+                    },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: busy
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Exam answer area
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _ExamAnswerArea extends StatefulWidget {
+  final LecturerProvider prov;
+  const _ExamAnswerArea({required this.prov});
+  @override
+  State<_ExamAnswerArea> createState() => _ExamAnswerAreaState();
+}
+
+class _ExamAnswerAreaState extends State<_ExamAnswerArea> {
+  late final Map<int, TextEditingController> _ctrls;
+  bool _submitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrls = {
+      for (final q in widget.prov.examQuestions)
+        q.id: TextEditingController(),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prov   = widget.prov;
+    final busy   = prov.state == LecturerState.examGrading;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.55),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+            top: BorderSide(
+                color: (isDark ? Colors.white : Colors.black).withOpacity(0.1))),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+            child: Text('📝 Answer all questions, then submit',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white54 : Colors.black45)),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+              itemCount: prov.examQuestions.length,
+              itemBuilder: (_, i) {
+                final q = prov.examQuestions[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Q${q.id}. ${q.question}',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: scheme.onSurface)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _ctrls[q.id],
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          hintText: 'Your answer…',
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.white.withOpacity(0.06)
+                              : Colors.grey.shade100,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: busy || _submitted
+                    ? null
+                    : () {
+                        final answers = <int, String>{
+                          for (final e in _ctrls.entries)
+                            e.key: e.value.text.trim(),
+                        };
+                        setState(() => _submitted = true);
+                        prov.submitExam(answers);
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kAccent,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: _kAccent.withOpacity(0.4),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                icon: busy
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.send_rounded),
+                label: Text(busy ? 'Grading…' : 'Submit Exam',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Exam result bottom sheet
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _ExamResultSheet extends StatelessWidget {
+  final ExamResult result;
+  const _ExamResultSheet({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final scheme  = Theme.of(context).colorScheme;
+    final pct     = result.total > 0
+        ? (result.score / result.total * 100).round()
+        : 0;
+    final color   = pct >= 70
+        ? _kGreen
+        : pct >= 50 ? Colors.orange : _kRed;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(isLast
-                ? Icons.emoji_events_rounded
-                : Icons.arrow_forward_rounded,
-                color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              isLast
-                  ? 'Complete Course 🎓'
-                  : 'Next Chapter ($nextIndex)',
-              style: const TextStyle(color: Colors.white,
-                  fontSize: 15, fontWeight: FontWeight.w700),
+            // Handle
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 16),
+              decoration: BoxDecoration(
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+
+            // Score badge
+            Container(
+              width: 80, height: 80,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12), shape: BoxShape.circle),
+              child: Center(
+                child: Text('$pct%',
+                    style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: color)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('${result.score.toStringAsFixed(1)} / ${result.total} correct',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface)),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(result.overallFeedback,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.white70 : Colors.black54)),
+            ),
+            const SizedBox(height: 16),
+
+            // Per-question breakdown
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.4),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: result.results.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                itemBuilder: (_, i) {
+                  final r = result.results[i];
+                  final verdictColor = r.verdict == 'correct'
+                      ? _kGreen
+                      : r.verdict == 'partial' ? Colors.orange : _kRed;
+                  final icon = r.verdict == 'correct'
+                      ? '✅' : r.verdict == 'partial' ? '⚠️' : '❌';
+                  return Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: verdictColor.withOpacity(0.07),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Text('$icon Q${r.id}',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: verdictColor)),
+                          const Spacer(),
+                          Text(r.verdict.toUpperCase(),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: verdictColor)),
+                        ]),
+                        const SizedBox(height: 4),
+                        Text(r.feedback,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.white70 : Colors.black54)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Close',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
             ),
           ],
         ),
@@ -810,243 +1444,151 @@ class _NextChapterButton extends StatelessWidget {
   }
 }
 
-class _CourseCompleteButton extends StatelessWidget {
-  final ColorScheme  scheme;
-  final VoidCallback onTap;
-  const _CourseCompleteButton(
-      {required this.scheme, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green[700],
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.emoji_events_rounded,
-                color: Colors.white, size: 22),
-            SizedBox(width: 8),
-            Text('Finish Course 🎓',
-                style: TextStyle(color: Colors.white,
-                    fontSize: 15, fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
 // ══════════════════════════════════════════════════════════════════════════════
-// Chapter Drawer — collapsible chapter list
+// Chapter list drawer
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _ChapterDrawer extends StatelessWidget {
-  final List<ChapterProgress> chapters;
-  final int                   current;
-  final void Function(int)    onTap;
-  const _ChapterDrawer({
-    required this.chapters,
-    required this.current,
-    required this.onTap,
-  });
+  final LecturerProvider prov;
+  const _ChapterDrawer({required this.prov});
 
   @override
   Widget build(BuildContext context) {
     final isDark  = Theme.of(context).brightness == Brightness.dark;
     final scheme  = Theme.of(context).colorScheme;
 
-    return Container(
-      constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.4),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFF8F9FF),
-        border: Border(
-            bottom: BorderSide(
-                color: scheme.primary.withOpacity(0.1))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Text('Course Chapters',
-                style: TextStyle(color: scheme.onSurface,
-                    fontSize: 13, fontWeight: FontWeight.w700)),
-          ),
-          Flexible(
-            child: ListView.builder(
-              shrinkWrap:  true,
-              padding:     const EdgeInsets.only(bottom: 8),
-              itemCount:   chapters.length,
-              itemBuilder: (_, i) {
-                final ch = chapters[i];
-                final isCurrent = i == current;
-                final locked = ch.state == ChapterState.locked;
-                final passed = ch.state == ChapterState.passed;
-
-                return InkWell(
-                  onTap: locked ? null : () => onTap(i),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isCurrent
-                          ? scheme.primary.withOpacity(0.08)
-                          : null,
-                    ),
-                    child: Row(
-                      children: [
-                        // Chapter state icon
-                        Container(
-                          width: 28, height: 28,
-                          decoration: BoxDecoration(
-                            color: passed
-                                ? Colors.green.withOpacity(0.15)
-                                : isCurrent
-                                    ? scheme.primary.withOpacity(0.15)
-                                    : locked
-                                        ? Colors.grey.withOpacity(0.1)
-                                        : scheme.primary.withOpacity(0.08),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            passed
-                                ? Icons.check_rounded
-                                : isCurrent
-                                    ? Icons.play_arrow_rounded
-                                    : locked
-                                        ? Icons.lock_rounded
-                                        : Icons.circle_outlined,
-                            size: 14,
-                            color: passed
-                                ? Colors.green
-                                : isCurrent
-                                    ? scheme.primary
-                                    : Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Chapter ${ch.chapter.index}',
-                                style: TextStyle(
-                                  color: locked
-                                      ? Colors.grey
-                                      : scheme.onSurface.withOpacity(0.5),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                ch.chapter.title,
-                                style: TextStyle(
-                                  color: locked
-                                      ? Colors.grey
-                                      : scheme.onSurface,
-                                  fontSize: 13,
-                                  fontWeight: isCurrent
-                                      ? FontWeight.w700
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(ch.chapter.durationEstimate,
-                            style: TextStyle(
-                                color: Colors.grey.shade500,
-                                fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                );
-              },
+    return Drawer(
+      backgroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('Course Chapters',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                      color: scheme.onSurface)),
             ),
-          ),
-        ],
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: prov.chapters.length,
+                itemBuilder: (_, i) {
+                  final cp      = prov.chapters[i];
+                  final isCurrent = i == prov.currentIndex;
+                  final locked  = cp.isLocked;
+                  final done    = cp.isPassed;
+
+                  Color fg = locked
+                      ? Colors.grey
+                      : isCurrent ? _kAccent : scheme.onSurface;
+                  IconData ico = locked
+                      ? Icons.lock_outline_rounded
+                      : done
+                          ? Icons.check_circle_rounded
+                          : isCurrent
+                              ? Icons.menu_book_rounded
+                              : Icons.circle_outlined;
+                  Color icoColor = done
+                      ? _kGreen
+                      : isCurrent ? _kAccent : Colors.grey;
+
+                  return ListTile(
+                    leading: Icon(ico, color: icoColor, size: 20),
+                    title: Text(
+                      '${cp.chapter.index}. ${cp.chapter.title}',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight:
+                              isCurrent ? FontWeight.w700 : FontWeight.w400,
+                          color: fg),
+                    ),
+                    subtitle: locked
+                        ? null
+                        : Text(cp.chapter.durationEstimate,
+                            style: const TextStyle(fontSize: 11)),
+                    dense: true,
+                    tileColor: isCurrent
+                        ? _kAccent.withOpacity(0.1)
+                        : Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    onTap: locked
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            if (i != prov.currentIndex) {
+                              prov.loadChapter(i);
+                            }
+                          },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-
 // ══════════════════════════════════════════════════════════════════════════════
-// Message Tile — renders lessons, answers, feedback, system messages
+// Message tiles
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _MessageTile extends StatelessWidget {
-  final LecturerMessage message;
-  final ColorScheme     scheme;
-  const _MessageTile({required this.message, required this.scheme});
+  final LecturerMessage msg;
+  const _MessageTile({required this.msg});
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    switch (message.type) {
+    switch (msg.type) {
       case LecturerMessageType.system:
-        return _SystemMessage(text: message.text, scheme: scheme, isDark: isDark);
+        return _SystemMessage(text: msg.text);
       case LecturerMessageType.studentAnswer:
-        return _StudentBubble(text: message.text, scheme: scheme);
+        return _StudentBubble(text: msg.text);
       case LecturerMessageType.lesson:
       case LecturerMessageType.feedback:
-        return _LecturerBubble(
-            text: message.text, scheme: scheme, isDark: isDark,
-            isFeedback: message.type == LecturerMessageType.feedback);
+        return _LecturerBubble(text: msg.text);
     }
   }
 }
 
 class _SystemMessage extends StatelessWidget {
-  final String      text;
-  final ColorScheme scheme;
-  final bool        isDark;
-  const _SystemMessage({required this.text, required this.scheme, required this.isDark});
+  final String text;
+  const _SystemMessage({required this.text});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: scheme.primary.withOpacity(0.2))),
-          const SizedBox(width: 12),
-          Flexible(
-            child: MarkdownBody(
-              data: text,
-              styleSheet: MarkdownStyleSheet(
-                p: TextStyle(color: scheme.primary.withOpacity(0.8),
-                    fontSize: 12, fontStyle: FontStyle.italic),
-                strong: TextStyle(color: scheme.primary,
-                    fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Divider(color: scheme.primary.withOpacity(0.2))),
-        ],
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withOpacity(0.06)
+            : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: _kAccent.withOpacity(0.2)),
+      ),
+      child: MarkdownBody(
+        data: text,
+        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+          p: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
+          strong: const TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
     );
   }
 }
 
 class _StudentBubble extends StatelessWidget {
-  final String      text;
-  final ColorScheme scheme;
-  const _StudentBubble({required this.text, required this.scheme});
+  final String text;
+  const _StudentBubble({required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -1054,287 +1596,146 @@ class _StudentBubble extends StatelessWidget {
       alignment: Alignment.centerRight,
       child: Container(
         constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78),
+            maxWidth: MediaQuery.of(context).size.width * 0.75),
         margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: scheme.primary,
+          color: _kAccent,
           borderRadius: const BorderRadius.only(
-            topLeft:     Radius.circular(18),
-            topRight:    Radius.circular(18),
-            bottomLeft:  Radius.circular(18),
-            bottomRight: Radius.circular(4),
+            topLeft:     Radius.circular(16),
+            topRight:    Radius.circular(4),
+            bottomLeft:  Radius.circular(16),
+            bottomRight: Radius.circular(16),
           ),
-          boxShadow: [BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 6, offset: const Offset(0, 2))],
         ),
         child: Text(text,
-            style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.5)),
+            style: const TextStyle(color: Colors.white, fontSize: 14)),
       ),
     );
   }
 }
 
 class _LecturerBubble extends StatelessWidget {
-  final String      text;
-  final ColorScheme scheme;
-  final bool        isDark;
-  final bool        isFeedback;
-  const _LecturerBubble({
-    required this.text,
-    required this.scheme,
-    required this.isDark,
-    required this.isFeedback,
-  });
+  final String text;
+  const _LecturerBubble({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // AI Lecturer avatar
-          Container(
-            width: 36, height: 36,
-            margin: const EdgeInsets.only(right: 10, top: 2),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [_kAccent, _kAccentL],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.school_rounded,
-                color: Colors.white, size: 18),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isFeedback ? 'AI Lecturer — Feedback' : 'AI Lecturer',
-                  style: TextStyle(
-                    color: scheme.primary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF252525)
-                        : const Color(0xFFF0F4FF),
-                    borderRadius: const BorderRadius.only(
-                      topLeft:     Radius.circular(4),
-                      topRight:    Radius.circular(18),
-                      bottomLeft:  Radius.circular(18),
-                      bottomRight: Radius.circular(18),
-                    ),
-                    border: Border.all(
-                        color: scheme.primary.withOpacity(0.1)),
-                    boxShadow: [BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 6, offset: const Offset(0, 2))],
-                  ),
-                  child: MarkdownBody(
-                    data: text,
-                    selectable: true,
-                    styleSheet: MarkdownStyleSheet(
-                      p: TextStyle(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.87)
-                            : Colors.black87,
-                        fontSize: 14, height: 1.6,
-                      ),
-                      h1: TextStyle(color: isDark ? Colors.white : Colors.black87,
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                      h2: TextStyle(color: isDark ? Colors.white : Colors.black87,
-                          fontSize: 16, fontWeight: FontWeight.bold),
-                      h3: TextStyle(color: isDark ? Colors.white : Colors.black87,
-                          fontSize: 15, fontWeight: FontWeight.w600),
-                      strong: TextStyle(
-                          color: isDark ? Colors.white : Colors.black87,
-                          fontWeight: FontWeight.bold),
-                      em: TextStyle(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.87)
-                              : Colors.black87,
-                          fontStyle: FontStyle.italic),
-                      code: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                        backgroundColor: isDark
-                            ? const Color(0xFF1A1A1A)
-                            : const Color(0xFFE0E8FF),
-                        color: isDark ? const Color(0xFF82B1FF) : _kAccent,
-                      ),
-                      codeblockDecoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF1A1A1A)
-                            : const Color(0xFFE0E8FF),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      codeblockPadding: const EdgeInsets.all(12),
-                      blockquote: TextStyle(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.6)
-                              : Colors.black54,
-                          fontStyle: FontStyle.italic),
-                      listBullet: TextStyle(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.87)
-                              : Colors.black87),
-                      h1Padding: const EdgeInsets.only(top: 8, bottom: 4),
-                      h2Padding: const EdgeInsets.only(top: 6, bottom: 3),
-                      h3Padding: const EdgeInsets.only(top: 4, bottom: 2),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-// ══════════════════════════════════════════════════════════════════════════════
-// Utility widgets
-// ══════════════════════════════════════════════════════════════════════════════
-
-class _LevelPicker extends StatelessWidget {
-  final String          selected;
-  final void Function(String) onSelect;
-  const _LevelPicker({required this.selected, required this.onSelect});
-
-  static const _levels = [
-    ('beginner',     'Beginner',     'Simple language\nEveryday examples'),
-    ('intermediate', 'Intermediate', 'Balanced depth\nTechnical terms'),
-    ('advanced',     'Advanced',     'Full theory\nPrecise language'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Row(
-      children: _levels.map((l) {
-        final isSelected = selected == l.$1;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => onSelect(l.$1),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(
-                  vertical: 12, horizontal: 8),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? _kAccent
-                    : isDark
-                        ? const Color(0xFF2A2A2A)
-                        : const Color(0xFFF0F4FF),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: isSelected
-                        ? _kAccent
-                        : _kAccent.withOpacity(0.2),
-                    width: isSelected ? 2 : 1),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 34, height: 34,
+          margin: const EdgeInsets.only(right: 8, top: 4),
+          decoration: BoxDecoration(
+            color: _kAccent.withOpacity(0.15),
+            shape: BoxShape.circle,
+          ),
+          child: const Center(
+              child: Text('🎓', style: TextStyle(fontSize: 16))),
+        ),
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF252540)
+                  : const Color(0xFFF0EFFF),
+              borderRadius: const BorderRadius.only(
+                topLeft:     Radius.circular(4),
+                topRight:    Radius.circular(16),
+                bottomLeft:  Radius.circular(16),
+                bottomRight: Radius.circular(16),
               ),
-              child: Column(
-                children: [
-                  Text(l.$2,
-                      style: TextStyle(
-                        color: isSelected
-                            ? Colors.white
-                            : scheme.onSurface,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      )),
-                  const SizedBox(height: 4),
-                  Text(l.$3,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: isSelected
-                            ? Colors.white70
-                            : scheme.onSurface.withOpacity(0.5),
-                        fontSize: 10,
-                        height: 1.4,
-                      )),
-                ],
+            ),
+            child: MarkdownBody(
+              data: text,
+              styleSheet:
+                  MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                p: Theme.of(context).textTheme.bodyMedium,
+                strong: const TextStyle(fontWeight: FontWeight.w700),
+                h2: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 15),
+                code: TextStyle(
+                    backgroundColor: _kAccent.withOpacity(0.1),
+                    fontSize: 12),
               ),
             ),
           ),
-        );
-      }).toList(),
+        ),
+      ],
     );
   }
 }
 
-class _LoadingBar extends StatelessWidget {
-  final String      label;
-  final ColorScheme scheme;
-  const _LoadingBar({required this.label, required this.scheme});
+// ── Thinking indicator ─────────────────────────────────────────────────────────
+
+class _ThinkingIndicator extends StatelessWidget {
+  const _ThinkingIndicator();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: scheme.primary.withOpacity(0.05),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: Row(
         children: [
-          SizedBox(
-            width: 16, height: 16,
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: scheme.primary),
+          Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(
+              color: _kAccent.withOpacity(0.15), shape: BoxShape.circle),
+            child: const Center(
+                child: Text('🎓', style: TextStyle(fontSize: 14))),
           ),
           const SizedBox(width: 10),
-          Text(label,
-              style: TextStyle(
-                  color: scheme.primary, fontSize: 12,
-                  fontStyle: FontStyle.italic)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF252540) : const Color(0xFFF0EFFF),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const SizedBox(
+              width: 40, height: 10,
+              child: LinearProgressIndicator(
+                  color: _kAccent, backgroundColor: Colors.transparent),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
+// ── Error banner ──────────────────────────────────────────────────────────────
+
 class _ErrorBanner extends StatelessWidget {
-  final String      error;
+  final String       error;
   final VoidCallback onDismiss;
   const _ErrorBanner({required this.error, required this.onDismiss});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.08),
+        color: _kRed.withOpacity(0.12),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.red.withOpacity(0.25)),
       ),
-      child: Row(children: [
-        const Icon(Icons.error_outline_rounded, color: Colors.red, size: 16),
-        const SizedBox(width: 8),
-        Expanded(
-            child: Text(error,
-                style: const TextStyle(color: Colors.red, fontSize: 13))),
-        GestureDetector(
-            onTap: onDismiss,
-            child: const Icon(Icons.close_rounded,
-                color: Colors.red, size: 16)),
-      ]),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: _kRed, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(error,
+                  style: const TextStyle(color: _kRed, fontSize: 12))),
+          GestureDetector(
+              onTap: onDismiss,
+              child: const Icon(Icons.close, color: _kRed, size: 18)),
+        ],
+      ),
     );
   }
 }

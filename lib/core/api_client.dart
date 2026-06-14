@@ -923,11 +923,12 @@ class ApiClient {
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
-      // ── AI Lecturer: Generate curriculum ──────────────────────────────────────
+      // ── AI Lecturer: Generate curriculum (stateless) ──────────────────────────
   static Future<Map<String, dynamic>> getLecturerCurriculum({
     required String courseName,
     String?         courseCode,
     String          level = 'intermediate',
+    List<String>?   customTopics,
   }) async {
     try {
       final body = <String, dynamic>{
@@ -935,6 +936,8 @@ class ApiClient {
         'level':       level,
         if (courseCode != null && courseCode.isNotEmpty)
           'course_code': courseCode,
+        if (customTopics != null && customTopics.isNotEmpty)
+          'custom_topics': customTopics,
       };
       final res = await http.post(
         Uri.parse('$_base/lecturer/curriculum'),
@@ -942,6 +945,101 @@ class ApiClient {
         body:    jsonEncode(body),
       );
       return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── AI Lecturer: Persisted courses ────────────────────────────────────────
+
+  /// List the student's saved AI Lecturer courses (resume list).
+  static Future<List<dynamic>> getLecturerCourses() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/lecturer/courses'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) as List<dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Start a new AI Lecturer course — generates + persists the curriculum.
+  static Future<Map<String, dynamic>> createLecturerCourse({
+    required String courseName,
+    String?         courseCode,
+    String          level = 'intermediate',
+    List<String>?   customTopics,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_name': courseName,
+        'level':       level,
+        if (courseCode != null && courseCode.isNotEmpty)
+          'course_code': courseCode,
+        if (customTopics != null && customTopics.isNotEmpty)
+          'custom_topics': customTopics,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/lecturer/courses'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Fetch the full saved state of a course (to resume).
+  static Future<Map<String, dynamic>> getLecturerCourse(int courseId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/lecturer/courses/$courseId'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Persist the latest progress snapshot for a course.
+  static Future<Map<String, dynamic>> updateLecturerCourseState({
+    required int    courseId,
+    required String stateJson,
+    double?         progressPercent,
+    String?         status,
+    String?         examJson,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'state_json': stateJson,
+        if (progressPercent != null) 'progress_percent': progressPercent,
+        if (status != null) 'status': status,
+        if (examJson != null) 'exam_json': examJson,
+      };
+      final res = await http.patch(
+        Uri.parse('$_base/lecturer/courses/$courseId'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Delete/abandon a saved AI Lecturer course.
+  static Future<void> deleteLecturerCourse(int courseId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/lecturer/courses/$courseId'),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Popular courses — derived purely from trending materials.
+  static Future<List<dynamic>> getLecturerPopularCourses() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/lecturer/popular-courses'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) as List<dynamic>;
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
@@ -976,12 +1074,13 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
-  // ── AI Lecturer: Evaluate check answer ────────────────────────────────────
+  // ── AI Lecturer: Evaluate / explain check answer ──────────────────────────
 
   static Future<Map<String, dynamic>> evaluateCheckAnswer({
     required String       chapterTitle,
     required String       checkQuestion,
-    required String       studentAnswer,
+    String                studentAnswer       = '',
+    bool                  studentKnowsAnswer  = true,
     String                level               = 'intermediate',
     List<Map<String, String>> conversationHistory = const [],
   }) async {
@@ -990,11 +1089,93 @@ class ApiClient {
         'chapter_title':        chapterTitle,
         'check_question':       checkQuestion,
         'student_answer':       studentAnswer,
+        'student_knows_answer': studentKnowsAnswer,
         'level':                level,
         'conversation_history': conversationHistory,
       };
       final res = await http.post(
         Uri.parse('$_base/lecturer/check'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── AI Lecturer: Post-lesson Q&A ──────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> askLecturerQuestion({
+    required String       courseName,
+    String?               courseCode,
+    required String       chapterTitle,
+    required List<String> chapterTopics,
+    required String       studentQuestion,
+    String                level               = 'intermediate',
+    List<Map<String, String>> conversationHistory = const [],
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_name':          courseName,
+        'chapter_title':        chapterTitle,
+        'chapter_topics':       chapterTopics,
+        'student_question':     studentQuestion,
+        'level':                level,
+        'conversation_history': conversationHistory,
+        if (courseCode != null && courseCode.isNotEmpty)
+          'course_code': courseCode,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/lecturer/qa'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── AI Lecturer: Final exam ────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> generateLecturerExam({
+    required String          courseName,
+    String?                  courseCode,
+    required List<Map<String, dynamic>> chapters,
+    String                   level = 'intermediate',
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_name': courseName,
+        'chapters':    chapters,
+        'level':       level,
+        if (courseCode != null && courseCode.isNotEmpty)
+          'course_code': courseCode,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/lecturer/exam/generate'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> gradeLecturerExam({
+    required String                     courseName,
+    String?                              courseCode,
+    required List<Map<String, dynamic>> questions,
+    required List<Map<String, dynamic>> answers,
+    String                               level = 'intermediate',
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_name': courseName,
+        'questions':   questions,
+        'answers':     answers,
+        'level':       level,
+        if (courseCode != null && courseCode.isNotEmpty)
+          'course_code': courseCode,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/lecturer/exam/grade'),
         headers: _headers(auth: true),
         body:    jsonEncode(body),
       );
