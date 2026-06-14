@@ -363,14 +363,14 @@ class LecturerProvider extends ChangeNotifier {
 
     if (hasQuestion) {
       chap.phase = ChapterPhase.awaitingQaQuestion;
-      _messages.add(const LecturerMessage(
+      _messages.add(LecturerMessage(
         text: 'Yes, I have a question',
         type: LecturerMessageType.studentAnswer,
         timestamp: DateTime.now(),
       ));
     } else {
       chap.phase = ChapterPhase.awaitingCheckAnswer;
-      _messages.add(const LecturerMessage(
+      _messages.add(LecturerMessage(
         text: 'No, let\'s continue',
         type: LecturerMessageType.studentAnswer,
         timestamp: DateTime.now(),

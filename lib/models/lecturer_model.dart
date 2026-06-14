@@ -159,7 +159,7 @@ class LecturerMessage {
   final LecturerMessageType type;
   final DateTime            timestamp;
 
-  const LecturerMessage({
+  LecturerMessage({
     required this.text,
     required this.type,
     required this.timestamp,
