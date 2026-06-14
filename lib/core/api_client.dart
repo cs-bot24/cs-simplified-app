@@ -158,6 +158,95 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  /// Returns exam materials grouped by course for the hub screen.
+  static Future<List<dynamic>> getExamPrepCourses() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/courses'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) as List<dynamic>;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getExamPracticeQuestions({
+    required String courseCode,
+    required String courseTitle,
+    int             count        = 10,
+    List<String>?   questionTypes,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_code':  courseCode,
+        'course_title': courseTitle,
+        'count':        count,
+        if (questionTypes != null) 'question_types': questionTypes,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/practice-questions'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getExamQuiz({
+    required String courseCode,
+    required String courseTitle,
+    int             count = 20,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_code':  courseCode,
+        'course_title': courseTitle,
+        'count':        count,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/quiz'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getExamRevisionNotes({
+    required String courseCode,
+    required String courseTitle,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_code':  courseCode,
+        'course_title': courseTitle,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/revision-notes'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getExamFocusAreas({
+    required String courseCode,
+    required String courseTitle,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'course_code':  courseCode,
+        'course_title': courseTitle,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/focus-areas'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   /// Submit or update a star rating (1–5) for a material.
   /// Returns the updated aggregate stats including the new average.
   static Future<Map<String, dynamic>> rateMaterial(
