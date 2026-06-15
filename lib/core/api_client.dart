@@ -247,6 +247,74 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  // ── Exam Prep Phase 3: Readiness Tracker + Countdown ─────────────────────
+
+  static Future<Map<String, dynamic>> getExamReadiness({
+    required String courseCode,
+    String courseTitle = '',
+  }) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/readiness/$courseCode'
+            '?course_title=${Uri.encodeComponent(courseTitle)}'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> trackExamActivity({
+    required String courseCode,
+    required String activity,
+    double?         quizScore,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'activity': activity,
+        if (quizScore != null) 'quiz_score': quizScore,
+      };
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/readiness/$courseCode/track'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> setExamDate({
+    required String courseCode,
+    required String courseTitle,
+    required DateTime examDate,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'exam_date': examDate.toIso8601String().substring(0, 10),
+      };
+      final res = await http.put(
+        Uri.parse('$_base/exam-prep/readiness/$courseCode/exam-date'
+            '?course_title=${Uri.encodeComponent(courseTitle)}'),
+        headers: _headers(auth: true),
+        body:    jsonEncode(body),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getDailyExamTopics({
+    required String courseCode,
+    String courseTitle = '',
+  }) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/daily-topics/$courseCode'
+            '?course_title=${Uri.encodeComponent(courseTitle)}'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   /// Submit or update a star rating (1–5) for a material.
   /// Returns the updated aggregate stats including the new average.
   static Future<Map<String, dynamic>> rateMaterial(

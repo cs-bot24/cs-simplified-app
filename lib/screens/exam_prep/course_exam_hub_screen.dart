@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
@@ -101,12 +102,19 @@ class CourseExamHubScreen extends StatelessWidget {
                   ...course.materials.map(
                       (m) => Padding(
                             padding: const EdgeInsets.only(bottom: 8),
-                            child: _MaterialTile(material: m),
+                            child: _MaterialTile(
+                                material: m,
+                                courseCode: course.courseCode),
                           )),
 
                   // ── Phase 3 reserved slot (Readiness Tracker) ─────────
-                  // TODO Phase 3: Insert ExamReadinessCard here
-                  // TODO Phase 3: Insert ExamCountdownCard here
+                  // ── Readiness Tracker ─────────────────────────────────
+                  _ExamReadinessCard(course: course),
+                  const SizedBox(height: 12),
+
+                  // ── Exam Countdown ────────────────────────────────────
+                  _ExamCountdownCard(course: course),
+                  const SizedBox(height: 20),
 
                   const SizedBox(height: 30),
                 ],
@@ -286,7 +294,8 @@ class _ActionCard extends StatelessWidget {
 
 class _MaterialTile extends StatelessWidget {
   final MaterialModel material;
-  const _MaterialTile({required this.material});
+  final String        courseCode;
+  const _MaterialTile({required this.material, required this.courseCode});
 
   @override
   Widget build(BuildContext context) {
@@ -295,16 +304,23 @@ class _MaterialTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PdfViewerScreen(
-              url:        material.fileUrl,
-              title:      material.materialTitle,
-              materialId: material.id,
+        onTap: () {
+          // Track silently for readiness
+          ApiClient.trackExamActivity(
+            courseCode: courseCode,
+            activity:   'material_read',
+          ).catchError((_) {});
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PdfViewerScreen(
+                url:        material.fileUrl,
+                title:      material.materialTitle,
+                materialId: material.id,
+              ),
             ),
-          ),
-        ),
+          );
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
@@ -480,7 +496,6 @@ class _PracticeQuestionsScreenState extends State<_PracticeQuestionsScreen> {
 class _QuizSetupScreen extends StatefulWidget {
   final ExamCourse course;
   const _QuizSetupScreen({required this.course});
-
   @override
   State<_QuizSetupScreen> createState() => _QuizSetupScreenState();
 }
@@ -506,7 +521,8 @@ class _QuizSetupScreenState extends State<_QuizSetupScreen> {
       setState(() => _loading = false);
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => _QuizScreen(quiz: quiz)),
+        MaterialPageRoute(builder: (_) => _QuizScreen(
+            quiz: quiz, course: widget.course)),
       );
     } catch (_) {
       setState(() {
@@ -621,8 +637,9 @@ class _QuizSetupScreenState extends State<_QuizSetupScreen> {
 // ── Live quiz screen ──────────────────────────────────────────────────────────
 
 class _QuizScreen extends StatefulWidget {
-  final QuizData quiz;
-  const _QuizScreen({required this.quiz});
+  final QuizData   quiz;
+  final ExamCourse course;
+  const _QuizScreen({required this.quiz, required this.course});
 
   @override
   State<_QuizScreen> createState() => _QuizScreenState();
@@ -680,7 +697,8 @@ class _QuizScreenState extends State<_QuizScreen> {
     setState(() => _submitted = true);
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => _QuizResultScreen(quiz: widget.quiz)),
+      MaterialPageRoute(builder: (_) => _QuizResultScreen(
+          quiz: widget.quiz, course: widget.course)),
     );
   }
 
@@ -862,12 +880,30 @@ class _QuizScreenState extends State<_QuizScreen> {
 
 // ── Quiz result screen ────────────────────────────────────────────────────────
 
-class _QuizResultScreen extends StatelessWidget {
-  final QuizData quiz;
-  const _QuizResultScreen({required this.quiz});
+class _QuizResultScreen extends StatefulWidget {
+  final QuizData   quiz;
+  final ExamCourse course;
+  const _QuizResultScreen({required this.quiz, required this.course});
+
+  @override
+  State<_QuizResultScreen> createState() => _QuizResultScreenState();
+}
+
+class _QuizResultScreenState extends State<_QuizResultScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Silently record quiz score for readiness tracking
+    ApiClient.trackExamActivity(
+      courseCode: widget.course.courseCode,
+      activity:   'quiz',
+      quizScore:  widget.quiz.scorePercent,
+    ).catchError((_) {});
+  }
 
   @override
   Widget build(BuildContext context) {
+    final quiz   = widget.quiz;
     final pct    = quiz.scorePercent;
     final color  = pct >= 70 ? _kGreen : pct >= 50 ? _kAmber : _kRed;
     final emoji  = pct >= 70 ? '🎉' : pct >= 50 ? '😊' : '💪';
@@ -1472,4 +1508,547 @@ class _ErrorScreen extends StatelessWidget {
       ]),
     ),
   );
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 3 — Exam Readiness Tracker Card
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _ExamReadinessCard extends StatefulWidget {
+  final ExamCourse course;
+  const _ExamReadinessCard({required this.course});
+
+  @override
+  State<_ExamReadinessCard> createState() => _ExamReadinessCardState();
+}
+
+class _ExamReadinessCardState extends State<_ExamReadinessCard> {
+  ReadinessData? _data;
+  bool           _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final res = await ApiClient.getExamReadiness(
+        courseCode:  widget.course.courseCode,
+        courseTitle: widget.course.courseTitle,
+      );
+      if (mounted) {
+        setState(() {
+          _data    = ReadinessData.fromJson(res);
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final scheme  = Theme.of(context).colorScheme;
+
+    if (_loading) {
+      return Container(
+        height: 80,
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _kAmber.withOpacity(0.15)),
+        ),
+        child: const Center(
+          child: SizedBox(width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      );
+    }
+
+    final data = _data;
+    if (data == null) return const SizedBox.shrink();
+
+    final pct   = data.readinessPercent;
+    final color = pct >= 70 ? _kGreen : pct >= 40 ? _kAmber : _kRed;
+
+    final activities = [
+      _ActivityItem(
+        icon:  '📄',
+        label: 'Materials Read',
+        done:  data.materialsRead > 0,
+        value: data.materialsRead > 0 ? '${data.materialsRead}x' : null,
+      ),
+      _ActivityItem(
+        icon:  '📝',
+        label: 'Practice Done',
+        done:  data.practiceSessions > 0,
+        value: data.practiceSessions > 0 ? '${data.practiceSessions}x' : null,
+      ),
+      _ActivityItem(
+        icon:  '⏱',
+        label: 'Quiz Taken',
+        done:  data.quizSessions > 0,
+        value: data.avgQuizScore != null
+            ? '${data.avgQuizScore!.round()}%'
+            : null,
+      ),
+      _ActivityItem(
+        icon:  '📖',
+        label: 'Revised',
+        done:  data.revisionSessions > 0,
+        value: data.revisionSessions > 0 ? '${data.revisionSessions}x' : null,
+      ),
+      _ActivityItem(
+        icon:  '🎯',
+        label: 'Focus Viewed',
+        done:  data.focusAreasViewed,
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(children: [
+            Text('📊 Exam Readiness',
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: scheme.onSurface)),
+            const Spacer(),
+            Text('${pct.round()}%',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                    color: color)),
+          ]),
+          const SizedBox(height: 8),
+
+          // Progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct / 100,
+              backgroundColor: (isDark ? Colors.white : Colors.black)
+                  .withOpacity(0.1),
+              color: color,
+              minHeight: 7,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Activity checklist
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: activities.map((a) => _ActivityChip(item: a)).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityItem {
+  final String  icon;
+  final String  label;
+  final bool    done;
+  final String? value;
+  const _ActivityItem({
+    required this.icon,
+    required this.label,
+    required this.done,
+    this.value,
+  });
+}
+
+class _ActivityChip extends StatelessWidget {
+  final _ActivityItem item;
+  const _ActivityChip({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color  = item.done ? _kGreen : Colors.grey;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(item.icon, style: const TextStyle(fontSize: 11)),
+        const SizedBox(width: 4),
+        Text(
+          item.value != null
+              ? '${item.label} · ${item.value}'
+              : item.label,
+          style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color),
+        ),
+        const SizedBox(width: 3),
+        Icon(
+          item.done ? Icons.check_circle_rounded : Icons.circle_outlined,
+          size: 11,
+          color: color,
+        ),
+      ]),
+    );
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 3 — Exam Countdown Card
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _ExamCountdownCard extends StatefulWidget {
+  final ExamCourse course;
+  const _ExamCountdownCard({required this.course});
+
+  @override
+  State<_ExamCountdownCard> createState() => _ExamCountdownCardState();
+}
+
+class _ExamCountdownCardState extends State<_ExamCountdownCard> {
+  ReadinessData?  _readiness;
+  DailyTopicsData? _topics;
+  bool            _loading        = true;
+  bool            _showTopics     = false;
+  bool            _settingDate    = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final res = await ApiClient.getExamReadiness(
+        courseCode:  widget.course.courseCode,
+        courseTitle: widget.course.courseTitle,
+      );
+      final data = ReadinessData.fromJson(res);
+      if (mounted) setState(() { _readiness = data; _loading = false; });
+
+      // If exam date is set, also load today's recommended topics
+      if (data.examDate != null && mounted) {
+        _loadTopics();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadTopics() async {
+    try {
+      final res = await ApiClient.getDailyExamTopics(
+        courseCode:  widget.course.courseCode,
+        courseTitle: widget.course.courseTitle,
+      );
+      final raw    = res['topics_json'] as String? ?? '{}';
+      final parsed = jsonDecode(raw) as Map<String, dynamic>;
+      if (mounted) {
+        setState(() => _topics = DailyTopicsData.fromJson(parsed));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pickExamDate(BuildContext context) async {
+    final now  = DateTime.now();
+    final initial = _readiness?.examDate ?? now.add(const Duration(days: 7));
+    final picked = await showDatePicker(
+      context:      context,
+      initialDate:  initial.isBefore(now) ? now : initial,
+      firstDate:    now,
+      lastDate:     now.add(const Duration(days: 365)),
+      helpText:     'Select your exam date',
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _settingDate = true);
+    try {
+      final res = await ApiClient.setExamDate(
+        courseCode:  widget.course.courseCode,
+        courseTitle: widget.course.courseTitle,
+        examDate:    picked,
+      );
+      final data = ReadinessData.fromJson(res);
+      if (mounted) {
+        setState(() {
+          _readiness  = data;
+          _settingDate = false;
+          _topics     = null;
+        });
+        _loadTopics();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _settingDate = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
+
+    if (_loading) return const SizedBox.shrink();
+
+    final data = _readiness;
+
+    // No exam date set yet → invite the student to set one
+    if (data == null || data.examDate == null) {
+      return GestureDetector(
+        onTap: () => _pickExamDate(context),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withOpacity(0.04)
+                : Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: (isDark ? Colors.white : Colors.black).withOpacity(0.08)),
+          ),
+          child: Row(children: [
+            const Text('📅', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Set Your Exam Date',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: scheme.onSurface)),
+                  Text('Get a personalised daily study plan',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white54 : Colors.black45)),
+                ],
+              ),
+            ),
+            if (_settingDate)
+              const SizedBox(width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+            else
+              Icon(Icons.chevron_right_rounded,
+                  color: Colors.grey[400], size: 20),
+          ]),
+        ),
+      );
+    }
+
+    // Exam date set → show countdown + optional daily topics
+    final days   = data.daysUntilExam ?? 0;
+    final urgency = data.urgencyLabel;
+    final color  = days <= 1
+        ? _kRed
+        : days <= 3
+            ? Colors.orange
+            : days <= 7 ? _kAmber : _kGreen;
+    final dateFmt = DateFormat('EEE, d MMM yyyy');
+
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        children: [
+          // Countdown header
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              // Days badge
+              Container(
+                width: 54, height: 54,
+                decoration: BoxDecoration(
+                    color: color.withOpacity(0.15), shape: BoxShape.circle),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('$days',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: color)),
+                    Text(days == 1 ? 'day' : 'days',
+                        style: TextStyle(fontSize: 9, color: color)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Until Your Exam',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: scheme.onSurface)),
+                    const SizedBox(height: 2),
+                    Text(dateFmt.format(data.examDate!),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white54 : Colors.black45)),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        urgency.isEmpty ? '' : '$urgency Priority',
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: color),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Change date button
+              GestureDetector(
+                onTap: () => _pickExamDate(context),
+                child: Icon(Icons.edit_calendar_rounded,
+                    size: 18, color: Colors.grey[400]),
+              ),
+            ]),
+          ),
+
+          // Daily topics (expandable)
+          if (_topics != null) ...[
+            const Divider(height: 1),
+            InkWell(
+              onTap: () => setState(() => _showTopics = !_showTopics),
+              borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(14)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                child: Row(children: [
+                  const Text('📚', style: TextStyle(fontSize: 14)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Today's Topics (~${_topics!.estimatedStudyHours}h recommended)",
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  Icon(
+                    _showTopics
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: Colors.grey[400],
+                    size: 18,
+                  ),
+                ]),
+              ),
+            ),
+            if (_showTopics)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ..._topics!.todayTopics.map((t) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 20, height: 20,
+                            margin: const EdgeInsets.only(top: 1, right: 8),
+                            decoration: BoxDecoration(
+                                color: color.withOpacity(0.15),
+                                shape: BoxShape.circle),
+                            child: Center(
+                              child: Text(
+                                '${_topics!.todayTopics.indexOf(t) + 1}',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: color),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(t.topic,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12)),
+                                Text(
+                                  '${t.estimatedMinutes} min · ${t.why}',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: isDark
+                                          ? Colors.white54
+                                          : Colors.black45),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )),
+                    if (_topics!.dailyTip.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('💡 ',
+                                style: TextStyle(fontSize: 12)),
+                            Expanded(
+                              child: Text(_topics!.dailyTip,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark
+                                          ? Colors.white70
+                                          : Colors.black54)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
 }

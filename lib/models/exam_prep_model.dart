@@ -134,3 +134,104 @@ class FocusAreasData {
     studyAdvice: j['study_advice'] as String? ?? '',
   );
 }
+
+// ── Readiness tracker ─────────────────────────────────────────────────────────
+
+class ReadinessData {
+  final String   courseCode;
+  final String   courseTitle;
+  final double   readinessPercent;
+  final int      materialsRead;
+  final int      practiceSessions;
+  final int      quizSessions;
+  final int      revisionSessions;
+  final bool     focusAreasViewed;
+  final double?  avgQuizScore;
+  final DateTime? examDate;
+  final int?     daysUntilExam;
+
+  const ReadinessData({
+    required this.courseCode,
+    required this.courseTitle,
+    required this.readinessPercent,
+    required this.materialsRead,
+    required this.practiceSessions,
+    required this.quizSessions,
+    required this.revisionSessions,
+    required this.focusAreasViewed,
+    this.avgQuizScore,
+    this.examDate,
+    this.daysUntilExam,
+  });
+
+  factory ReadinessData.fromJson(Map<String, dynamic> j) => ReadinessData(
+    courseCode:       j['course_code']       as String,
+    courseTitle:      j['course_title']      as String,
+    readinessPercent: (j['readiness_percent'] as num?)?.toDouble() ?? 0,
+    materialsRead:    (j['materials_read']   as num?)?.toInt() ?? 0,
+    practiceSessions: (j['practice_sessions'] as num?)?.toInt() ?? 0,
+    quizSessions:     (j['quiz_sessions']    as num?)?.toInt() ?? 0,
+    revisionSessions: (j['revision_sessions'] as num?)?.toInt() ?? 0,
+    focusAreasViewed: j['focus_areas_viewed'] as bool? ?? false,
+    avgQuizScore:     (j['avg_quiz_score']   as num?)?.toDouble(),
+    examDate:         j['exam_date'] != null
+        ? DateTime.tryParse(j['exam_date'] as String)
+        : null,
+    daysUntilExam:    (j['days_until_exam'] as num?)?.toInt(),
+  );
+
+  /// Label for urgency based on days remaining
+  String get urgencyLabel {
+    if (daysUntilExam == null) return '';
+    if (daysUntilExam! <= 1)  return 'Critical';
+    if (daysUntilExam! <= 3)  return 'High';
+    if (daysUntilExam! <= 7)  return 'Medium';
+    return 'Low';
+  }
+}
+
+// ── Daily topics ──────────────────────────────────────────────────────────────
+
+class DailyTopic {
+  final String topic;
+  final String why;
+  final int    estimatedMinutes;
+
+  const DailyTopic({
+    required this.topic,
+    required this.why,
+    required this.estimatedMinutes,
+  });
+
+  factory DailyTopic.fromJson(Map<String, dynamic> j) => DailyTopic(
+    topic:             j['topic'] as String,
+    why:               j['why']   as String? ?? '',
+    estimatedMinutes:  (j['estimated_minutes'] as num?)?.toInt() ?? 30,
+  );
+}
+
+class DailyTopicsData {
+  final int           daysUntilExam;
+  final String        urgencyLabel;
+  final int           estimatedStudyHours;
+  final List<DailyTopic> todayTopics;
+  final String        dailyTip;
+
+  const DailyTopicsData({
+    required this.daysUntilExam,
+    required this.urgencyLabel,
+    required this.estimatedStudyHours,
+    required this.todayTopics,
+    required this.dailyTip,
+  });
+
+  factory DailyTopicsData.fromJson(Map<String, dynamic> j) => DailyTopicsData(
+    daysUntilExam:       (j['days_until_exam']       as num?)?.toInt() ?? 0,
+    urgencyLabel:         j['urgency_label']          as String? ?? 'Medium',
+    estimatedStudyHours: (j['estimated_study_hours'] as num?)?.toInt() ?? 2,
+    todayTopics: ((j['today_topics'] as List?) ?? [])
+        .map((t) => DailyTopic.fromJson(t as Map<String, dynamic>))
+        .toList(),
+    dailyTip: j['daily_tip'] as String? ?? '',
+  );
+}
