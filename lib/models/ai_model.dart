@@ -1,4 +1,5 @@
 // lib/models/ai_model.dart — Phase 2 + Monetization Readiness
+import 'package:flutter/foundation.dart';
 
 enum ExplanationLevel { beginner, intermediate, advanced }
 
@@ -115,21 +116,25 @@ class AiPlanInfo {
     freeOfflineLimit:       5,
   );
 
-  factory AiPlanInfo.fromJson(Map<String, dynamic> j) => AiPlanInfo(
-    subscriptionsLive:      j['subscriptions_live']       as bool?  ?? false,
-    paymentsLive:           j['payments_live']            as bool?  ?? false,
-    effectivePlan:          j['effective_plan']           as String? ?? 'premium',
-    aiDailyLimit:           j['ai_daily_limit']           as int?,
-    canUseImage:            j['can_use_image_solving']    as bool?  ?? true,
-    canUseExamPrepMode:     j['can_use_exam_prep_mode']   as bool?  ?? true,
-    canUseLecturer:         j['can_use_lecturer']         as bool?  ?? true,
-    freeLecturerChapters:   j['free_lecturer_chapters']   as int?   ?? 3,
-    lecturerChapterGated:   j['lecturer_chapter_gated']   as bool?  ?? false,
-    canTakeLecturerExam:    j['can_take_lecturer_exam']   as bool?  ?? true,
-    canUseExamAiTools:      j['can_use_exam_ai_tools']    as bool?  ?? true,
-    canUseUnlimitedOffline: j['can_use_unlimited_offline'] as bool? ?? true,
-    freeOfflineLimit:       j['free_offline_limit']       as int?   ?? 5,
-  );
+  factory AiPlanInfo.fromJson(Map<String, dynamic> j) {
+    // Debug: print what the server returned so we can verify gates
+    debugPrint('[AiPlanInfo] server response: $j');
+    return AiPlanInfo(
+      subscriptionsLive:      j['subscriptions_live']       as bool?  ?? false,
+      paymentsLive:           j['payments_live']            as bool?  ?? false,
+      effectivePlan:          j['effective_plan']           as String? ?? 'premium',
+      aiDailyLimit:           j['ai_daily_limit']           as int?,
+      canUseImage:            j['can_use_image_solving']    as bool?  ?? true,
+      canUseExamPrepMode:     j['can_use_exam_prep_mode']   as bool?  ?? true,
+      canUseLecturer:         j['can_use_lecturer']         as bool?  ?? true,
+      freeLecturerChapters:   j['free_lecturer_chapters']   as int?   ?? 3,
+      lecturerChapterGated:   j['lecturer_chapter_gated']   as bool?  ?? false,
+      canTakeLecturerExam:    j['can_take_lecturer_exam']   as bool?  ?? true,
+      canUseExamAiTools:      j['can_use_exam_ai_tools']    as bool?  ?? true,
+      canUseUnlimitedOffline: j['can_use_unlimited_offline'] as bool? ?? true,
+      freeOfflineLimit:       j['free_offline_limit']       as int?   ?? 5,
+    );
+  }
 
   // ── Convenience helpers ────────────────────────────────────────────────────
 

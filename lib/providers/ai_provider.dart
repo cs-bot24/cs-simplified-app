@@ -98,8 +98,14 @@ class AiProvider extends ChangeNotifier {
     try {
       final data = await ApiClient.getAiPlan();
       _plan = AiPlanInfo.fromJson(data);
+    } catch (e) {
+      // Keep permissive defaults on error — do NOT silently succeed
+      // with stale data. Log so we can debug.
+      debugPrint('[AiProvider] loadPlan failed: $e');
+      _plan = null;   // forces entitlements getter to return defaultPermissive()
+    } finally {
       notifyListeners();
-    } catch (_) {}
+    }
   }
 
   Future<void> loadUsage() async {
