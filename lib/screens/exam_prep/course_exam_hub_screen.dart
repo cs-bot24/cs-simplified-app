@@ -18,6 +18,7 @@ import '../../models/ai_model.dart';
 import '../../providers/ai_provider.dart';
 import '../../screens/pdf/pdf_viewer_screen.dart';
 import '../../screens/ai/ai_tutor_screen.dart';
+import '../../widgets/premium_gate.dart';
 
 const _kAmber  = Color(0xFFD97706);
 const _kAmberL = Color(0xFFB45309);
@@ -395,7 +396,20 @@ class _PracticeQuestionsScreenState extends State<_PracticeQuestionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark       = Theme.of(context).brightness == Brightness.dark;
+    final entitlements = context.watch<AiProvider>().entitlements;
+
+    // Premium gate (shown only when EXAM_AI_GATED = true and user is free)
+    if (!entitlements.canUseExamAiTools) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Practice Questions'),
+            backgroundColor: const Color(0xFF3B82F6),
+            foregroundColor: Colors.white),
+        body: const Center(
+          child: PremiumGate(feature: PremiumFeature.examAiTools),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -534,8 +548,19 @@ class _QuizSetupScreenState extends State<_QuizSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    const accent = Color(0xFF8B5CF6);
+    final isDark       = Theme.of(context).brightness == Brightness.dark;
+    const accent       = Color(0xFF8B5CF6);
+    final entitlements = context.watch<AiProvider>().entitlements;
+
+    if (!entitlements.canUseExamAiTools) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Quiz Me'),
+            backgroundColor: accent, foregroundColor: Colors.white),
+        body: const Center(
+          child: PremiumGate(feature: PremiumFeature.examAiTools),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -1063,7 +1088,14 @@ class _RevisionNotesScreenState extends State<_RevisionNotesScreen> {
   static const _accent = Color(0xFF10B981);
 
   @override
-  void initState() { super.initState(); _generate(); }
+  void initState() {
+    super.initState();
+    // Gate check before auto-generating (inactive while EXAM_AI_GATED = false)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ok = context.read<AiProvider>().entitlements.canUseExamAiTools;
+      if (ok) _generate();
+    });
+  }
 
   Future<void> _generate() async {
     setState(() { _loading = true; _error = null; _content = null; });
@@ -1083,6 +1115,16 @@ class _RevisionNotesScreenState extends State<_RevisionNotesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final entitlements = context.watch<AiProvider>().entitlements;
+    if (!entitlements.canUseExamAiTools) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Quick Revision'),
+            backgroundColor: _accent, foregroundColor: Colors.white),
+        body: const Center(
+          child: PremiumGate(feature: PremiumFeature.examAiTools),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Quick Revision'),
@@ -1133,7 +1175,13 @@ class _FocusAreasScreenState extends State<_FocusAreasScreen> {
   static const _accent = Color(0xFFEF4444);
 
   @override
-  void initState() { super.initState(); _generate(); }
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ok = context.read<AiProvider>().entitlements.canUseExamAiTools;
+      if (ok) _generate();
+    });
+  }
 
   Future<void> _generate() async {
     setState(() { _loading = true; _error = null; _data = null; });
@@ -1154,7 +1202,18 @@ class _FocusAreasScreenState extends State<_FocusAreasScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark       = Theme.of(context).brightness == Brightness.dark;
+    final entitlements = context.watch<AiProvider>().entitlements;
+
+    if (!entitlements.canUseExamAiTools) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Exam Focus Areas'),
+            backgroundColor: _accent, foregroundColor: Colors.white),
+        body: const Center(
+          child: PremiumGate(feature: PremiumFeature.examAiTools),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

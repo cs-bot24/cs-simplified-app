@@ -1480,4 +1480,54 @@ class ApiClient {
       return _handle(res) as List<dynamic>;
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+
+  // ── Payments ──────────────────────────────────────────────────────────────
+
+  /// Returns Paystack public key + plan catalogue.
+  static Future<Map<String, dynamic>> getPaymentConfig() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/payments/config'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Initiates a Paystack transaction. Returns authorization_url to open.
+  static Future<Map<String, dynamic>> initiatePayment({
+    required String planId,
+    required String callbackUrl,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/payments/initiate'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'plan_id': planId, 'callback_url': callbackUrl}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Verifies a payment reference after Paystack redirect.
+  static Future<Map<String, dynamic>> verifyPayment(String reference) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/payments/verify/$reference'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Returns the current user's subscription status.
+  static Future<Map<String, dynamic>> getSubscriptionStatus() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/payments/status'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
 }

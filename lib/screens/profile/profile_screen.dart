@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../providers/ai_provider.dart';
 import '../auth/login_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../contact/contact_screen.dart';
@@ -13,6 +14,7 @@ import '../achievements/achievements_screen.dart';
 import '../sharing/share_progress_screen.dart';
 import '../faq/faq_screen.dart';
 import '../ai/ai_tutor_screen.dart';
+import '../payments/upgrade_screen.dart';
 import '../../core/api_client.dart';
 import '../../core/storage.dart';
 import '../../core/version_check.dart';
@@ -117,6 +119,11 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _SectionHeader(title: 'Account'),
               const SizedBox(height: 10),
+
+              // ── Pro subscription banner ──────────────────────────────────
+              if (auth.isLoggedIn && !auth.isAdmin)
+                _ProBannerTile(),
+              const SizedBox(height: 8),
 
               // Notifications (with unread badge)
               Consumer<NotificationProvider>(
@@ -574,6 +581,128 @@ class _DeleteAccountTileState extends State<_DeleteAccountTile> {
         trailing: Icon(Icons.arrow_forward_ios_rounded,
             size: 14, color: Colors.red.withOpacity(0.5)),
         onTap: _deleting ? null : _handleDelete,
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Pro Subscription Banner Tile
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _ProBannerTile extends StatefulWidget {
+  const _ProBannerTile();
+  @override
+  State<_ProBannerTile> createState() => _ProBannerTileState();
+}
+
+class _ProBannerTileState extends State<_ProBannerTile> {
+  Map<String, dynamic>? _status;
+  bool _loading = true;
+
+  static const _kAccent = Color(0xFF6C63FF);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatus();
+  }
+
+  Future<void> _loadStatus() async {
+    try {
+      final data = await ApiClient.getSubscriptionStatus();
+      if (mounted) setState(() { _status = data; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entitlements = context.watch<AiProvider>().entitlements;
+    final isPro        = entitlements.isPaidUser;
+
+    if (_loading) {
+      return const SizedBox(
+        height: 56,
+        child: Center(child: SizedBox(
+            width: 18, height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2))),
+      );
+    }
+
+    // ── Active pro banner ────────────────────────────────────────────────────
+    if (isPro) {
+      final days = _status?['days_remaining'] as int?;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF4A45C8), _kAccent],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(children: [
+          const Text('⭐', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Pro Active',
+                  style: TextStyle(color: Colors.white,
+                      fontWeight: FontWeight.w700, fontSize: 14)),
+              if (days != null)
+                Text('$days days remaining',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            ],
+          )),
+          TextButton(
+            onPressed: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const UpgradeScreen()));
+              _loadStatus();
+              if (mounted) context.read<AiProvider>().loadPlan();
+            },
+            child: const Text('Renew',
+                style: TextStyle(color: Colors.white,
+                    fontWeight: FontWeight.w700, fontSize: 12)),
+          ),
+        ]),
+      );
+    }
+
+    // ── Free user upgrade prompt ─────────────────────────────────────────────
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const UpgradeScreen()));
+        _loadStatus();
+        if (mounted) context.read<AiProvider>().loadPlan();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _kAccent.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _kAccent.withOpacity(0.25)),
+        ),
+        child: Row(children: [
+          const Text('⭐', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          const Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Upgrade to Pro',
+                  style: TextStyle(fontWeight: FontWeight.w700,
+                      fontSize: 14, color: _kAccent)),
+              Text('Unlock AI Lecturer, unlimited AI & more',
+                  style: TextStyle(fontSize: 11, color: Colors.grey)),
+            ],
+          )),
+          const Icon(Icons.chevron_right_rounded, color: _kAccent, size: 20),
+        ]),
       ),
     );
   }

@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 
 import '../../models/lecturer_model.dart';
 import '../../providers/lecturer_provider.dart';
+import '../../providers/ai_provider.dart';
+import '../../widgets/premium_gate.dart';
 
 // ── Brand colour ─────────────────────────────────────────────────────────────
 const _kAccent  = Color(0xFF6C63FF);
@@ -869,7 +871,26 @@ class _ActionAreaState extends State<_ActionArea> {
 
   @override
   Widget build(BuildContext context) {
-    final phase = prov.currentChapter?.phase;
+    final phase        = prov.currentChapter?.phase;
+    final entitlements = context.watch<AiProvider>().entitlements;
+
+    // ── Premium gate: chapter locked ────────────────────────────────────────
+    final chapterIdx = prov.currentChapter?.chapter.index ?? 1;
+    if (entitlements.isLecturerChapterLocked(chapterIdx)) {
+      return const Padding(
+        padding: EdgeInsets.all(14),
+        child: PremiumGate(feature: PremiumFeature.lecturerChapters),
+      );
+    }
+
+    // ── Premium gate: exam locked ────────────────────────────────────────────
+    if (prov.courseStage == CourseStage.examOffer &&
+        !entitlements.canTakeLecturerExam) {
+      return const Padding(
+        padding: EdgeInsets.all(14),
+        child: PremiumGate(feature: PremiumFeature.lecturerExam),
+      );
+    }
 
     // ── Exam offer ──────────────────────────────────────────────────────────
     if (prov.courseStage == CourseStage.examOffer) {
@@ -1456,6 +1477,7 @@ class _ChapterDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark  = Theme.of(context).brightness == Brightness.dark;
     final scheme  = Theme.of(context).colorScheme;
+    final entitlements = context.watch<AiProvider>().entitlements;
 
     return Drawer(
       backgroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.white,
@@ -1477,34 +1499,53 @@ class _ChapterDrawer extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: prov.chapters.length,
                 itemBuilder: (_, i) {
-                  final cp      = prov.chapters[i];
+                  final cp        = prov.chapters[i];
                   final isCurrent = i == prov.currentIndex;
-                  final locked  = cp.isLocked;
-                  final done    = cp.isPassed;
+                  final locked    = cp.isLocked;
+                  final done      = cp.isPassed;
+                  // Premium gate — inactive while LECTURER_GATED = false
+                  final premiumLocked = entitlements
+                      .isLecturerChapterLocked(cp.chapter.index);
 
-                  Color fg = locked
+                  Color fg = (locked || premiumLocked)
                       ? Colors.grey
                       : isCurrent ? _kAccent : scheme.onSurface;
-                  IconData ico = locked
-                      ? Icons.lock_outline_rounded
+                  IconData ico = premiumLocked
+                      ? Icons.lock_rounded
+                      : locked
+                          ? Icons.lock_outline_rounded
+                          : done
+                              ? Icons.check_circle_rounded
+                              : isCurrent
+                                  ? Icons.menu_book_rounded
+                                  : Icons.circle_outlined;
+                  Color icoColor = premiumLocked
+                      ? const Color(0xFF6C63FF)
                       : done
-                          ? Icons.check_circle_rounded
-                          : isCurrent
-                              ? Icons.menu_book_rounded
-                              : Icons.circle_outlined;
-                  Color icoColor = done
-                      ? _kGreen
-                      : isCurrent ? _kAccent : Colors.grey;
+                          ? _kGreen
+                          : isCurrent ? _kAccent : Colors.grey;
 
                   return ListTile(
                     leading: Icon(ico, color: icoColor, size: 20),
-                    title: Text(
-                      '${cp.chapter.index}. ${cp.chapter.title}',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight:
-                              isCurrent ? FontWeight.w700 : FontWeight.w400,
-                          color: fg),
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${cp.chapter.index}. ${cp.chapter.title}',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isCurrent
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                                color: fg),
+                          ),
+                        ),
+                        if (premiumLocked)
+                          const Padding(
+                            padding: EdgeInsets.only(left: 6),
+                            child: PremiumChapterLockBadge(),
+                          ),
+                      ],
                     ),
                     subtitle: locked
                         ? null
@@ -1516,7 +1557,7 @@ class _ChapterDrawer extends StatelessWidget {
                         : Colors.transparent,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
-                    onTap: locked
+                    onTap: (locked || premiumLocked)
                         ? null
                         : () {
                             Navigator.pop(context);

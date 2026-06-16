@@ -66,6 +66,9 @@ class AiProvider extends ChangeNotifier {
   AiMode           get mode            => _mode;
   ExplanationLevel get level           => _level;
   AiPlanInfo?      get plan            => _plan;
+  /// Always returns a valid entitlements object — permissive defaults
+  /// until the first /ai/plan call resolves, then the real plan values.
+  AiPlanInfo       get entitlements    => _plan ?? AiPlanInfo.defaultPermissive();
   int              get questionsToday  => _questionsToday;
   int              get questionsMonth  => _questionsMonth;
   bool             get isExamPrep      => _mode == AiMode.examPrep;
