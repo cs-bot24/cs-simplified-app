@@ -108,6 +108,13 @@ class AiProvider extends ChangeNotifier {
     }
   }
 
+  /// Clears the cached plan immediately on logout so the next user
+  /// starts with defaultPermissive() until their own /ai/plan resolves.
+  void clearPlan() {
+    _plan = null;
+    notifyListeners();
+  }
+
   Future<void> loadUsage() async {
     try {
       final data        = await ApiClient.getAiUsage();

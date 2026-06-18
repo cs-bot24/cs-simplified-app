@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/storage.dart';
 import '../core/version_check.dart';
 import '../providers/auth_provider.dart';
+import '../providers/ai_provider.dart';
 import 'home/home_screen.dart';
 import 'auth/login_screen.dart';
 
@@ -32,9 +33,12 @@ class _SplashScreenState extends State<SplashScreen>
     await context.read<AuthProvider>().loadFromStorage();
     if (!mounted) return;
 
-    // Await the version check — if an update dialog is shown,
-    // this waits until the user taps "Later" or "Update Now"
-    // before proceeding to the home/login screen.
+    // If user is already logged in (remember me), load their entitlements now
+    // so gates apply immediately without waiting for the AI Tutor screen.
+    if (AppStorage.isLoggedIn) {
+      context.read<AiProvider>().loadPlan();
+    }
+
     await VersionCheck.check(context);
     if (!mounted) return;
 

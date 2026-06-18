@@ -106,7 +106,31 @@ class _AppBootstrapState extends State<_AppBootstrap>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshNotifications();
       _refreshStudyPlanner();
+      _wireAuthCallbacks();
     });
+  }
+
+  /// Wire up login/logout callbacks so entitlements refresh immediately
+  /// on every account switch — no app restart required.
+  void _wireAuthCallbacks() {
+    if (!mounted) return;
+    final auth    = context.read<AuthProvider>();
+    final ai      = context.read<AiProvider>();
+    final planner = context.read<StudyPlannerProvider>();
+
+    auth.onLoginSuccess = () async {
+      // Reload plan entitlements for the newly logged-in user
+      await ai.loadPlan();
+      // Reload today's study sessions for the new user
+      planner.refresh();
+    };
+
+    auth.onLogoutSuccess = () async {
+      // Clear cached entitlements — next user starts fresh with defaultPermissive
+      // until their /ai/plan call resolves
+      ai.clearPlan();
+      planner.clear();
+    };
   }
 
   @override

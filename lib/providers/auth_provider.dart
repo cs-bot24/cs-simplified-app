@@ -9,6 +9,11 @@ class AuthProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
 
+  // Callback set by main.dart so AuthProvider can trigger AiProvider.loadPlan()
+  // and StudyPlannerProvider.clear() without creating a circular dependency.
+  Future<void> Function()? onLoginSuccess;
+  Future<void> Function()? onLogoutSuccess;
+
   UserModel? get user    => _user;
   bool       get loading => _loading;
   String?    get error   => _error;
@@ -30,6 +35,7 @@ class AuthProvider extends ChangeNotifier {
       final data = await ApiClient.register(
           fullName: fullName, email: email, password: password);
       await _save(data);
+      await onLoginSuccess?.call();
       return true;
     } on ApiException catch (e) {
       _error = e.message; return false;
@@ -46,11 +52,10 @@ class AuthProvider extends ChangeNotifier {
       final data = await ApiClient.login(email: email, password: password);
       await _save(data);
       await AppStorage.saveRememberMe(rememberMe);
+      // Reload entitlements for the new user immediately
+      await onLoginSuccess?.call();
       return true;
     } on ApiException catch (e) {
-      // Surface the exact server message.
-      // Never show "Session expired" for a login attempt —
-      // a session cannot expire before it exists.
       _error = e.message;
       return false;
     } catch (_) {
@@ -62,10 +67,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    // If remember me is off, clear it too
     await AppStorage.logout(clearRememberMe: !AppStorage.rememberMe);
     _user = null;
     notifyListeners();
+    // Clear all user-specific cached state
+    await onLogoutSuccess?.call();
   }
 
   Future<void> _save(Map<String, dynamic> data) async {

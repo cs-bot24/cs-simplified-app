@@ -1481,7 +1481,43 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
-  // ── Payments ──────────────────────────────────────────────────────────────
+  // ── Password Reset ────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> forgotPassword(String email) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/auth/forgot-password'),
+        headers: _headers(auth: false),
+        body:    jsonEncode({'email': email}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> verifyResetToken(String token) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/auth/verify-reset-token'),
+        headers: _headers(auth: false),
+        body:    jsonEncode({'token': token, 'new_password': 'placeholder'}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/auth/reset-password'),
+        headers: _headers(auth: false),
+        body:    jsonEncode({'token': token, 'new_password': newPassword}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
 
   /// Returns Paystack public key + plan catalogue.
   static Future<Map<String, dynamic>> getPaymentConfig() async {
