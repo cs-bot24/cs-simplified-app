@@ -15,11 +15,11 @@ import 'dart:ui_web' as ui_web;
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
 import '../../providers/ai_provider.dart';
+import '../../widgets/ai_message_content.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal colour constants (mirrors pdf_viewer_screen.dart)
@@ -527,27 +527,9 @@ class _WebMessageBubble extends StatelessWidget {
                         color: Colors.white, fontSize: 14, height: 1.4,
                       ),
                     )
-                  : MarkdownBody(
+                  : AiMessageContent(
                       data: message.text,
-                      styleSheet: MarkdownStyleSheet(
-                        p: const TextStyle(
-                          color: _kTextPrimary, fontSize: 14, height: 1.5,
-                        ),
-                        code: const TextStyle(
-                          color: _kAccent,
-                          backgroundColor: Color(0xFF1A1A1A),
-                          fontSize: 13,
-                        ),
-                        codeblockDecoration: BoxDecoration(
-                          color: const Color(0xFF1A1A1A),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        h1: const TextStyle(color: _kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold),
-                        h2: const TextStyle(color: _kTextPrimary, fontSize: 16, fontWeight: FontWeight.bold),
-                        h3: const TextStyle(color: _kTextPrimary, fontSize: 14, fontWeight: FontWeight.bold),
-                        listBullet: const TextStyle(color: _kTextSecondary),
-                        blockquote: const TextStyle(color: _kTextSecondary),
-                      ),
+                      isDark: true,
                     ),
             ),
           ),

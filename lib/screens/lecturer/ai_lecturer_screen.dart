@@ -4,13 +4,13 @@
 // "I don't know" handling, optional custom topics, and a final exam.
 
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/lecturer_model.dart';
 import '../../providers/lecturer_provider.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/premium_gate.dart';
+import '../../widgets/ai_message_content.dart';
 
 // ── Brand colour ─────────────────────────────────────────────────────────────
 const _kAccent  = Color(0xFF6C63FF);
@@ -1616,12 +1616,9 @@ class _SystemMessage extends StatelessWidget {
         border: Border.all(
             color: _kAccent.withOpacity(0.2)),
       ),
-      child: MarkdownBody(
+      child: AiMessageContent(
         data: text,
-        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-          p: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
-          strong: const TextStyle(fontWeight: FontWeight.w700),
-        ),
+        isDark: isDark,
       ),
     );
   }
@@ -1691,18 +1688,9 @@ class _LecturerBubble extends StatelessWidget {
                 bottomRight: Radius.circular(16),
               ),
             ),
-            child: MarkdownBody(
+            child: AiMessageContent(
               data: text,
-              styleSheet:
-                  MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                p: Theme.of(context).textTheme.bodyMedium,
-                strong: const TextStyle(fontWeight: FontWeight.w700),
-                h2: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 15),
-                code: TextStyle(
-                    backgroundColor: _kAccent.withOpacity(0.1),
-                    fontSize: 12),
-              ),
+              isDark: isDark,
             ),
           ),
         ),
