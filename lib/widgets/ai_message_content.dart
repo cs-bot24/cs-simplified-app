@@ -14,6 +14,11 @@
 //      mobile webview_flutter)
 //   3. Everything else — standard flutter_markdown MarkdownBody
 //
+// Preprocessing pipeline (applied before segment parsing):
+//   • Bare \begin{...}...\end{...} blocks not already inside $$ are
+//     automatically wrapped in $$ so they render as display math.
+//   • Sanitises common raw-LaTeX leaks (e.g. \begin{aligned} without $$).
+//
 // The message text is split into ordered segments before rendering.
 // Each segment is one of: markdown text, inline math, display math,
 // or a mermaid block. Rendering is done in a Column of widgets.
@@ -23,10 +28,6 @@
 //     data:   message.text,   // the raw AI response string
 //     isDark: isDark,         // drive colour scheme
 //   )
-//
-// The optional [styleSheet] parameter lets callers override markdown
-// styles. When omitted, the built-in style matching the existing app
-// theme is used.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -57,12 +58,13 @@ class AiMessageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final segments = _parseSegments(data);
+    final preprocessed = _preprocess(data);
+    final segments = _parseSegments(preprocessed);
 
     // Fast path: pure markdown — zero overhead compared to previous code.
     if (segments.length == 1 && segments.first.type == _SegType.markdown) {
       return MarkdownBody(
-        data: data,
+        data: preprocessed,
         selectable: true,
         styleSheet: styleSheet ?? _defaultStyle(isDark),
       );
@@ -241,6 +243,44 @@ class _MathFallback extends StatelessWidget {
   }
 }
 
+// ── Preprocessing ─────────────────────────────────────────────────────────────
+
+/// Sanitise raw AI output before parsing into segments.
+///
+/// Handles the following leak patterns:
+///
+/// 1. Bare `\begin{...}...\end{...}` blocks that are NOT already inside
+///    a `$$` block are wrapped in `$$` so they render as display math
+///    instead of appearing as raw LaTeX source.
+///
+/// 2. Normalise `\( ... \)` → `$ ... $` and `\[ ... \]` → `$$ ... $$`
+///    (some models emit these alternate LaTeX delimiters).
+String _preprocess(String text) {
+  // Step 1: normalise \(...\) → $...$
+  text = text.replaceAllMapped(
+    RegExp(r'\\\((.+?)\\\)', dotAll: true),
+    (m) => '\$${m.group(1)}\$',
+  );
+
+  // Step 2: normalise \[...\] → $$...$$
+  text = text.replaceAllMapped(
+    RegExp(r'\\\[(.+?)\\\]', dotAll: true),
+    (m) => '\$\$${m.group(1)}\$\$',
+  );
+
+  // Step 3: wrap bare \begin{...}...\end{...} blocks in $$
+  // Only if not already preceded by $$ (avoid double-wrapping).
+  text = text.replaceAllMapped(
+    RegExp(
+      r'(?<!\$\$\s*)(\\begin\{[a-z*]+\}[\s\S]*?\\end\{[a-z*]+\})(?!\s*\$\$)',
+      multiLine: true,
+    ),
+    (m) => '\$\$${m.group(1)}\$\$',
+  );
+
+  return text;
+}
+
 // ── Segment model & parser ────────────────────────────────────────────────────
 
 enum _SegType { markdown, inlineMath, displayMath, mermaid }
@@ -256,18 +296,19 @@ class _Segment {
 /// Priority (checked in this order inside the combined regex):
 ///   1. Mermaid fenced blocks:  ```mermaid\n...\n```
 ///   2. Display math:           $$...$$
-///   3. Inline math:            $...$  (single-char excluded to avoid $price)
+///   3. Inline math:            $...$
+///
+/// Inline math rules to avoid false positives on currency ($5, $USD):
+///   - Must contain at least one non-space character after the opening $
+///   - Must not be a lone digit or currency amount (e.g. $5, $10.99)
+///   - Single-char content is allowed only if it is a letter or Greek-like
 ///
 /// Everything between matches is treated as plain Markdown.
 List<_Segment> _parseSegments(String text) {
-  // Combined pattern — order matters.
-  // Mermaid block first (block-level), then display math (also block-level),
-  // then inline math. Inline math requires at least 2 chars to avoid false
-  // positives on currency symbols like $5 or $USD.
   final pattern = RegExp(
-    r'```mermaid\n([\s\S]*?)```'  // group 1: mermaid source
-    r'|\$\$([\s\S]*?)\$\$'        // group 2: display math
-    r'|\$((?:[^$\\\s]|\\.)[^$\\]*?)\$', // group 3: inline math (≥1 non-space char)
+    r'```mermaid\n([\s\S]*?)```'           // group 1: mermaid source
+    r'|\$\$([\s\S]*?)\$\$'                 // group 2: display math
+    r'|\$((?:[^$\\\n]|\\.)+?)\$',          // group 3: inline math
     multiLine: true,
   );
 
@@ -275,29 +316,35 @@ List<_Segment> _parseSegments(String text) {
   int lastEnd = 0;
 
   for (final match in pattern.allMatches(text)) {
-    // Capture any markdown text before this match.
     if (match.start > lastEnd) {
       segments.add(
           _Segment(_SegType.markdown, text.substring(lastEnd, match.start)));
     }
 
     if (match.group(1) != null) {
+      // Mermaid
       segments.add(_Segment(_SegType.mermaid, match.group(1)!.trim()));
     } else if (match.group(2) != null) {
+      // Display math
       segments.add(_Segment(_SegType.displayMath, match.group(2)!.trim()));
     } else if (match.group(3) != null) {
-      segments.add(_Segment(_SegType.inlineMath, match.group(3)!.trim()));
+      // Inline math — reject pure-number currency matches like $5 or $10.99
+      final inner = match.group(3)!.trim();
+      if (RegExp(r'^\d+(\.\d+)?$').hasMatch(inner)) {
+        // Looks like a currency amount — treat the whole match as markdown
+        segments.add(_Segment(_SegType.markdown, match[0]!));
+      } else {
+        segments.add(_Segment(_SegType.inlineMath, inner));
+      }
     }
 
     lastEnd = match.end;
   }
 
-  // Capture any trailing markdown text after the last match.
   if (lastEnd < text.length) {
     segments.add(_Segment(_SegType.markdown, text.substring(lastEnd)));
   }
 
-  // If nothing was matched, return the whole text as markdown.
   if (segments.isEmpty) {
     return [_Segment(_SegType.markdown, text)];
   }
