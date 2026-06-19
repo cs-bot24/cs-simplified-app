@@ -30,7 +30,6 @@ import 'dart:developer' as dev;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -50,6 +49,7 @@ import '../../providers/offline_provider.dart';
 import '../../providers/leaderboard_provider.dart';
 import '../../providers/achievement_provider.dart';
 import '../../widgets/rating_dialog.dart';
+import '../../widgets/ai_message_content.dart';   // shared math+markdown renderer
 
 // ── Colour constants (matches app dark theme) ─────────────────────────────────
 // Brand accent — same in light and dark
@@ -1393,7 +1393,8 @@ class _LocalMessage {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Message Bubble — Markdown rendered for AI, plain text for user
+// Message Bubble — uses AiMessageContent for AI messages (same pipeline as
+// AI Tutor, AI Lecturer, and Exam Hub — math, Mermaid, Markdown all render).
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _MessageBubble extends StatelessWidget {
@@ -1425,6 +1426,12 @@ class _MessageBubble extends StatelessWidget {
               ? Border.all(color: Colors.red.withOpacity(0.3))
               : null,
         ),
+        // ── User bubble: plain selectable text ───────────────────────────
+        // ── AI bubble:  AiMessageContent — identical rendering pipeline
+        //               to AiTutorScreen, AiLecturerScreen, and ExamHub.
+        //               Handles: LaTeX math (flutter_math_fork), Mermaid
+        //               diagrams, and full Markdown. Never use bare
+        //               MarkdownBody or Text() for AI responses.
         child: isUser
             ? SelectableText(
                 message.text,
@@ -1432,63 +1439,9 @@ class _MessageBubble extends StatelessWidget {
                   color: Colors.white, fontSize: 14, height: 1.45,
                 ),
               )
-            : MarkdownBody(
-                data: message.text,
-                selectable: true,
-                styleSheet: MarkdownStyleSheet(
-                  p: const TextStyle(
-                    color: Color(0xFFDDDDDD), fontSize: 14, height: 1.55,
-                  ),
-                  h1: const TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white,
-                  ),
-                  h2: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white,
-                  ),
-                  h3: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white,
-                  ),
-                  strong: const TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.white,
-                  ),
-                  em: const TextStyle(
-                    fontStyle: FontStyle.italic, color: Color(0xFFCCCCCC),
-                  ),
-                  code: const TextStyle(
-                    fontFamily: 'monospace', fontSize: 13,
-                    backgroundColor: Color(0xFF1A1A1A),
-                    color: Color(0xFF82B1FF),
-                  ),
-                  codeblockDecoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  codeblockPadding: const EdgeInsets.all(12),
-                  blockquote: const TextStyle(
-                    fontSize: 14, color: Color(0xFFAAAAAA),
-                    fontStyle: FontStyle.italic,
-                  ),
-                  blockquoteDecoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(
-                        color: _kAccent.withOpacity(0.5), width: 3,
-                      ),
-                    ),
-                  ),
-                  blockquotePadding:
-                      const EdgeInsets.only(left: 12, top: 4, bottom: 4),
-                  listBullet: const TextStyle(color: Color(0xFFDDDDDD)),
-                  tableHead: const TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.white,
-                  ),
-                  tableBody: const TextStyle(color: Color(0xFFDDDDDD)),
-                  tableBorder: TableBorder.all(color: Colors.white12),
-                  tableCellsPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  h1Padding: const EdgeInsets.only(top: 8, bottom: 4),
-                  h2Padding: const EdgeInsets.only(top: 6, bottom: 3),
-                  h3Padding: const EdgeInsets.only(top: 4, bottom: 2),
-                ),
+            : AiMessageContent(
+                data:   message.text,
+                isDark: true,   // PDF viewer always uses dark background
               ),
       ),
     );
