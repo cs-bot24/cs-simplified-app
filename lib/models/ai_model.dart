@@ -64,6 +64,11 @@ class AiPlanInfo {
   final bool   paymentsLive;        // true once payment gateway is active
   final String effectivePlan;       // "free" | "pro" | "premium"
 
+  // ── Admin override ─────────────────────────────────────────────────────────
+  /// True when this user is an admin with lifetime premium override.
+  /// Flutter uses this to hide upgrade prompts and show "Admin Premium Access".
+  final bool   isAdminOverride;
+
   // ── AI Tutor ───────────────────────────────────────────────────────────────
   final int?   aiDailyLimit;        // null = unlimited
   final bool   canUseImage;         // image question solving
@@ -86,6 +91,7 @@ class AiPlanInfo {
     required this.subscriptionsLive,
     required this.paymentsLive,
     required this.effectivePlan,
+    required this.isAdminOverride,
     required this.aiDailyLimit,
     required this.canUseImage,
     required this.canUseExamPrepMode,
@@ -104,6 +110,7 @@ class AiPlanInfo {
     subscriptionsLive:      false,
     paymentsLive:           false,
     effectivePlan:          'premium',
+    isAdminOverride:        false,
     aiDailyLimit:           null,
     canUseImage:            true,
     canUseExamPrepMode:     true,
@@ -123,6 +130,7 @@ class AiPlanInfo {
       subscriptionsLive:      j['subscriptions_live']       as bool?  ?? false,
       paymentsLive:           j['payments_live']            as bool?  ?? false,
       effectivePlan:          j['effective_plan']           as String? ?? 'premium',
+      isAdminOverride:        j['is_admin_override']        as bool?  ?? false,
       aiDailyLimit:           j['ai_daily_limit']           as int?,
       canUseImage:            j['can_use_image_solving']    as bool?  ?? true,
       canUseExamPrepMode:     j['can_use_exam_prep_mode']   as bool?  ?? true,
