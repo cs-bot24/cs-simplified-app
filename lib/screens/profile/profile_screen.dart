@@ -619,7 +619,15 @@ class _ProBannerTileState extends State<_ProBannerTile> {
 
   @override
   Widget build(BuildContext context) {
-    final entitlements    = context.watch<AiProvider>().entitlements;
+    final entitlements = context.watch<AiProvider>().entitlements;
+
+    // While monetization is off, every user resolves to "premium" server-side
+    // so isPaidUser would incorrectly show "Pro Active" to everyone.
+    // Hide the banner entirely until SUBSCRIPTIONS_ENFORCED = true on the server.
+    if (!entitlements.subscriptionsLive) {
+      return const SizedBox.shrink();
+    }
+
     final isAdminOverride = entitlements.isAdminOverride;
     final isPro           = entitlements.isPaidUser;
 
