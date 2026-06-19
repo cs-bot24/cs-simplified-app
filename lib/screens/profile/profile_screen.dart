@@ -619,8 +619,9 @@ class _ProBannerTileState extends State<_ProBannerTile> {
 
   @override
   Widget build(BuildContext context) {
-    final entitlements = context.watch<AiProvider>().entitlements;
-    final isPro        = entitlements.isPaidUser;
+    final entitlements    = context.watch<AiProvider>().entitlements;
+    final isAdminOverride = entitlements.isAdminOverride;
+    final isPro           = entitlements.isPaidUser;
 
     if (_loading) {
       return const SizedBox(
@@ -628,6 +629,45 @@ class _ProBannerTileState extends State<_ProBannerTile> {
         child: Center(child: SizedBox(
             width: 18, height: 18,
             child: CircularProgressIndicator(strokeWidth: 2))),
+      );
+    }
+
+    // ── Admin override banner ────────────────────────────────────────────────
+    if (isAdminOverride) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1A237E), Color(0xFF283593)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(children: [
+          const Text('🔧', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          const Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Premium: Active',
+                  style: TextStyle(color: Colors.white,
+                      fontWeight: FontWeight.w700, fontSize: 14)),
+              Text('Access Type: Admin Override',
+                  style: TextStyle(color: Colors.white70, fontSize: 11)),
+            ],
+          )),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text('Lifetime',
+                style: TextStyle(color: Colors.white,
+                    fontWeight: FontWeight.w700, fontSize: 11)),
+          ),
+        ]),
       );
     }
 
