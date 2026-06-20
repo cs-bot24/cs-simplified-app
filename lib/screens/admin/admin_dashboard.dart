@@ -11,6 +11,7 @@ import 'admin_requests_screen.dart';
 import 'admin_support_screen.dart';
 import 'admin_categories_screen.dart';
 import 'admin_material_requests_screen.dart';
+import 'ai_health_dashboard.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -354,6 +355,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 color: Colors.pink,
                 badge: unreadFeedback,
                 onTap: () => _goTo(const AdminFeedbackScreen()),
+              ),
+              const SizedBox(height: 10),
+              _ActionCard(
+                icon: Icons.monitor_heart_rounded,
+                title: 'AI System Health',
+                subtitle: 'Provider status, retries & cache',
+                color: Colors.green[700]!,
+                onTap: () => _goTo(const AiHealthDashboard()),
               ),
               const SizedBox(height: 20),
 

@@ -1409,6 +1409,18 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  /// Admin only — AI provider health, telemetry, and cache stats.
+  static Future<Map<String, dynamic>> getAiSystemHealth() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/ai/system-health'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+
   // ── Study Planner ─────────────────────────────────────────────────────────
 
   static Future<List<dynamic>> getStudyPlans() async {
