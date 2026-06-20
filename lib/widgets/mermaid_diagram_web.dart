@@ -21,11 +21,13 @@ import 'package:flutter/material.dart';
 class MermaidDiagram extends StatefulWidget {
   final String source;
   final bool isDark;
+  final VoidCallback? onError;
 
   const MermaidDiagram({
     super.key,
     required this.source,
     required this.isDark,
+    this.onError,
   });
 
   @override

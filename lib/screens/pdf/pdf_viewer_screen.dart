@@ -50,6 +50,7 @@ import '../../providers/leaderboard_provider.dart';
 import '../../providers/achievement_provider.dart';
 import '../../widgets/rating_dialog.dart';
 import '../../widgets/ai_message_content.dart';   // shared math+markdown renderer
+import '../../widgets/ai_content_renderer.dart';  // Phase 10: unified renderer
 
 // ── Colour constants (matches app dark theme) ─────────────────────────────────
 // Brand accent — same in light and dark
@@ -1427,8 +1428,7 @@ class _MessageBubble extends StatelessWidget {
               : null,
         ),
         // ── User bubble: plain selectable text ───────────────────────────
-        // ── AI bubble:  AiMessageContent — identical rendering pipeline
-        //               to AiTutorScreen, AiLecturerScreen, and ExamHub.
+        // ── AI bubble:  AiContentRenderer — unified pipeline Phase 10.
         //               Handles: LaTeX math (flutter_math_fork), Mermaid
         //               diagrams, and full Markdown. Never use bare
         //               MarkdownBody or Text() for AI responses.
@@ -1439,8 +1439,8 @@ class _MessageBubble extends StatelessWidget {
                   color: Colors.white, fontSize: 14, height: 1.45,
                 ),
               )
-            : AiMessageContent(
-                data:   message.text,
+            : AiContentRenderer(
+                content: message.text,
                 isDark: true,   // PDF viewer always uses dark background
               ),
       ),

@@ -150,10 +150,7 @@ class AiMessageContent extends StatelessWidget {
 
       // ── Mermaid diagram: ```mermaid...``` ───────────────────────────────
       case _SegType.mermaid:
-        return MermaidDiagram(
-          source: seg.content,
-          isDark: isDark,
-        );
+        return _SafeMermaidDiagram(source: seg.content, isDark: isDark);
     }
   }
 
@@ -221,6 +218,67 @@ class AiMessageContent extends StatelessWidget {
       h3Padding: const EdgeInsets.only(top: 4, bottom: 2),
     );
   }
+}
+
+// ── Safe Mermaid wrapper with error isolation ─────────────────────────────────
+
+/// Renders a Mermaid diagram with full error isolation.
+/// If the diagram fails for any reason, shows a friendly fallback message
+/// instead of a parser error or blank space. No Mermaid error should ever
+/// reach the user in production.
+class _SafeMermaidDiagram extends StatefulWidget {
+  final String source;
+  final bool isDark;
+  const _SafeMermaidDiagram({required this.source, required this.isDark});
+
+  @override
+  State<_SafeMermaidDiagram> createState() => _SafeMermaidDiagramState();
+}
+
+class _SafeMermaidDiagramState extends State<_SafeMermaidDiagram> {
+  bool _failed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) return _diagramFallback(widget.isDark);
+
+    try {
+      return MermaidDiagram(
+        source: widget.source,
+        isDark: widget.isDark,
+        onError: () {
+          if (mounted) setState(() => _failed = true);
+        },
+      );
+    } catch (_) {
+      return _diagramFallback(widget.isDark);
+    }
+  }
+}
+
+Widget _diagramFallback(bool isDark) {
+  return Container(
+    width: double.infinity,
+    margin: const EdgeInsets.symmetric(vertical: 8),
+    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+    decoration: BoxDecoration(
+      color: isDark ? const Color(0xFF1E1E2E) : const Color(0xFFF0F4FF),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(
+        color: isDark
+            ? Colors.white.withOpacity(0.09)
+            : Colors.black.withOpacity(0.07),
+      ),
+    ),
+    child: Text(
+      '📊 This diagram could not be generated. See the explanation above.',
+      style: TextStyle(
+        fontSize: 13,
+        fontStyle: FontStyle.italic,
+        color: isDark ? Colors.white54 : Colors.black45,
+      ),
+    ),
+  );
 }
 
 // ── Math error fallback ───────────────────────────────────────────────────────

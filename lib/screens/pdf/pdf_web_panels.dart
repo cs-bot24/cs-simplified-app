@@ -19,7 +19,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
 import '../../providers/ai_provider.dart';
-import '../../widgets/ai_message_content.dart';
+import '../../widgets/ai_content_renderer.dart';  // Phase 10: unified renderer
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal colour constants (mirrors pdf_viewer_screen.dart)
@@ -527,8 +527,8 @@ class _WebMessageBubble extends StatelessWidget {
                         color: Colors.white, fontSize: 14, height: 1.4,
                       ),
                     )
-                  : AiMessageContent(
-                      data: message.text,
+                  : AiContentRenderer(
+                      content: message.text,
                       isDark: true,
                     ),
             ),

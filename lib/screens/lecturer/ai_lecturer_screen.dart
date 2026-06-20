@@ -11,6 +11,7 @@ import '../../providers/lecturer_provider.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/premium_gate.dart';
 import '../../widgets/ai_message_content.dart';
+import '../../widgets/ai_content_renderer.dart';
 
 // ── Brand colour ─────────────────────────────────────────────────────────────
 const _kAccent  = Color(0xFF6C63FF);
@@ -1616,8 +1617,8 @@ class _SystemMessage extends StatelessWidget {
         border: Border.all(
             color: _kAccent.withOpacity(0.2)),
       ),
-      child: AiMessageContent(
-        data: text,
+      child: AiContentRenderer(
+        content: text,
         isDark: isDark,
       ),
     );
@@ -1688,8 +1689,8 @@ class _LecturerBubble extends StatelessWidget {
                 bottomRight: Radius.circular(16),
               ),
             ),
-            child: AiMessageContent(
-              data: text,
+            child: AiContentRenderer(
+              content: text,
               isDark: isDark,
             ),
           ),

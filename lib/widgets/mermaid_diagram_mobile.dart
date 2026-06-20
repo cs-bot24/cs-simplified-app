@@ -15,11 +15,13 @@ import 'package:webview_flutter/webview_flutter.dart';
 class MermaidDiagram extends StatefulWidget {
   final String source;
   final bool isDark;
+  final VoidCallback? onError;
 
   const MermaidDiagram({
     super.key,
     required this.source,
     required this.isDark,
+    this.onError,
   });
 
   @override
@@ -58,7 +60,10 @@ class _MermaidDiagramMobileState extends State<MermaidDiagram> {
               setState(() => _height = h + 24);
             }
           } else if (msg.message == 'error') {
-            if (mounted) setState(() => _error = true);
+            if (mounted) {
+              setState(() => _error = true);
+              widget.onError?.call();
+            }
           }
         },
       )
@@ -124,10 +129,8 @@ class _MermaidDiagramMobileState extends State<MermaidDiagram> {
       FlutterBridge.postMessage('height:' + h);
     })
     .catch(function(err) {
-      document.querySelector('.wrap').innerHTML =
-        '<div class="error-text">Diagram error: ' + (err.message || err) + '</div>';
-      var h = document.body.scrollHeight;
-      FlutterBridge.postMessage('height:' + h);
+      // Never show raw parser errors to users — signal Flutter instead.
+      FlutterBridge.postMessage('error');
     });
 </script>
 </body>

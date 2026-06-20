@@ -5,6 +5,7 @@ import '../../providers/ai_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/ai_model.dart';
 import '../../widgets/ai_message_content.dart';
+import '../../widgets/ai_content_renderer.dart';
 
 class AiTutorScreen extends StatefulWidget {
   const AiTutorScreen({super.key});
@@ -452,8 +453,8 @@ class _MessageBubble extends StatelessWidget {
                     message.text,
                     style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.5),
                   )
-                : AiMessageContent(
-                    data: message.text,
+                : AiContentRenderer(
+                    content: message.text,
                     isDark: isDark,
                   ),
           ],
@@ -753,16 +754,11 @@ class _PracticeDialogState extends State<_PracticeDialog> {
                       child: CircularProgressIndicator(),
                     ))
                   : SingleChildScrollView(
-                      child: AiMessageContent(
-                        data: _result ?? 'Could not generate questions. Please try again.',
+                      child: AiContentRenderer(
+                        content: _result ?? 'Could not generate questions. Please try again.',
                         isDark: Theme.of(context).brightness == Brightness.dark,
                       ),
                     ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
         if (!_loading) TextButton(onPressed: _generate, child: const Text('Regenerate')),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
       ],
@@ -835,8 +831,8 @@ class _StudyNotesDialogState extends State<_StudyNotesDialog> {
                       child: CircularProgressIndicator(),
                     ))
                   : SingleChildScrollView(
-                      child: AiMessageContent(
-                        data: _result ?? 'Could not generate notes. Please try again.',
+                      child: AiContentRenderer(
+                        content: _result ?? 'Could not generate notes. Please try again.',
                         isDark: Theme.of(context).brightness == Brightness.dark,
                       ),
                     ),

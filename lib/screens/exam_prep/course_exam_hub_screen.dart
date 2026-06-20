@@ -18,6 +18,7 @@ import '../../models/ai_model.dart';
 import '../../providers/ai_provider.dart';
 import '../../screens/pdf/pdf_viewer_screen.dart';
 import '../../screens/ai/ai_tutor_screen.dart';
+import '../../widgets/ai_content_renderer.dart';
 import '../../widgets/premium_gate.dart';
 
 const _kAmber  = Color(0xFFD97706);
@@ -1385,7 +1386,8 @@ class _FocusAreaCard extends StatelessWidget {
 // Shared utility widgets
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Full-screen markdown result view (used by Practice Q and Revision Notes)
+/// Full-screen AI result view (used by Practice Q and Revision Notes).
+/// Uses AiContentRenderer so LaTeX, Mermaid, and all formatting renders correctly.
 class _ResultView extends StatelessWidget {
   final String      title;
   final String      content;
@@ -1403,19 +1405,9 @@ class _ResultView extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: Markdown(
-            data: content,
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-              h1: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: accentColor),
-              h2: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w700),
-              strong: const TextStyle(fontWeight: FontWeight.w700),
-              p:    Theme.of(context).textTheme.bodyMedium,
-            ),
+            child: AiContentRenderer(content: content),
           ),
         ),
         Padding(
