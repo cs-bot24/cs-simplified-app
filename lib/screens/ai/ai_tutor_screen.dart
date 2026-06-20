@@ -759,6 +759,11 @@ class _PracticeDialogState extends State<_PracticeDialog> {
                         isDark: Theme.of(context).brightness == Brightness.dark,
                       ),
                     ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
         if (!_loading) TextButton(onPressed: _generate, child: const Text('Regenerate')),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
       ],
