@@ -1888,18 +1888,30 @@ class _CurriculumGeneratingDialogState
 
   @override
   Widget build(BuildContext context) {
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final scheme  = Theme.of(context).colorScheme;
+
+    // Adaptive colours
+    final bgColor      = isDark ? const Color(0xFF1A1A2E) : Colors.white;
+    final titleColor   = isDark ? Colors.white : const Color(0xFF1E293B);
+    final subtitleColor= isDark ? Colors.white60 : Colors.black54;
+    final tipColor     = isDark ? Colors.white54 : Colors.black45;
+    final hintColor    = isDark ? Colors.white38 : Colors.black26;
+    final progressBg   = isDark ? const Color(0xFF2A2A4A) : const Color(0xFFE8E6FF);
+    final borderColor  = _kAccent.withOpacity(isDark ? 0.3 : 0.2);
+
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: Container(
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A2E),
+          color: bgColor,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: _kAccent.withOpacity(0.3)),
+          border: Border.all(color: borderColor),
           boxShadow: [
             BoxShadow(
-              color: _kAccent.withOpacity(0.2),
+              color: _kAccent.withOpacity(isDark ? 0.2 : 0.1),
               blurRadius: 40,
               spreadRadius: 4,
             ),
@@ -1914,10 +1926,10 @@ class _CurriculumGeneratingDialogState
               child: Container(
                 width: 80, height: 80,
                 decoration: BoxDecoration(
-                  color: _kAccent.withOpacity(0.15),
+                  color: _kAccent.withOpacity(0.12),
                   shape: BoxShape.circle,
                   border: Border.all(
-                      color: _kAccent.withOpacity(0.4), width: 2),
+                      color: _kAccent.withOpacity(0.35), width: 2),
                 ),
                 child: const Center(
                   child: Text('🎓', style: TextStyle(fontSize: 36)),
@@ -1928,10 +1940,10 @@ class _CurriculumGeneratingDialogState
             const SizedBox(height: 24),
 
             // Title
-            const Text(
+            Text(
               'Building Your Curriculum',
               style: TextStyle(
-                color: Colors.white,
+                color: titleColor,
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
               ),
@@ -1943,8 +1955,8 @@ class _CurriculumGeneratingDialogState
             Text(
               widget.courseName,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white60,
+              style: TextStyle(
+                color: subtitleColor,
                 fontSize: 13,
               ),
             ),
@@ -1954,9 +1966,9 @@ class _CurriculumGeneratingDialogState
             // Progress bar
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
-              child: const LinearProgressIndicator(
+              child: LinearProgressIndicator(
                 color:           _kAccent,
-                backgroundColor: Color(0xFF2A2A4A),
+                backgroundColor: progressBg,
                 minHeight:       4,
               ),
             ),
@@ -1972,8 +1984,8 @@ class _CurriculumGeneratingDialogState
                 _tips[_tipIndex],
                 key: ValueKey(_tipIndex),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white54,
+                style: TextStyle(
+                  color: tipColor,
                   fontSize: 13,
                 ),
               ),
@@ -1981,9 +1993,9 @@ class _CurriculumGeneratingDialogState
 
             const SizedBox(height: 8),
 
-            const Text(
+            Text(
               'This usually takes 10–20 seconds',
-              style: TextStyle(color: Colors.white38, fontSize: 11),
+              style: TextStyle(color: hintColor, fontSize: 11),
             ),
           ],
         ),
