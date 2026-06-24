@@ -630,7 +630,26 @@ class _SetupScreenState extends State<_SetupScreen> {
       )
       ..startNewCourse(customTopics: customTopics);
 
-    Navigator.pop(context);   // close setup; AiLecturerScreen switches to _SessionScreen
+    // Show generation overlay — listen for curriculum to be ready,
+    // then automatically navigate back (AiLecturerScreen will switch
+    // to _SessionScreen once prov.hasSession && curriculum is ready).
+    _showGeneratingOverlay();
+  }
+
+  void _showGeneratingOverlay() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black87,
+      builder: (_) => _CurriculumGeneratingDialog(
+        courseName: _nameCtrl.text.trim(),
+        onComplete: () {
+          // Dismiss dialog then pop setup screen
+          Navigator.of(context).pop(); // close dialog
+          Navigator.of(context).pop(); // close setup screen
+        },
+      ),
+    );
   }
 
   LecturerProvider get prov => context.read<LecturerProvider>();
@@ -1765,6 +1784,209 @@ class _ErrorBanner extends StatelessWidget {
               onTap: onDismiss,
               child: const Icon(Icons.close, color: _kRed, size: 18)),
         ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Curriculum Generating Dialog — shown while AI builds the curriculum
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _CurriculumGeneratingDialog extends StatefulWidget {
+  final String       courseName;
+  final VoidCallback onComplete;
+  const _CurriculumGeneratingDialog({
+    required this.courseName,
+    required this.onComplete,
+  });
+
+  @override
+  State<_CurriculumGeneratingDialog> createState() =>
+      _CurriculumGeneratingDialogState();
+}
+
+class _CurriculumGeneratingDialogState
+    extends State<_CurriculumGeneratingDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseCtrl;
+  late final Animation<double>   _pulseAnim;
+  bool _completed = false;
+
+  // Rotating tips shown while generating
+  static const _tips = [
+    '🧠 Analysing course structure…',
+    '📚 Planning chapter sequence…',
+    '🎯 Identifying key concepts…',
+    '✏️  Crafting learning objectives…',
+    '🔗 Connecting topic dependencies…',
+    '📖 Finalising your curriculum…',
+  ];
+  int _tipIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Pulse animation for the icon
+    _pulseCtrl = AnimationController(
+      vsync:    this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    _pulseAnim = Tween<double>(begin: 0.92, end: 1.08).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
+
+    // Rotate tips every 2 seconds
+    _rotateTips();
+
+    // Watch provider for curriculum completion
+    _watchForCompletion();
+  }
+
+  void _rotateTips() async {
+    while (mounted && !_completed) {
+      await Future.delayed(const Duration(milliseconds: 2000));
+      if (mounted && !_completed) {
+        setState(() => _tipIndex = (_tipIndex + 1) % _tips.length);
+      }
+    }
+  }
+
+  void _watchForCompletion() async {
+    while (mounted && !_completed) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+      final prov  = context.read<LecturerProvider>();
+      final state = prov.state;
+
+      // Curriculum ready
+      if (prov.curriculum != null &&
+          state != LecturerState.loadingCurriculum) {
+        _completed = true;
+        if (mounted) widget.onComplete();
+        return;
+      }
+
+      // Error
+      if (state == LecturerState.error || prov.error != null) {
+        _completed = true;
+        if (mounted) {
+          Navigator.of(context).pop(); // close dialog — error shown on setup screen
+        }
+        return;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2E),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _kAccent.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: _kAccent.withOpacity(0.2),
+              blurRadius: 40,
+              spreadRadius: 4,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Pulsing icon
+            ScaleTransition(
+              scale: _pulseAnim,
+              child: Container(
+                width: 80, height: 80,
+                decoration: BoxDecoration(
+                  color: _kAccent.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: _kAccent.withOpacity(0.4), width: 2),
+                ),
+                child: const Center(
+                  child: Text('🎓', style: TextStyle(fontSize: 36)),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Title
+            const Text(
+              'Building Your Curriculum',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+
+            const SizedBox(height: 6),
+
+            // Course name
+            Text(
+              widget.courseName,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 13,
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            // Progress bar
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: const LinearProgressIndicator(
+                color:           _kAccent,
+                backgroundColor: Color(0xFF2A2A4A),
+                minHeight:       4,
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Rotating tip
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim, child: child),
+              child: Text(
+                _tips[_tipIndex],
+                key: ValueKey(_tipIndex),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            const Text(
+              'This usually takes 10–20 seconds',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
       ),
     );
   }
