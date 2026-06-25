@@ -314,27 +314,73 @@ class _MathFallback extends StatelessWidget {
 /// 2. Normalise `\( ... \)` → `$ ... $` and `\[ ... \]` → `$$ ... $$`
 ///    (some models emit these alternate LaTeX delimiters).
 String _preprocess(String text) {
-  // Step 1: normalise \(...\) → $...$
+  // Step 1: normalise alternate delimiters
   text = text.replaceAllMapped(
     RegExp(r'\\\((.+?)\\\)', dotAll: true),
-    (m) => '\$${m.group(1)}\$',
+    (m) => '\${m.group(1)}\$',
   );
-
-  // Step 2: normalise \[...\] → $$...$$
   text = text.replaceAllMapped(
     RegExp(r'\\\[(.+?)\\\]', dotAll: true),
     (m) => '\$\$${m.group(1)}\$\$',
   );
 
-  // Step 3: wrap bare \begin{...}...\end{...} blocks in $$
-  // Only if not already preceded by $$ (avoid double-wrapping).
+  // Step 2: fix lone backslash row separators inside matrix environments
+  // AI generates: \begin{bmatrix} 1 & 2 \ 3 & 4 \end{bmatrix}
+  // (where \\ is actually a single backslash in the AI output)
+  // Fix by normalising inside bmatrix/pmatrix/vmatrix/matrix.
   text = text.replaceAllMapped(
-    RegExp(
-      r'(?<!\$\$\s*)(\\begin\{[a-z*]+\}[\s\S]*?\\end\{[a-z*]+\})(?!\s*\$\$)',
-      multiLine: true,
-    ),
-    (m) => '\$\$${m.group(1)}\$\$',
+    RegExp(r'\\begin\{(bmatrix|pmatrix|vmatrix|Bmatrix|matrix)\}([\s\S]*?)\\end\{\1\}'),
+    (m) {
+      final env = m.group(1)!;
+      var body  = m.group(2)!;
+      // Replace " \ " that is a lone row separator (not already doubled)
+      // Pattern: space backslash space NOT followed by another backslash
+      body = body.replaceAllMapped(
+        RegExp(r' \\(?![\\a-zA-Z])'),
+        (_) => r' \\\\',
+      );
+      return '\\begin{$env}$body\\end{$env}';
+    },
   );
+
+  // Step 3: promote inline $ wrapping an environment to display $$
+  text = text.replaceAllMapped(
+    RegExp(r'\$([^\$]*?\\begin\{[a-z*]+\}[\s\S]{0,2000}?\\end\{[a-z*]+\}[^\$]*?)\$'),
+    (m) => '\$\$\n${m.group(1)!.trim()}\n\$\$',
+  );
+
+  // Step 4: promote multiline inline math to display math
+  text = text.replaceAllMapped(
+    RegExp(r'\$((?:[^\$\\\\]|\\\\.){1,400}?)\$', dotAll: true),
+    (m) {
+      final inner = m.group(1)!;
+      if (inner.contains('\n')) {
+        return '\$\$\n${inner.trim()}\n\$\$';
+      }
+      return m.group(0)!;
+    },
+  );
+
+  // Step 5: wrap bare \begin{env}...\end{env} not already in $$ with $$
+  const _ph = '\x00PH\x00';
+  final stash = <String>[];
+
+  String _stashAll(String t, RegExp rx) => t.replaceAllMapped(rx, (m) {
+    stash.add(m.group(0)!);
+    return '$_ph${stash.length - 1}$_ph';
+  });
+
+  text = _stashAll(text, RegExp(r'\$\$[\s\S]*?\$\$'));
+  text = _stashAll(text, RegExp(r'\$(?:[^\$\\\\\n]|\\\\.)+?\$'));
+
+  text = text.replaceAllMapped(
+    RegExp(r'\\begin\{[a-z*]+\}[\s\S]*?\\end\{[a-z*]+\}'),
+    (m) => '\$\$\n${m.group(0)!}\n\$\$',
+  );
+
+  for (var i = 0; i < stash.length; i++) {
+    text = text.replaceAll('$_ph${i}$_ph', stash[i]);
+  }
 
   return text;
 }
