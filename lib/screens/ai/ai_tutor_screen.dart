@@ -457,17 +457,6 @@ class _MessageBubble extends StatelessWidget {
                 : AiStreamingRenderer(
                     content: message.text,
                     isDark:  isDark,
-                    onComplete: () {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (scrollCtrl.hasClients) {
-                          scrollCtrl.animateTo(
-                            scrollCtrl.position.maxScrollExtent,
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      });
-                    },
                   ),
           ],
         ),
