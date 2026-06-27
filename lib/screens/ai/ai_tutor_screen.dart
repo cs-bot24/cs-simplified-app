@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../models/ai_model.dart';
 import '../../widgets/ai_message_content.dart';
 import '../../widgets/ai_content_renderer.dart';
+import '../../widgets/ai_streaming_renderer.dart';
 
 class AiTutorScreen extends StatefulWidget {
   const AiTutorScreen({super.key});
@@ -453,9 +454,20 @@ class _MessageBubble extends StatelessWidget {
                     message.text,
                     style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.5),
                   )
-                : AiContentRenderer(
+                : AiStreamingRenderer(
                     content: message.text,
-                    isDark: isDark,
+                    isDark:  isDark,
+                    onComplete: () {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (scrollCtrl.hasClients) {
+                          scrollCtrl.animateTo(
+                            scrollCtrl.position.maxScrollExtent,
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOut,
+                          );
+                        }
+                      });
+                    },
                   ),
           ],
         ),

@@ -12,6 +12,7 @@ import '../../providers/ai_provider.dart';
 import '../../widgets/premium_gate.dart';
 import '../../widgets/ai_message_content.dart';
 import '../../widgets/ai_content_renderer.dart';
+import '../../widgets/ai_streaming_renderer.dart';
 
 // ── Brand colour ─────────────────────────────────────────────────────────────
 const _kAccent  = Color(0xFF6C63FF);
