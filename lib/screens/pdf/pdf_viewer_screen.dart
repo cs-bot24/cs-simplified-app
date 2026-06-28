@@ -1037,9 +1037,14 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
   final List<_LocalMessage> _messages = [];
   bool _loading = false;
 
+  // Scroll-intent guard — never fight the user's finger.
+  bool _userScrolledUp = false;
+  static const _kScrollThreshold = 80.0;
+
   @override
   void initState() {
     super.initState();
+    _scrollCtrl.addListener(_onScroll);
     // Phase 4/5/6: auto-fire quick action if one was requested
     if (widget.initialAction != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1048,23 +1053,32 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     }
   }
 
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final nearBottom = _scrollCtrl.position.pixels >=
+        _scrollCtrl.position.maxScrollExtent - _kScrollThreshold;
+    if (nearBottom && _userScrolledUp) setState(() => _userScrolledUp = false);
+    else if (!nearBottom && !_userScrolledUp) setState(() => _userScrolledUp = true);
+  }
+
   @override
   void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
     _controller.dispose();
     _scrollCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool force = false}) {
+    if (_userScrolledUp && !force) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
     });
   }
 

@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../models/ai_block.dart';
+import 'mermaid_diagram.dart';
 
 // ── App colours (keep in sync with AppTheme) ─────────────────────────────────
 const _kPrimary   = Color(0xFF1A3C6E);
@@ -81,6 +82,7 @@ class AiBlockRenderer extends StatelessWidget {
       case AiBlockType.bulletList:   return _BulletListCard(block: b, dark: dark);
       case AiBlockType.numberedList: return _NumberedListCard(block: b, dark: dark);
       case AiBlockType.table:        return _TableCard(block: b, dark: dark);
+      case AiBlockType.diagram:      return _DiagramCard(block: b, dark: dark);
       case AiBlockType.divider:      return _DividerCard(dark: dark);
       default:                       return const SizedBox.shrink();
     }
@@ -684,6 +686,118 @@ class _TableCard extends StatelessWidget {
             )),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Diagram ───────────────────────────────────────────────────────────────────
+
+class _DiagramCard extends StatefulWidget {
+  final AiBlock block;
+  final bool    dark;
+  const _DiagramCard({required this.block, required this.dark});
+
+  @override
+  State<_DiagramCard> createState() => _DiagramCardState();
+}
+
+class _DiagramCardState extends State<_DiagramCard> {
+  bool _renderError = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = widget.block.source;
+    if (source.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Label bar
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            children: [
+              Icon(Icons.account_tree_rounded, size: 13, color: _kTeal),
+              const SizedBox(width: 5),
+              Text(
+                'Diagram',
+                style: TextStyle(
+                  fontSize:   11.5,
+                  fontWeight: FontWeight.w700,
+                  color:      _kTeal,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        if (_renderError)
+          // Fallback: show source as readable monospace when WebView fails
+          _DiagramFallback(source: source, dark: widget.dark)
+        else
+          MermaidDiagram(
+            source: source,
+            isDark: widget.dark,
+            onError: () {
+              if (mounted) setState(() => _renderError = true);
+            },
+          ),
+      ],
+    );
+  }
+}
+
+/// Plain-text fallback shown when Mermaid WebView fails to render.
+/// Shows the diagram source in a styled code block so the user
+/// can at least read the structure, and offers a copy button.
+class _DiagramFallback extends StatelessWidget {
+  final String source;
+  final bool   dark;
+  const _DiagramFallback({required this.source, required this.dark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width:   double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:        dark ? const Color(0xFF0D1117) : const Color(0xFFF6F8FA),
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: _kTeal.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'mermaid',
+                style: TextStyle(
+                  fontSize:   11,
+                  color:      _kTeal,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => Clipboard.setData(ClipboardData(text: source)),
+                child: Icon(Icons.copy_rounded, size: 14,
+                    color: Colors.grey.withOpacity(0.6)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SelectableText(
+            source,
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize:   12,
+              color:      dark ? Colors.white70 : Colors.black54,
+              height:     1.5,
+            ),
+          ),
+        ],
       ),
     );
   }

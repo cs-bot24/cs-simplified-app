@@ -710,21 +710,74 @@ class LecturerProvider extends ChangeNotifier {
 
   /// Extract the check question text from the AI lesson.
   /// The AI is instructed to place it after "✅ Check Your Understanding".
+  /// Extract the check question from the lesson response.
+  ///
+  /// In JSON mode, lesson is a blocks JSON string. The question lives in the
+  /// last [exercise] block, or the first content block after a heading that
+  /// contains "Check Your Understanding".
+  ///
+  /// In legacy markdown mode, scan the plain text for the marker heading.
   String? _extractCheckQuestion(String lesson) {
+    // ── Attempt 1: Parse as JSON blocks (JSON / _JSON_MODE path) ─────────
+    try {
+      String src = lesson.trim();
+      // Strip ```json fences if present
+      src = src.replaceAll(RegExp(r'''```(?:json)?\s*'''), '').trim();
+      final braceStart = src.indexOf('{');
+      if (braceStart >= 0) {
+        if (braceStart > 0) src = src.substring(braceStart);
+        final decoded = jsonDecode(src) as Map<String, dynamic>?;
+        if (decoded != null && decoded['blocks'] is List) {
+          final blocks = decoded['blocks'] as List;
+
+          // Priority 1: last exercise block = the check question
+          for (int i = blocks.length - 1; i >= 0; i--) {
+            final b = blocks[i] as Map<String, dynamic>?;
+            if (b == null) continue;
+            if (b['type'] == 'exercise') {
+              final q = (b['content'] as String? ?? '').trim();
+              if (q.isNotEmpty) return q;
+            }
+          }
+
+          // Priority 2: first content block after a "Check Your Understanding" heading
+          bool afterCheck = false;
+          for (final b in blocks) {
+            final block = b as Map<String, dynamic>?;
+            if (block == null) continue;
+            final blockText = ((block['text'] ?? block['content']) as String? ?? '');
+            if (!afterCheck) {
+              if (blockText.toLowerCase().contains('check your understanding')) {
+                afterCheck = true;
+              }
+            } else {
+              final c = (blockText).trim();
+              if (c.isNotEmpty && c.length > 10) return c;
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // JSON parse failed — fall through to legacy text extraction
+    }
+
+    // ── Attempt 2: Legacy plain-text marker scan (markdown / legacy mode) ─
     const marker = 'Check Your Understanding';
     final idx = lesson.indexOf(marker);
     if (idx == -1) return null;
 
     final after = lesson.substring(idx + marker.length);
-    final lines = after.split('\n');
-    for (final line in lines) {
+    for (final line in after.split('\n')) {
       final trimmed = line
           .replaceAll('**', '')
           .replaceAll('*', '')
           .replaceAll('#', '')
           .trim();
+      // Skip JSON artifacts that leak into the raw string
       if (trimmed.isNotEmpty &&
           !trimmed.startsWith('---') &&
+          !trimmed.startsWith('"') &&
+          !trimmed.startsWith('{') &&
           trimmed.length > 10) {
         return trimmed;
       }

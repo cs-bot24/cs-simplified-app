@@ -87,6 +87,7 @@ class _WebPdfPanelState extends State<WebPdfPanel> {
   @override
   void initState() {
     super.initState();
+    _scrollCtrl.addListener(_onScroll);
     // Use a stable key so hot-reload doesn't re-register the same factory.
     _viewType = 'pdf-viewer-${widget.url.hashCode}';
     registerPdfViewFactory(_viewType, widget.url);
@@ -128,6 +129,8 @@ class WebAiPanel extends StatefulWidget {
 class _WebAiPanelState extends State<WebAiPanel> {
   final _controller = TextEditingController();
   final _scrollCtrl = ScrollController();
+  bool _userScrolledUp = false;
+  static const _kScrollThreshold = 80.0;
   final _focusNode  = FocusNode();
 
   final List<_WebMessage> _messages = [];
@@ -136,20 +139,29 @@ class _WebAiPanelState extends State<WebAiPanel> {
   @override
   void dispose() {
     _controller.dispose();
+    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  void _scrollToBottom() {
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final nearBottom = _scrollCtrl.position.pixels >=
+        _scrollCtrl.position.maxScrollExtent - _kScrollThreshold;
+    if (nearBottom && _userScrolledUp) setState(() => _userScrolledUp = false);
+    else if (!nearBottom && !_userScrolledUp) setState(() => _userScrolledUp = true);
+  }
+
+  void _scrollToBottom({bool force = false}) {
+    if (_userScrolledUp && !force) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
     });
   }
 

@@ -88,6 +88,10 @@ class AiBlock {
         return <String>[row.toString()];
       }).toList();
 
+  // diagram
+  String get source => _s('source') ?? _s('content') ?? _s('code') ?? '';
+  String get format => _s('format') ?? 'mermaid';
+
   String? _s(String key) {
     final v = raw[key];
     if (v == null) return null;
@@ -113,9 +117,25 @@ class AiJsonResponse {
   }
 
   /// Parse a raw backend string. Returns null if not valid JSON blocks.
+  /// Handles common model mistakes: ```json fences, prose before {, trailing commas.
   static AiJsonResponse? tryParse(String raw) {
-    final t = raw.trim();
-    if (!t.startsWith('{')) return null;
+    String t = raw.trim();
+
+    // Strip ```json ... ``` fences
+    final fenceRe = RegExp(r'```(?:json)?\s*([\s\S]*?)```', multiLine: true);
+    final fenceMatch = fenceRe.firstMatch(t);
+    if (fenceMatch != null) {
+      t = fenceMatch.group(1)?.trim() ?? t;
+    }
+
+    // Find the start of the JSON object (skip any prose prefix)
+    final braceStart = t.indexOf('{');
+    if (braceStart < 0) return null;
+    if (braceStart > 0) t = t.substring(braceStart);
+
+    // Remove trailing commas before ] or }
+    t = t.replaceAll(RegExp(r',\s*([}\]])'), r'$1');
+
     try {
       final j = jsonDecode(t) as Map<String, dynamic>?;
       if (j == null || !j.containsKey('blocks')) return null;

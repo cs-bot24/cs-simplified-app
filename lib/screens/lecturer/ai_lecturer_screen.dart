@@ -686,16 +686,66 @@ class _SessionScreen extends StatefulWidget {
 class _SessionScreenState extends State<_SessionScreen> {
   final _scrollCtrl = ScrollController();
 
+  // Track user scroll intent — same pattern as AiTutorScreen.
+  // Never fight the user's finger by calling animateTo() inside build().
+  bool _userScrolledUp   = false;
+  bool _showScrollButton = false;
+  int  _lastMessageCount = 0;
+
+  static const _kScrollThreshold = 80.0;
+
   @override
-  void dispose() { _scrollCtrl.dispose(); super.dispose(); }
+  void initState() {
+    super.initState();
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final pos        = _scrollCtrl.position;
+    final nearBottom = pos.pixels >= pos.maxScrollExtent - _kScrollThreshold;
+    final wantUp     = !nearBottom;
+    if (wantUp != _userScrolledUp || wantUp != _showScrollButton) {
+      setState(() {
+        _userScrolledUp   = wantUp;
+        _showScrollButton = wantUp;
+      });
+    }
+  }
+
+  /// Scrolls to bottom only if the user has NOT intentionally scrolled up.
+  /// Pass force:true (e.g. when student taps the FAB) to override.
+  void _scrollToBottomIfNeeded({bool force = false}) {
+    if (!_scrollCtrl.hasClients) return;
+    if (_userScrolledUp && !force) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final prov   = context.watch<LecturerProvider>();
-    final scheme = Theme.of(context).colorScheme;
 
-    // Auto-scroll to bottom when messages change.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    // Trigger scroll only when a NEW message is added — not on every rebuild.
+    // This is the key fix: never call animateTo() unconditionally inside build().
+    final msgCount = prov.messages.length;
+    if (msgCount != _lastMessageCount) {
+      _lastMessageCount = msgCount;
+      _scrollToBottomIfNeeded();
+    }
 
     final isLoading = prov.state == LecturerState.loadingCurriculum ||
         prov.state == LecturerState.loadingLesson;
@@ -742,21 +792,47 @@ class _SessionScreenState extends State<_SessionScreen> {
             )
           : Column(
               children: [
-                // Progress bar
                 _ProgressBar(prov: prov),
 
-                // Messages
+                // Message list wrapped in Stack so the FAB floats above it
                 Expanded(
-                  child: ListView.builder(
-                    controller: _scrollCtrl,
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                    itemCount: prov.messages.length,
-                    itemBuilder: (_, i) => _MessageTile(
-                        msg: prov.messages[i]),
+                  child: Stack(
+                    children: [
+                      ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                        itemCount: prov.messages.length,
+                        itemBuilder: (_, i) =>
+                            _MessageTile(msg: prov.messages[i]),
+                      ),
+
+                      // ── Scroll-to-bottom FAB (WhatsApp / Telegram style) ──
+                      if (_showScrollButton)
+                        Positioned(
+                          right: 16,
+                          bottom: 12,
+                          child: FloatingActionButton.small(
+                            heroTag: 'lecturer_scroll_fab',
+                            backgroundColor: _kAccent,
+                            elevation: 4,
+                            onPressed: () {
+                              setState(() {
+                                _userScrolledUp   = false;
+                                _showScrollButton = false;
+                              });
+                              _scrollToBottomIfNeeded(force: true);
+                            },
+                            child: const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
 
-                // Loading shimmer for active AI call
                 if (prov.state == LecturerState.loadingLesson  ||
                     prov.state == LecturerState.qaLoading       ||
                     prov.state == LecturerState.checking        ||
@@ -764,28 +840,16 @@ class _SessionScreenState extends State<_SessionScreen> {
                     prov.state == LecturerState.examGrading)
                   const _ThinkingIndicator(),
 
-                // Error banner
                 if (prov.error != null)
                   _ErrorBanner(
                     error: prov.error!,
                     onDismiss: prov.clearError,
                   ),
 
-                // Action area
                 _ActionArea(prov: prov),
               ],
             ),
     );
-  }
-
-  void _scrollToBottom() {
-    if (_scrollCtrl.hasClients) {
-      _scrollCtrl.animateTo(
-        _scrollCtrl.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve:    Curves.easeOut,
-      );
-    }
   }
 
   void _confirmExit(BuildContext context, LecturerProvider prov) {

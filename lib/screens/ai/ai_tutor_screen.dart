@@ -174,10 +174,33 @@ class _AiTutorScreenState extends State<AiTutorScreen>
         children: [
           _ModeBar(scheme: scheme),
           if (_showSettings) _SettingsPanel(scheme: scheme),
-          Expanded(child: _MessageList(
-            scrollCtrl: _scrollCtrl,
-            scheme: scheme,
-            onNewContent: _scrollToBottomIfNeeded,
+          Expanded(child: Stack(
+            children: [
+              _MessageList(
+                scrollCtrl: _scrollCtrl,
+                scheme: scheme,
+                onNewContent: _scrollToBottomIfNeeded,
+              ),
+              if (_userScrolledUp)
+                Positioned(
+                  right: 16,
+                  bottom: 12,
+                  child: FloatingActionButton.small(
+                    heroTag: 'tutor_scroll_fab',
+                    backgroundColor: scheme.primary,
+                    elevation: 4,
+                    onPressed: () {
+                      setState(() => _userScrolledUp = false);
+                      _scrollToBottomIfNeeded(force: true);
+                    },
+                    child: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                ),
+            ],
           )),
           Consumer<AiProvider>(
             builder: (_, ai, __) => ai.error != null
@@ -410,19 +433,27 @@ class _MessageListState extends State<_MessageList> {
   int _lastMessageCount = 0;
 
   @override
+  void didUpdateWidget(_MessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Trigger scroll after layout when new messages arrive.
+    // Using didUpdateWidget keeps this completely out of build(),
+    // eliminating any risk of scheduling scroll during a build pass.
+    final ai = context.read<AiProvider>();
+    if (ai.messages.length != _lastMessageCount) {
+      _lastMessageCount = ai.messages.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onNewContent();
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ai = context.watch<AiProvider>();
     if (ai.messages.isEmpty) return _EmptyState(scheme: widget.scheme);
 
     final totalItems = ai.messages.length + (ai.loading ? 1 : 0);
 
-    // Trigger scroll when message count changes (new message added)
-    if (ai.messages.length != _lastMessageCount) {
-      _lastMessageCount = ai.messages.length;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onNewContent();
-      });
-    }
 
     return ListView.builder(
       controller: widget.scrollCtrl,
