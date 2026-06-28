@@ -451,7 +451,7 @@ class _MessageListState extends State<_MessageList> {
 class _MessageBubble extends StatelessWidget {
   final AiMessage message;
   final ColorScheme scheme;
-  const _MessageBubble({required this.message, required this.scheme});
+  const _MessageBubble({super.key, required this.message, required this.scheme});
 
   @override
   Widget build(BuildContext context) {
