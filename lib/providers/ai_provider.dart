@@ -51,6 +51,10 @@ class AiProvider extends ChangeNotifier {
   int              _questionsToday = 0;
   int              _questionsMonth = 0;
 
+  // Guards against duplicate concurrent loads
+  bool _loadingPlan  = false;
+  bool _loadingUsage = false;
+
   // ── Phase 3: Session memory (topics / concepts for practice & notes) ─────
   final List<String> _sessionTopics   = [];
   final List<String> _sessionConcepts = [];
@@ -95,15 +99,16 @@ class AiProvider extends ChangeNotifier {
   // ── Load plan & preferences ───────────────────────────────────────────────
 
   Future<void> loadPlan() async {
+    if (_loadingPlan) return;
+    _loadingPlan = true;
     try {
       final data = await ApiClient.getAiPlan();
       _plan = AiPlanInfo.fromJson(data);
     } catch (e) {
-      // Keep permissive defaults on error — do NOT silently succeed
-      // with stale data. Log so we can debug.
       debugPrint('[AiProvider] loadPlan failed: $e');
-      _plan = null;   // forces entitlements getter to return defaultPermissive()
+      _plan = null;
     } finally {
+      _loadingPlan = false;
       notifyListeners();
     }
   }
@@ -116,6 +121,8 @@ class AiProvider extends ChangeNotifier {
   }
 
   Future<void> loadUsage() async {
+    if (_loadingUsage) return;
+    _loadingUsage = true;
     try {
       final data        = await ApiClient.getAiUsage();
       _questionsToday   = (data['questions_today']      as num?)?.toInt() ?? 0;
@@ -128,7 +135,10 @@ class AiProvider extends ChangeNotifier {
         );
       }
       notifyListeners();
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _loadingUsage = false;
+    }
   }
 
   // ── Phase 4: Build conversation history ──────────────────────────────────

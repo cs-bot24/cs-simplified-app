@@ -31,6 +31,13 @@ class HomeProvider extends ChangeNotifier {
   static const _cacheTimeKey  = 'home_cache_time_v1';
   static const _cacheMaxAge   = Duration(minutes: 30);
 
+  // Streak ping deduplication — prevent multiple pings within a short window.
+  // The home screen calls pingStreak() on initState AND on resume; without
+  // this guard, rapid foreground/background transitions and widget rebuilds
+  // can fire multiple pings within seconds.
+  DateTime? _lastStreakPingAt;
+  static const _kStreakPingCooldown = Duration(minutes: 5);
+
   HomeData? get data    => _data;
   bool      get loading => _loading;
   String?   get error   => _error;
@@ -77,11 +84,17 @@ class HomeProvider extends ChangeNotifier {
   }
 
   /// Called fire-and-forget on every app launch and foreground resume.
-  /// On success, silently updates the streak in the in-memory HomeData
-  /// so the badge reflects the new value without a full home refresh.
-  /// Errors are completely silent — a streak update failure must never
-  /// disrupt the user experience.
+  /// Deduplicates: if called within _kStreakPingCooldown of the last ping,
+  /// it silently no-ops. This prevents spam when the home screen rebuilds,
+  /// the app rapidly foregrounds/backgrounds, or multiple widgets call this.
   Future<void> pingStreak() async {
+    final now = DateTime.now();
+    if (_lastStreakPingAt != null &&
+        now.difference(_lastStreakPingAt!) < _kStreakPingCooldown) {
+      dev.log('[Home] Streak ping skipped (cooldown active)', name: 'HomeProvider');
+      return;
+    }
+    _lastStreakPingAt = now;
     try {
       final updated = await ApiClient.pingStreak();
       if (_data != null) {

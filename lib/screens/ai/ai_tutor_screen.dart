@@ -21,9 +21,17 @@ class _AiTutorScreenState extends State<AiTutorScreen>
   final _inputFocus  = FocusNode();
   bool  _showSettings = false;
 
+  // Scroll management — prevents unexpected upward jumps.
+  // When the user intentionally scrolls up to read history, we stop
+  // auto-scrolling. When they return near the bottom, we resume.
+  bool _userScrolledUp = false;
+
+  static const _kScrollThreshold = 80.0; // px from bottom = "near bottom"
+
   @override
   void initState() {
     super.initState();
+    _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ai = context.read<AiProvider>();
       ai.loadPlan();
@@ -31,23 +39,41 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     });
   }
 
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final pos        = _scrollCtrl.position;
+    final nearBottom = pos.pixels >= pos.maxScrollExtent - _kScrollThreshold;
+    if (nearBottom && _userScrolledUp) {
+      // User returned to bottom — re-enable auto-scroll
+      setState(() => _userScrolledUp = false);
+    } else if (!nearBottom && !_userScrolledUp) {
+      // User scrolled up deliberately
+      setState(() => _userScrolledUp = true);
+    }
+  }
+
   @override
   void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
     _controller.dispose();
     _scrollCtrl.dispose();
     _inputFocus.dispose();
     super.dispose();
   }
 
-  void _scrollToBottom() {
+  /// Scrolls to bottom only when the user has NOT manually scrolled up.
+  /// Called after each new message is added and after each block reveal.
+  void _scrollToBottomIfNeeded({bool force = false}) {
+    if (!_scrollCtrl.hasClients) return;
+    if (_userScrolledUp && !force) return;
+    // Use jumpTo during rapid streaming to avoid animation queuing.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        _scrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -57,8 +83,11 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     if (text.isEmpty) return;
     _controller.clear();
     _inputFocus.unfocus();
+    // Reset scroll position — user sent a new message, force jump to bottom.
+    setState(() => _userScrolledUp = false);
+    _scrollToBottomIfNeeded(force: true);
     await ai.ask(text);
-    _scrollToBottom();
+    _scrollToBottomIfNeeded(force: true);
   }
 
   // Image upload is temporarily disabled — feature under development.
@@ -145,7 +174,11 @@ class _AiTutorScreenState extends State<AiTutorScreen>
         children: [
           _ModeBar(scheme: scheme),
           if (_showSettings) _SettingsPanel(scheme: scheme),
-          Expanded(child: _MessageList(scrollCtrl: _scrollCtrl, scheme: scheme)),
+          Expanded(child: _MessageList(
+            scrollCtrl: _scrollCtrl,
+            scheme: scheme,
+            onNewContent: _scrollToBottomIfNeeded,
+          )),
           Consumer<AiProvider>(
             builder: (_, ai, __) => ai.error != null
                 ? _ErrorBanner(error: ai.error!, scheme: scheme,
@@ -359,22 +392,54 @@ class _SettingsPanel extends StatelessWidget {
 
 // ── Message List ──────────────────────────────────────────────────────────────
 
-class _MessageList extends StatelessWidget {
+class _MessageList extends StatefulWidget {
   final ScrollController scrollCtrl;
   final ColorScheme scheme;
-  const _MessageList({required this.scrollCtrl, required this.scheme});
+  final VoidCallback onNewContent;
+  const _MessageList({
+    required this.scrollCtrl,
+    required this.scheme,
+    required this.onNewContent,
+  });
+
+  @override
+  State<_MessageList> createState() => _MessageListState();
+}
+
+class _MessageListState extends State<_MessageList> {
+  int _lastMessageCount = 0;
 
   @override
   Widget build(BuildContext context) {
     final ai = context.watch<AiProvider>();
-    if (ai.messages.isEmpty) return _EmptyState(scheme: scheme);
+    if (ai.messages.isEmpty) return _EmptyState(scheme: widget.scheme);
+
+    final totalItems = ai.messages.length + (ai.loading ? 1 : 0);
+
+    // Trigger scroll when message count changes (new message added)
+    if (ai.messages.length != _lastMessageCount) {
+      _lastMessageCount = ai.messages.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onNewContent();
+      });
+    }
+
     return ListView.builder(
-      controller: scrollCtrl,
+      controller: widget.scrollCtrl,
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      itemCount: ai.messages.length + (ai.loading ? 1 : 0),
+      cacheExtent: 500,
+      itemCount: totalItems,
       itemBuilder: (ctx, i) {
-        if (ai.loading && i == ai.messages.length) return const _TypingIndicator();
-        return _MessageBubble(message: ai.messages[i], scheme: scheme);
+        if (ai.loading && i == ai.messages.length) {
+          return const RepaintBoundary(child: _TypingIndicator());
+        }
+        return RepaintBoundary(
+          child: _MessageBubble(
+            key: ValueKey(ai.messages[i].timestamp.millisecondsSinceEpoch),
+            message: ai.messages[i],
+            scheme: widget.scheme,
+          ),
+        );
       },
     );
   }

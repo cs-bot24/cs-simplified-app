@@ -34,6 +34,7 @@ class NotificationProvider extends ChangeNotifier {
   /// deduplicates (announcements also appear in /notifications now),
   /// and sorts newest first.
   Future<void> fetchNotifications() async {
+    if (_loading) return;   // prevent duplicate concurrent fetches
     _loading = true;
     _error   = null;
     notifyListeners();
