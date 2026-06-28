@@ -45,11 +45,15 @@ jobs:
         run: flutter pub get
 
       # ── Decode the release keystore from the GitHub secret ───────────────
-      # KEYSTORE_BASE64 was created locally with:
-      #   base64 -i your-release-key.jks -o keystore_base64.txt
-      # and pasted as a repo secret. This step reverses that encoding and
-      # writes the real .jks file into android/app/ for this run only — it
-      # is never committed and the runner is destroyed after the job finishes.
+      # KEYSTORE_BASE64 was created locally and pasted as a repo secret.
+      # This step reverses that encoding and writes the real .jks file into
+      # android/app/ for this run only — it is never committed and the
+      # runner is destroyed after the job finishes.
+      #
+      # NOTE: we write the secret to a temp file first, then strip all
+      # whitespace/newlines before decoding. echo "$VAR" can mangle
+      # multi-line base64 content depending on how it was pasted — writing
+      # straight to a file and cleaning it avoids that entirely.
       #
       # IMPORTANT: build.gradle.kts resolves CM_KEYSTORE_PATH relative to
       # the android/app/ module directory (Gradle's file() is relative to
@@ -57,7 +61,24 @@ jobs:
       # in sync with the filename used in CM_KEYSTORE_PATH further down.
       - name: Decode release keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release-key.jks
+          printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '[:space:]' > /tmp/keystore_clean.b64
+          base64 --decode /tmp/keystore_clean.b64 > android/app/release-key.jks
+          rm -f /tmp/keystore_clean.b64
+
+      # ── Diagnostic: verify the decoded file is a real keystore ────────────
+      # This step proves whether the problem is the FILE or the PASSWORD,
+      # instead of guessing. It will show the alias if the password is
+      # correct, or a clear "password incorrect" / "invalid keystore format"
+      # error if something is still wrong — and we'll know exactly which.
+      - name: Verify decoded keystore
+        run: |
+          echo "File size in bytes:"
+          wc -c < android/app/release-key.jks
+          echo "---"
+          echo "Attempting to list keystore contents:"
+          keytool -list -v \
+            -keystore android/app/release-key.jks \
+            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" || true
 
       # ── Run a Flutter release build with signing credentials as env vars ──
       # build.gradle.kts reads these via System.getenv(...) when no local
