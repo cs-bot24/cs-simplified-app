@@ -1,0 +1,30 @@
+---
+format_version: '26'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: flutter
+workflows:
+  build_android:
+    steps:
+    - git-clone@8: {}
+    - script@1:
+        title: Setup Signing
+        inputs:
+        - content: |-
+            #!/usr/bin/env bash
+            set -ex
+            echo "$CM_KEYSTORE" | base64 --decode > android/keystore.jks
+            cat > android/key.properties <<PROPS
+            storePassword=$KEYSTORE_PASSWORD
+            keyPassword=$KEY_PASSWORD
+            keyAlias=$KEY_ALIAS
+            storeFile=../keystore.jks
+            PROPS
+    - flutter-installer@1:
+        inputs:
+        - version: 3.44.4
+    - flutter-build@0:
+        inputs:
+        - project_location: .
+        - platform: android
+        - android_output_type: apk
+    - deploy-to-bitrise-io@2: {}
