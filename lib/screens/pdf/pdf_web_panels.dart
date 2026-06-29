@@ -130,11 +130,24 @@ class _WebAiPanelState extends State<WebAiPanel> {
   final _controller = TextEditingController();
   final _scrollCtrl = ScrollController();
   bool _userScrolledUp = false;
+  bool _hasNewMessage  = false;
   static const _kScrollThreshold = 80.0;
   final _focusNode  = FocusNode();
 
   final List<_WebMessage> _messages = [];
   bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // BUG FIX: this listener was previously never attached (no initState
+    // override existed), so _userScrolledUp never updated and the panel
+    // always behaved as if the user were pinned to the bottom — i.e. it
+    // would auto-scroll out from under anyone trying to read an earlier
+    // reply. Attaching it here is what makes the "stay put while reading,
+    // only jump when near the bottom" behaviour actually work.
+    _scrollCtrl.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
@@ -149,8 +162,14 @@ class _WebAiPanelState extends State<WebAiPanel> {
     if (!_scrollCtrl.hasClients) return;
     final nearBottom = _scrollCtrl.position.pixels >=
         _scrollCtrl.position.maxScrollExtent - _kScrollThreshold;
-    if (nearBottom && _userScrolledUp) setState(() => _userScrolledUp = false);
-    else if (!nearBottom && !_userScrolledUp) setState(() => _userScrolledUp = true);
+    if (nearBottom && _userScrolledUp) {
+      setState(() {
+        _userScrolledUp = false;
+        _hasNewMessage  = false; // back at bottom — clear badge
+      });
+    } else if (!nearBottom && !_userScrolledUp) {
+      setState(() => _userScrolledUp = true);
+    }
   }
 
   void _scrollToBottom({bool force = false}) {
@@ -204,7 +223,13 @@ class _WebAiPanelState extends State<WebAiPanel> {
       _messages.add(_WebMessage(text: displayText ?? question, isUser: true));
       _loading = true;
     });
-    _scrollToBottom();
+    // The user just asked something — always jump to the bottom for
+    // their own outgoing message, same as the other chat screens.
+    setState(() {
+      _userScrolledUp = false;
+      _hasNewMessage  = false;
+    });
+    _scrollToBottom(force: true);
 
     try {
       final ai = context.read<AiProvider>();
@@ -225,6 +250,10 @@ class _WebAiPanelState extends State<WebAiPanel> {
             isUser: false,
           ));
           _loading = false;
+          // The user may have scrolled up to re-read something while
+          // waiting for this reply — don't yank them to the bottom,
+          // just flag that a new message is waiting.
+          if (_userScrolledUp) _hasNewMessage = true;
         });
         _scrollToBottom();
       }
@@ -237,6 +266,7 @@ class _WebAiPanelState extends State<WebAiPanel> {
             isError: true,
           ));
           _loading = false;
+          if (_userScrolledUp) _hasNewMessage = true;
         });
         _scrollToBottom();
       }
@@ -255,7 +285,34 @@ class _WebAiPanelState extends State<WebAiPanel> {
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
           _buildQuickActions(),
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
-          Expanded(child: _buildMessageList()),
+          Expanded(
+            child: Stack(
+              children: [
+                _buildMessageList(),
+                if (_userScrolledUp)
+                  Positioned(
+                    right: 12,
+                    bottom: 10,
+                    child: _hasNewMessage
+                        ? _WebNewMessagePill(
+                            onTap: () {
+                              setState(() {
+                                _userScrolledUp = false;
+                                _hasNewMessage  = false;
+                              });
+                              _scrollToBottom(force: true);
+                            },
+                          )
+                        : _WebScrollToBottomButton(
+                            onTap: () {
+                              setState(() => _userScrolledUp = false);
+                              _scrollToBottom(force: true);
+                            },
+                          ),
+                  ),
+              ],
+            ),
+          ),
           if (_loading) _buildTypingIndicator(),
           _buildInputBar(),
         ],
@@ -369,8 +426,11 @@ class _WebAiPanelState extends State<WebAiPanel> {
       controller: _scrollCtrl,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      physics: const AlwaysScrollableScrollPhysics(),
       itemCount: _messages.length,
-      itemBuilder: (_, i) => _WebMessageBubble(message: _messages[i]),
+      itemBuilder: (_, i) => RepaintBoundary(
+        child: _WebMessageBubble(message: _messages[i]),
+      ),
     );
   }
 
@@ -468,6 +528,69 @@ class _WebAiPanelState extends State<WebAiPanel> {
       ],
     ),
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scroll-to-bottom affordances (mirrors AiTutorScreen / AiLecturerScreen)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WebScrollToBottomButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _WebScrollToBottomButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _kAccent,
+      shape: const CircleBorder(),
+      elevation: 4,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.all(8),
+          child: Icon(Icons.keyboard_arrow_down_rounded,
+              color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _WebNewMessagePill extends StatelessWidget {
+  final VoidCallback onTap;
+  const _WebNewMessagePill({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _kAccent,
+      borderRadius: BorderRadius.circular(18),
+      elevation: 4,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 13),
+              SizedBox(width: 5),
+              Text(
+                'New Message',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

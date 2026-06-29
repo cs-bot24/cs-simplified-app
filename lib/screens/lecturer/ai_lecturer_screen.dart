@@ -690,7 +690,7 @@ class _SessionScreenState extends State<_SessionScreen> {
   // Never fight the user's finger by calling animateTo() inside build().
   bool _userScrolledUp   = false;
   bool _showScrollButton = false;
-  int  _lastMessageCount = 0;
+  bool _hasNewMessage    = false;
 
   static const _kScrollThreshold = 80.0;
 
@@ -716,6 +716,7 @@ class _SessionScreenState extends State<_SessionScreen> {
       setState(() {
         _userScrolledUp   = wantUp;
         _showScrollButton = wantUp;
+        if (!wantUp) _hasNewMessage = false; // back at bottom — clear badge
       });
     }
   }
@@ -738,14 +739,6 @@ class _SessionScreenState extends State<_SessionScreen> {
   @override
   Widget build(BuildContext context) {
     final prov   = context.watch<LecturerProvider>();
-
-    // Trigger scroll only when a NEW message is added — not on every rebuild.
-    // This is the key fix: never call animateTo() unconditionally inside build().
-    final msgCount = prov.messages.length;
-    if (msgCount != _lastMessageCount) {
-      _lastMessageCount = msgCount;
-      _scrollToBottomIfNeeded();
-    }
 
     final isLoading = prov.state == LecturerState.loadingCurriculum ||
         prov.state == LecturerState.loadingLesson;
@@ -798,12 +791,19 @@ class _SessionScreenState extends State<_SessionScreen> {
                 Expanded(
                   child: Stack(
                     children: [
-                      ListView.builder(
-                        controller: _scrollCtrl,
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                        itemCount: prov.messages.length,
-                        itemBuilder: (_, i) =>
-                            _MessageTile(msg: prov.messages[i]),
+                      _LecturerMessageList(
+                        scrollCtrl: _scrollCtrl,
+                        messages: prov.messages,
+                        isUserScrolledUp: _userScrolledUp,
+                        onNewMessageWhileScrolledUp: () {
+                          if (_hasNewMessage) return;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted && !_hasNewMessage) {
+                              setState(() => _hasNewMessage = true);
+                            }
+                          });
+                        },
+                        onNewMessageAutoScrolled: _scrollToBottomIfNeeded,
                       ),
 
                       // ── Scroll-to-bottom FAB (WhatsApp / Telegram style) ──
@@ -811,23 +811,35 @@ class _SessionScreenState extends State<_SessionScreen> {
                         Positioned(
                           right: 16,
                           bottom: 12,
-                          child: FloatingActionButton.small(
-                            heroTag: 'lecturer_scroll_fab',
-                            backgroundColor: _kAccent,
-                            elevation: 4,
-                            onPressed: () {
-                              setState(() {
-                                _userScrolledUp   = false;
-                                _showScrollButton = false;
-                              });
-                              _scrollToBottomIfNeeded(force: true);
-                            },
-                            child: const Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                          ),
+                          child: _hasNewMessage
+                              ? _NewMessagePill(
+                                  color: _kAccent,
+                                  onTap: () {
+                                    setState(() {
+                                      _userScrolledUp   = false;
+                                      _showScrollButton = false;
+                                      _hasNewMessage    = false;
+                                    });
+                                    _scrollToBottomIfNeeded(force: true);
+                                  },
+                                )
+                              : FloatingActionButton.small(
+                                  heroTag: 'lecturer_scroll_fab',
+                                  backgroundColor: _kAccent,
+                                  elevation: 4,
+                                  onPressed: () {
+                                    setState(() {
+                                      _userScrolledUp   = false;
+                                      _showScrollButton = false;
+                                    });
+                                    _scrollToBottomIfNeeded(force: true);
+                                  },
+                                  child: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                ),
                         ),
                     ],
                   ),
@@ -1655,6 +1667,111 @@ class _ChapterDrawer extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Message list — single scrollable parent for the lecturer chat
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Same architecture as AiTutorScreen's _MessageList: one ListView.builder,
+// one widget tree per message (no nested scrollables, no per-block
+// staggered reveal), and the scroll-to-bottom trigger lives in
+// didUpdateWidget so it can never fire mid-build or race the user's own
+// drag gesture.
+
+class _LecturerMessageList extends StatefulWidget {
+  final ScrollController scrollCtrl;
+  final List<LecturerMessage> messages;
+  final bool isUserScrolledUp;
+  final VoidCallback onNewMessageWhileScrolledUp;
+  final VoidCallback onNewMessageAutoScrolled;
+
+  const _LecturerMessageList({
+    required this.scrollCtrl,
+    required this.messages,
+    required this.isUserScrolledUp,
+    required this.onNewMessageWhileScrolledUp,
+    required this.onNewMessageAutoScrolled,
+  });
+
+  @override
+  State<_LecturerMessageList> createState() => _LecturerMessageListState();
+}
+
+class _LecturerMessageListState extends State<_LecturerMessageList> {
+  int _lastMessageCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastMessageCount = widget.messages.length;
+  }
+
+  @override
+  void didUpdateWidget(_LecturerMessageList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.messages.length != _lastMessageCount) {
+      _lastMessageCount = widget.messages.length;
+      if (widget.isUserScrolledUp) {
+        widget.onNewMessageWhileScrolledUp();
+      } else {
+        widget.onNewMessageAutoScrolled();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      controller: widget.scrollCtrl,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: widget.messages.length,
+      itemBuilder: (_, i) => RepaintBoundary(
+        child: _MessageTile(msg: widget.messages[i]),
+      ),
+    );
+  }
+}
+
+/// The "↓ New Message" pill — same component used in AiTutorScreen.
+/// Shown instead of the plain scroll-down FAB once a message has
+/// arrived while the student was reading earlier content.
+class _NewMessagePill extends StatelessWidget {
+  final Color color;
+  final VoidCallback onTap;
+  const _NewMessagePill({required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 4,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 15),
+              SizedBox(width: 6),
+              Text(
+                'New Message',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

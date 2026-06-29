@@ -1,8 +1,19 @@
-// lib/widgets/ai_block_renderer.dart — Phase 2: Block Renderer
+// lib/widgets/ai_block_renderer.dart — Block Renderer
 //
-// Renders a list of AiBlock objects into Flutter widgets.
-// Each block type has its own dedicated widget.
+// Renders a list of AiBlock objects into a SINGLE static widget tree
+// (one Column, built once). Each block type has its own dedicated
+// widget, but all blocks for a message are laid out together in one
+// pass — there is no progressive/staggered reveal here. That keeps the
+// height of one chat bubble stable from the first frame it appears,
+// which is required for the single-ListView chat scrolling architecture
+// to work (see ai_streaming_renderer.dart for the rationale).
+//
 // NO raw markdown or LaTeX ever appears to the user.
+//
+// Note on horizontal SingleChildScrollViews used below (for wide code
+// blocks, tables, and matrices): these scroll sideways only and live
+// fully inside a block's fixed-height container, so they never compete
+// with the chat list's vertical scroll gesture.
 //
 // Usage:
 //   AiBlockRenderer(blocks: response.blocks)

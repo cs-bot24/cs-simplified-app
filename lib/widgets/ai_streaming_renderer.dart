@@ -1,13 +1,30 @@
-// lib/widgets/ai_streaming_renderer.dart — Phase 3: Progressive Block Reveal
+// lib/widgets/ai_streaming_renderer.dart
 //
-// Renders AI JSON responses with a progressive reveal animation.
-// Each block fades and slides in one after another, giving the feel
-// of streaming even when the full response arrives at once.
+// Renders a complete AI response (JSON block format or legacy markdown)
+// as ONE static widget tree inside the caller's message bubble.
+//
+// IMPORTANT — Scrolling architecture:
+//   This widget intentionally does NOT reveal blocks one at a time and
+//   does NOT mutate its own widget count over time. The previous
+//   implementation used a Future.delayed/setState loop to fade blocks in
+//   one after another, which kept changing this widget's height every
+//   30-120ms. Because this widget lives inside the single chat
+//   ListView.builder, every one of those height changes re-ran layout
+//   for the scrolling list and could yank the viewport out from under
+//   a user who was mid-drag reading an older message. ChatGPT-style
+//   chat lists render each message's content once into a single
+//   widget; do not reintroduce progressive block reveal here.
+//
+//   The only animation that remains is a single, one-shot fade-in of
+//   the *entire* message body (see _FadeInOnce). That animation does
+//   not change layout size at any point, so it never fights user
+//   scroll gestures or auto-scroll logic.
 //
 // Usage:
 //   AiStreamingRenderer(content: jsonString, isDark: true)
 //
-// Falls back to AiContentRenderer for legacy markdown responses.
+// Falls back to AiContentRenderer's legacy markdown path for non-JSON
+// responses (handled here via AiMessageContent).
 
 import 'package:flutter/material.dart';
 import '../models/ai_block.dart';
@@ -34,147 +51,101 @@ class AiStreamingRenderer extends StatefulWidget {
 
 class _AiStreamingRendererState extends State<AiStreamingRenderer> {
   AiJsonResponse? _parsed;
-  int             _visibleCount = 0;
-  bool            _isLegacy     = false;
-
-  // Stagger delay per block — faster for more blocks
-  Duration get _staggerDelay {
-    final count = _parsed?.blocks.length ?? 0;
-    if (count <= 3)  return const Duration(milliseconds: 120);
-    if (count <= 8)  return const Duration(milliseconds: 80);
-    if (count <= 15) return const Duration(milliseconds: 50);
-    return const Duration(milliseconds: 30);
-  }
+  bool            _isLegacy = false;
+  bool            _completedCalled = false;
 
   @override
   void initState() {
     super.initState();
-    _parseAndReveal();
+    _parse();
   }
 
   @override
   void didUpdateWidget(AiStreamingRenderer old) {
     super.didUpdateWidget(old);
+    // Only re-parse if the underlying content actually changed (e.g. the
+    // provider replaced this message). Re-parsing on every rebuild would
+    // pointlessly rebuild the whole block tree.
     if (old.content != widget.content) {
-      _parsed       = null;
-      _visibleCount = 0;
-      _isLegacy     = false;
-      _parseAndReveal();
+      _parsed = null;
+      _isLegacy = false;
+      _completedCalled = false;
+      _parse();
     }
   }
 
-  void _parseAndReveal() {
+  void _parse() {
     final parsed = AiJsonResponse.tryParse(widget.content);
 
     if (parsed == null || parsed.isEmpty) {
-      // Legacy markdown — render immediately
-      if (mounted) setState(() => _isLegacy = true);
-      widget.onComplete?.call();
-      return;
+      _isLegacy = true;
+    } else {
+      _parsed = parsed;
     }
 
-    _parsed       = parsed;
-    _visibleCount = 0;
-
-    // Reveal blocks one at a time
-    _revealNext();
-  }
-
-  void _revealNext() {
-    if (!mounted) return;
-    if (_parsed == null) return;
-    if (_visibleCount >= _parsed!.blocks.length) {
-      widget.onComplete?.call();
-      return;
+    // The full response is already in memory (the backend does not stream
+    // partial JSON to this widget), so parsing — and therefore "reveal" —
+    // completes synchronously and exactly once.
+    if (!_completedCalled) {
+      _completedCalled = true;
+      // Defer to after this frame so callers that call setState() in
+      // onComplete (e.g. to trigger a scroll) never do so mid-build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onComplete?.call();
+      });
     }
-
-    Future.delayed(_staggerDelay, () {
-      if (!mounted) return;
-      setState(() => _visibleCount++);
-      _revealNext();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     final dark = widget.isDark ?? (Theme.of(context).brightness == Brightness.dark);
 
-    // Legacy fallback
+    Widget child;
     if (_isLegacy) {
-      Widget child = AiMessageContent(data: widget.content, isDark: dark);
-      if (widget.padding != null) {
-        child = Padding(padding: widget.padding!, child: child);
-      }
-      return child;
+      child = AiMessageContent(data: widget.content, isDark: dark);
+    } else if (_parsed == null) {
+      // Should not normally happen (parsing is synchronous), but keep a
+      // lightweight, static placeholder just in case.
+      child = const _BlockSkeleton();
+    } else {
+      // Single render pass: every block goes into the SAME widget tree at
+      // once. No staggered children, no per-block AnimationControllers.
+      child = AiBlockRenderer(blocks: _parsed!.blocks, isDark: dark);
     }
-
-    // JSON not yet parsed
-    if (_parsed == null) {
-      return const _BlockSkeleton();
-    }
-
-    // Progressive reveal
-    final visibleBlocks = _parsed!.blocks.take(_visibleCount).toList();
-    final allVisible    = _visibleCount >= _parsed!.blocks.length;
-
-    Widget child = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (int i = 0; i < visibleBlocks.length; i++) ...[
-          _AnimatedBlock(
-            key:   ValueKey('block_$i'),
-            block: visibleBlocks[i],
-            dark:  dark,
-          ),
-          if (i < visibleBlocks.length - 1) const SizedBox(height: 10),
-        ],
-        // Show skeleton for next block if still revealing
-        if (!allVisible && visibleBlocks.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          const _BlockSkeleton(),
-        ],
-      ],
-    );
 
     if (widget.padding != null) {
       child = Padding(padding: widget.padding!, child: child);
     }
 
-    return child;
+    // One-shot fade-in for the whole message. Fixed duration, fixed final
+    // size from frame one — this never changes the message's height.
+    return _FadeInOnce(key: ValueKey(widget.content), child: child);
   }
 }
 
-// ── Animated single block ─────────────────────────────────────────────────────
+// ── One-shot fade-in (no layout change, no repeated triggers) ────────────────
 
-class _AnimatedBlock extends StatefulWidget {
-  final AiBlock block;
-  final bool    dark;
-  const _AnimatedBlock({super.key, required this.block, required this.dark});
+class _FadeInOnce extends StatefulWidget {
+  final Widget child;
+  const _FadeInOnce({super.key, required this.child});
 
   @override
-  State<_AnimatedBlock> createState() => _AnimatedBlockState();
+  State<_FadeInOnce> createState() => _FadeInOnceState();
 }
 
-class _AnimatedBlockState extends State<_AnimatedBlock>
+class _FadeInOnceState extends State<_FadeInOnce>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double>   _fade;
-  late final Animation<Offset>   _slide;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-      vsync:    this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _fade  = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end:   Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-
-    _ctrl.forward();
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    )..forward();
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
   }
 
   @override
@@ -184,19 +155,11 @@ class _AnimatedBlockState extends State<_AnimatedBlock>
   }
 
   @override
-  Widget build(BuildContext context) => FadeTransition(
-    opacity: _fade,
-    child: SlideTransition(
-      position: _slide,
-      child: AiBlockRenderer(
-        blocks: [widget.block],
-        isDark: widget.dark,
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: _fade, child: widget.child);
 }
 
-// ── Loading skeleton ──────────────────────────────────────────────────────────
+// ── Loading skeleton (static, used only before first paint) ──────────────────
 
 class _BlockSkeleton extends StatefulWidget {
   const _BlockSkeleton();
@@ -229,12 +192,12 @@ class _BlockSkeletonState extends State<_BlockSkeleton>
 
   @override
   Widget build(BuildContext context) {
-    final dark   = Theme.of(context).brightness == Brightness.dark;
-    final base   = dark ? Colors.white : Colors.black;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final base = dark ? Colors.white : Colors.black;
 
     return AnimatedBuilder(
       animation: _anim,
-      builder:   (_, __) => Column(
+      builder: (_, __) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _skeletonLine(base, _anim.value, 0.85),
@@ -261,6 +224,12 @@ class _BlockSkeletonState extends State<_BlockSkeleton>
 }
 
 // ── Typing indicator (standalone, reusable) ───────────────────────────────────
+//
+// This is the "AI is thinking" dot animation shown BEFORE any message
+// content exists (i.e. as the loading placeholder item appended after the
+// last message, never as part of an actual message's content). It is a
+// fixed-size widget — it does not grow, shrink, or add/remove children —
+// so it never affects scroll position by itself.
 
 class AiTypingIndicator extends StatefulWidget {
   final bool isDark;

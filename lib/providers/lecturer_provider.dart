@@ -438,8 +438,22 @@ class LecturerProvider extends ChangeNotifier {
   /// Student answers the check question — or says "I don't know".
   Future<void> submitCheckAnswer(String answer, {bool knowsAnswer = true}) async {
     final chap = currentChapter;
+    // Guard 1: must have an active chapter with a check question.
     if (chap == null || chap.checkQuestion == null) return;
-    if (knowsAnswer && answer.trim().isEmpty) return;
+    // Guard 2: must be in the correct phase — never route to AI while teaching
+    // or in Q&A, even if checkQuestion happens to be set from a previous chapter.
+    if (chap.phase != ChapterPhase.awaitingCheckAnswer) return;
+    // Guard 3: politely ask for an answer if the field is empty (and student
+    // claims to know). Do NOT call the AI or trigger the offline fallback.
+    if (knowsAnswer && answer.trim().isEmpty) {
+      _messages.add(LecturerMessage(
+        text: 'Please type your answer in the box above, then tap Submit.',
+        type: LecturerMessageType.system,
+        timestamp: DateTime.now(),
+      ));
+      notifyListeners();
+      return;
+    }
 
     _messages.add(LecturerMessage(
       text:      knowsAnswer ? answer : 'I don\'t know 🤔',
@@ -456,13 +470,18 @@ class LecturerProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Send only the last 2 history turns for answer evaluation.
+      // The API prompt already contains full context (chapter title, question,
+      // student answer). Sending a large history here causes provider token
+      // limits to be hit, which triggers the offline emergency responder and
+      // returns a Study Note instead of AI feedback.
       final data = await ApiClient.evaluateCheckAnswer(
         chapterTitle:        chap.chapter.title,
         checkQuestion:       chap.checkQuestion!,
         studentAnswer:       answer,
         studentKnowsAnswer:  knowsAnswer,
         level:               _level,
-        conversationHistory: _recentHistory(),
+        conversationHistory: _checkHistory(),
       );
 
       final feedback = data['feedback'] as String;
@@ -637,6 +656,23 @@ class LecturerProvider extends ChangeNotifier {
     return _history.sublist(_history.length - 10);
   }
 
+  /// Focused history for check-answer evaluation: last 2 turns only.
+  ///
+  /// The check-answer API prompt already contains the chapter title, the exact
+  /// question, and the student's answer — everything the AI needs to evaluate.
+  /// Sending a full lesson history on top pushes many requests past provider
+  /// token limits (each lesson is 2000-4000 chars × 10 turns = 40 KB+), which
+  /// exhausts all providers and causes the emergency responder to fire, returning
+  /// an offline "Study Note" instead of AI feedback.
+  List<Map<String, String>> _checkHistory() {
+    if (_history.isEmpty) return [];
+    // Keep at most the last assistant turn (the lesson) so the AI knows the
+    // context, but no more.
+    return _history.length >= 2
+        ? _history.sublist(_history.length - 2)
+        : List.of(_history);
+  }
+
   Future<void> _saveState({bool forceCompleted = false}) async {
     if (_courseId == null) return;
 
@@ -709,12 +745,11 @@ class LecturerProvider extends ChangeNotifier {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /// Extract the check question text from the AI lesson.
-  /// The AI is instructed to place it after "✅ Check Your Understanding".
-  /// Extract the check question from the lesson response.
   ///
   /// In JSON mode, lesson is a blocks JSON string. The question lives in the
-  /// last [exercise] block, or the first content block after a heading that
-  /// contains "Check Your Understanding".
+  /// last [exercise] block. The json_validator normalises the field to
+  /// "content", but if the AI emits both "content": "" and "text": "...",
+  /// the validator may leave content blank — so we check both fields.
   ///
   /// In legacy markdown mode, scan the plain text for the marker heading.
   String? _extractCheckQuestion(String lesson) {
@@ -730,12 +765,18 @@ class LecturerProvider extends ChangeNotifier {
         if (decoded != null && decoded['blocks'] is List) {
           final blocks = decoded['blocks'] as List;
 
-          // Priority 1: last exercise block = the check question
+          // Priority 1: last exercise block = the check question.
+          // Check both "content" and "text" fields — the AI sometimes returns
+          // one or the other, and edge cases can leave "content" blank while
+          // "text" holds the actual question.
           for (int i = blocks.length - 1; i >= 0; i--) {
             final b = blocks[i] as Map<String, dynamic>?;
             if (b == null) continue;
             if (b['type'] == 'exercise') {
-              final q = (b['content'] as String? ?? '').trim();
+              final q = ((b['content'] as String? ?? '').isNotEmpty
+                      ? b['content']
+                      : b['text'] as String? ?? '')
+                  .trim();
               if (q.isNotEmpty) return q;
             }
           }
@@ -751,7 +792,7 @@ class LecturerProvider extends ChangeNotifier {
                 afterCheck = true;
               }
             } else {
-              final c = (blockText).trim();
+              final c = blockText.trim();
               if (c.isNotEmpty && c.length > 10) return c;
             }
           }

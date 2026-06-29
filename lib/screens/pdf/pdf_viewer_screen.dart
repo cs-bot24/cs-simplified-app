@@ -1039,6 +1039,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
 
   // Scroll-intent guard — never fight the user's finger.
   bool _userScrolledUp = false;
+  bool _hasNewMessage  = false;
   static const _kScrollThreshold = 80.0;
 
   @override
@@ -1057,8 +1058,14 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     if (!_scrollCtrl.hasClients) return;
     final nearBottom = _scrollCtrl.position.pixels >=
         _scrollCtrl.position.maxScrollExtent - _kScrollThreshold;
-    if (nearBottom && _userScrolledUp) setState(() => _userScrolledUp = false);
-    else if (!nearBottom && !_userScrolledUp) setState(() => _userScrolledUp = true);
+    if (nearBottom && _userScrolledUp) {
+      setState(() {
+        _userScrolledUp = false;
+        _hasNewMessage  = false; // back at bottom — clear badge
+      });
+    } else if (!nearBottom && !_userScrolledUp) {
+      setState(() => _userScrolledUp = true);
+    }
   }
 
   @override
@@ -1125,7 +1132,13 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
       _messages.add(_LocalMessage(text: displayText ?? question, isUser: true));
       _loading = true;
     });
-    _scrollToBottom();
+    // The user just asked something — jump to the bottom for their own
+    // outgoing message, same as the other chat screens.
+    setState(() {
+      _userScrolledUp = false;
+      _hasNewMessage  = false;
+    });
+    _scrollToBottom(force: true);
 
     try {
       final ai = context.read<AiProvider>();
@@ -1147,6 +1160,9 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
             isUser: false,
           ));
           _loading = false;
+          // The user may have scrolled up while waiting for this reply —
+          // don't yank them down, just flag that something new arrived.
+          if (_userScrolledUp) _hasNewMessage = true;
         });
         _scrollToBottom();
       }
@@ -1159,6 +1175,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
             isError: true,
           ));
           _loading = false;
+          if (_userScrolledUp) _hasNewMessage = true;
         });
         _scrollToBottom();
       }
@@ -1194,7 +1211,34 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
               _buildHandle(),
               _buildHeader(),
               const Divider(height: 1, color: Color(0xFF3A3A3A)),
-              Expanded(child: _buildMessageList(scrollController)),
+              Expanded(
+                child: Stack(
+                  children: [
+                    _buildMessageList(scrollController),
+                    if (_userScrolledUp)
+                      Positioned(
+                        right: 12,
+                        bottom: 10,
+                        child: _hasNewMessage
+                            ? _SheetNewMessagePill(
+                                onTap: () {
+                                  setState(() {
+                                    _userScrolledUp = false;
+                                    _hasNewMessage  = false;
+                                  });
+                                  _scrollToBottom(force: true);
+                                },
+                              )
+                            : _SheetScrollToBottomButton(
+                                onTap: () {
+                                  setState(() => _userScrolledUp = false);
+                                  _scrollToBottom(force: true);
+                                },
+                              ),
+                      ),
+                  ],
+                ),
+              ),
               if (_loading) _buildTypingIndicator(),
               _buildInputBar(),
             ],
@@ -1287,8 +1331,11 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       // Swipe down on the message list dismisses the keyboard
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      physics: const AlwaysScrollableScrollPhysics(),
       itemCount: _messages.length,
-      itemBuilder: (_, i) => _MessageBubble(message: _messages[i]),
+      itemBuilder: (_, i) => RepaintBoundary(
+        child: _MessageBubble(message: _messages[i]),
+      ),
     );
   }
 
@@ -1388,6 +1435,72 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
       ],
     ),
   );
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Scroll-to-bottom affordances (mirrors AiTutorScreen / AiLecturerScreen /
+// WebAiPanel — same "↓ New Message" pattern, kept local to this file since
+// the bottom sheet's color helpers differ slightly from the other screens).
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _SheetScrollToBottomButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SheetScrollToBottomButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _kAccent,
+      shape: const CircleBorder(),
+      elevation: 4,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.all(8),
+          child: Icon(Icons.keyboard_arrow_down_rounded,
+              color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetNewMessagePill extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SheetNewMessagePill({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _kAccent,
+      borderRadius: BorderRadius.circular(18),
+      elevation: 4,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 13),
+              SizedBox(width: 5),
+              Text(
+                'New Message',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 

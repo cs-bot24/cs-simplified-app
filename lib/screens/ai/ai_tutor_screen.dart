@@ -21,9 +21,14 @@ class _AiTutorScreenState extends State<AiTutorScreen>
   final _inputFocus  = FocusNode();
   bool  _showSettings = false;
 
-  // Scroll management — prevents unexpected upward jumps.
-  // When the user intentionally scrolls up to read history, we stop
-  // auto-scrolling. When they return near the bottom, we resume.
+  // ── Scroll architecture ───────────────────────────────────────────────────
+  // One ListView.builder is the only scrollable in this screen (see
+  // _MessageList below). Auto-scroll only ever runs in two situations:
+  //   1. A new message is appended AND the user is already near the
+  //      bottom (or it's their own outgoing message — see _send()).
+  //   2. The user explicitly taps the "↓ New Message" affordance.
+  // Anything else (the AI response rendering, the typing indicator
+  // ticking, theme rebuilds, etc.) must NEVER move the scroll position.
   bool _userScrolledUp = false;
 
   static const _kScrollThreshold = 80.0; // px from bottom = "near bottom"
@@ -43,12 +48,12 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     if (!_scrollCtrl.hasClients) return;
     final pos        = _scrollCtrl.position;
     final nearBottom = pos.pixels >= pos.maxScrollExtent - _kScrollThreshold;
-    if (nearBottom && _userScrolledUp) {
-      // User returned to bottom — re-enable auto-scroll
-      setState(() => _userScrolledUp = false);
-    } else if (!nearBottom && !_userScrolledUp) {
-      // User scrolled up deliberately
-      setState(() => _userScrolledUp = true);
+    final wantUp     = !nearBottom;
+    if (wantUp != _userScrolledUp) {
+      setState(() {
+        _userScrolledUp = wantUp;
+        if (!wantUp) _hasNewMessage = false; // back at bottom — clear badge
+      });
     }
   }
 
@@ -61,17 +66,21 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     super.dispose();
   }
 
-  /// Scrolls to bottom only when the user has NOT manually scrolled up.
-  /// Called after each new message is added and after each block reveal.
+  /// Scrolls to bottom once. Called only when a NEW message is appended
+  /// to the list (see _MessageList.didUpdateWidget) — never on every
+  /// rebuild, and never while the message content itself is re-rendering.
+  ///
+  /// If the user has deliberately scrolled up to read older messages,
+  /// this is a no-op unless [force] is true (used when the user sends
+  /// their own message, or taps the "scroll to bottom" affordance).
   void _scrollToBottomIfNeeded({bool force = false}) {
     if (!_scrollCtrl.hasClients) return;
     if (_userScrolledUp && !force) return;
-    // Use jumpTo during rapid streaming to avoid animation queuing.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollCtrl.hasClients) return;
       _scrollCtrl.animateTo(
         _scrollCtrl.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
       );
     });
@@ -83,11 +92,18 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     if (text.isEmpty) return;
     _controller.clear();
     _inputFocus.unfocus();
-    // Reset scroll position — user sent a new message, force jump to bottom.
-    setState(() => _userScrolledUp = false);
+    // The user just sent a message — always snap to bottom for it,
+    // exactly like ChatGPT does when you hit send.
+    setState(() {
+      _userScrolledUp = false;
+      _hasNewMessage  = false;
+    });
     _scrollToBottomIfNeeded(force: true);
     await ai.ask(text);
-    _scrollToBottomIfNeeded(force: true);
+    // Do NOT force-scroll again here: if the user started reading older
+    // messages while the AI was responding, the new reply should only
+    // auto-scroll into view if they're still near the bottom — that
+    // gating now lives entirely in _MessageList.didUpdateWidget.
   }
 
   // Image upload is temporarily disabled — feature under development.
@@ -161,6 +177,12 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     );
   }
 
+  // True only while the user is scrolled up AND a message has arrived
+  // since they scrolled away from the bottom. Drives the "↓ New Message"
+  // pill. Plain "scrolled up with nothing new" shows no pill at all,
+  // matching ChatGPT (no nag, just lets you keep reading).
+  bool _hasNewMessage = false;
+
   @override
   Widget build(BuildContext context) {
     final auth   = context.watch<AuthProvider>();
@@ -179,26 +201,51 @@ class _AiTutorScreenState extends State<AiTutorScreen>
               _MessageList(
                 scrollCtrl: _scrollCtrl,
                 scheme: scheme,
-                onNewContent: _scrollToBottomIfNeeded,
+                isUserScrolledUp: _userScrolledUp,
+                onNewMessageWhileScrolledUp: () {
+                  if (_hasNewMessage) return;
+                  // Defer — this fires from the child's didUpdateWidget,
+                  // which runs as part of this widget's own build/update
+                  // pass. Calling setState() synchronously here would be
+                  // a setState-during-build hazard; scheduling it for the
+                  // next frame is safe and still feels instant to the user.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && !_hasNewMessage) {
+                      setState(() => _hasNewMessage = true);
+                    }
+                  });
+                },
+                onNewMessageAutoScrolled: _scrollToBottomIfNeeded,
               ),
               if (_userScrolledUp)
                 Positioned(
                   right: 16,
                   bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'tutor_scroll_fab',
-                    backgroundColor: scheme.primary,
-                    elevation: 4,
-                    onPressed: () {
-                      setState(() => _userScrolledUp = false);
-                      _scrollToBottomIfNeeded(force: true);
-                    },
-                    child: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
+                  child: _hasNewMessage
+                      ? _NewMessagePill(
+                          color: scheme.primary,
+                          onTap: () {
+                            setState(() {
+                              _userScrolledUp = false;
+                              _hasNewMessage  = false;
+                            });
+                            _scrollToBottomIfNeeded(force: true);
+                          },
+                        )
+                      : FloatingActionButton.small(
+                          heroTag: 'tutor_scroll_fab',
+                          backgroundColor: scheme.primary,
+                          elevation: 4,
+                          onPressed: () {
+                            setState(() => _userScrolledUp = false);
+                            _scrollToBottomIfNeeded(force: true);
+                          },
+                          child: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
                 ),
             ],
           )),
@@ -414,15 +461,25 @@ class _SettingsPanel extends StatelessWidget {
 
 
 // ── Message List ──────────────────────────────────────────────────────────────
+//
+// The single scrollable parent for the entire chat. Do not nest another
+// ListView/SingleChildScrollView/CustomScrollView inside any list item —
+// every message bubble below renders its full content as one static
+// widget tree (see AiStreamingRenderer / AiBlockRenderer), so this is the
+// only scroll gesture the user ever interacts with.
 
 class _MessageList extends StatefulWidget {
   final ScrollController scrollCtrl;
   final ColorScheme scheme;
-  final VoidCallback onNewContent;
+  final bool isUserScrolledUp;
+  final VoidCallback onNewMessageWhileScrolledUp;
+  final VoidCallback onNewMessageAutoScrolled;
   const _MessageList({
     required this.scrollCtrl,
     required this.scheme,
-    required this.onNewContent,
+    required this.isUserScrolledUp,
+    required this.onNewMessageWhileScrolledUp,
+    required this.onNewMessageAutoScrolled,
   });
 
   @override
@@ -435,15 +492,21 @@ class _MessageListState extends State<_MessageList> {
   @override
   void didUpdateWidget(_MessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Trigger scroll after layout when new messages arrive.
-    // Using didUpdateWidget keeps this completely out of build(),
-    // eliminating any risk of scheduling scroll during a build pass.
+    // Trigger exactly once per NEW message — driven by message count,
+    // never by content re-rendering inside an existing message. This is
+    // deliberately kept out of build(): scheduling a scroll mid-build can
+    // race with the user's own drag gesture and cause the jump bugs this
+    // architecture replaces.
     final ai = context.read<AiProvider>();
     if (ai.messages.length != _lastMessageCount) {
       _lastMessageCount = ai.messages.length;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onNewContent();
-      });
+      if (widget.isUserScrolledUp) {
+        // Never yank the viewport while the user is deliberately reading
+        // older messages — just flag that something new arrived.
+        widget.onNewMessageWhileScrolledUp();
+      } else {
+        widget.onNewMessageAutoScrolled();
+      }
     }
   }
 
@@ -454,11 +517,18 @@ class _MessageListState extends State<_MessageList> {
 
     final totalItems = ai.messages.length + (ai.loading ? 1 : 0);
 
-
     return ListView.builder(
       controller: widget.scrollCtrl,
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       cacheExtent: 500,
+      // Standard platform physics (bouncing on iOS, clamping on
+      // Android/desktop) is exactly what makes this feel identical to
+      // ChatGPT — Flutter's default ScrollableState already cancels any
+      // in-flight animateTo()/ballistic simulation the instant the user
+      // touches the list, so no custom physics subclass is needed here.
+      // AlwaysScrollable just guarantees drag works even when content is
+      // shorter than the viewport (e.g. right after the first message).
+      physics: const AlwaysScrollableScrollPhysics(),
       itemCount: totalItems,
       itemBuilder: (ctx, i) {
         if (ai.loading && i == ai.messages.length) {
@@ -472,6 +542,47 @@ class _MessageListState extends State<_MessageList> {
           ),
         );
       },
+    );
+  }
+}
+
+
+/// The "↓ New Message" pill shown when a message has arrived while the
+/// user was reading older content. Tapping it animates to the bottom —
+/// it never auto-scrolls on its own.
+class _NewMessagePill extends StatelessWidget {
+  final Color color;
+  final VoidCallback onTap;
+  const _NewMessagePill({required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 4,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 15),
+              SizedBox(width: 6),
+              Text(
+                'New Message',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
