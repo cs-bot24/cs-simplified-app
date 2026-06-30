@@ -26,6 +26,7 @@ class AiContentRenderer extends StatelessWidget {
     // ── Attempt 1: clean parse ────────────────────────────────────────────────
     final parsed = AiJsonResponse.tryParse(content);
     if (parsed != null && !parsed.isEmpty) {
+      _debugLog('clean_parse', success: true);
       return AiStreamingRenderer(
         content: content,
         isDark:  dark,
@@ -40,6 +41,7 @@ class AiContentRenderer extends StatelessWidget {
     if (repaired != null) {
       final parsedRepaired = AiJsonResponse.tryParse(repaired);
       if (parsedRepaired != null && !parsedRepaired.isEmpty) {
+        _debugLog('repaired_parse', success: true);
         return AiStreamingRenderer(
           content: repaired,
           isDark:  dark,
@@ -48,23 +50,58 @@ class AiContentRenderer extends StatelessWidget {
       }
     }
 
+    final looksJson = _looksLikeJson(content);
+
     // ── Attempt 3: extract text from partial JSON ─────────────────────────────
     // If the string looks like it contains JSON blocks but is broken,
     // extract all "content"/"text" string values and render as markdown.
     // This ensures the user always sees readable text, never raw JSON.
-    if (_looksLikeJson(content)) {
+    if (looksJson) {
       final extracted = _extractTextFromBrokenJson(content);
       if (extracted != null && extracted.trim().isNotEmpty) {
+        _debugLog('extracted_from_broken_json', success: true);
         Widget child = AiMessageContent(data: extracted, isDark: dark);
         if (padding != null) child = Padding(padding: padding!, child: child);
         return child;
       }
     }
 
+    // ── Hard safety net ───────────────────────────────────────────────────────
+    // If the content is JSON-shaped but every repair/extraction attempt above
+    // failed, NEVER fall through to rendering it as raw markdown — that is
+    // exactly how literal `{"blocks": [...]}` text used to reach the screen.
+    // Show a friendly placeholder instead and log it so the leaking endpoint
+    // can be identified from the logs.
+    if (looksJson) {
+      _debugLog('all_parse_attempts_failed', success: false);
+      Widget child = AiMessageContent(
+        data: "Sorry, I couldn't format that response properly. "
+              "Please try again.",
+        isDark: dark,
+      );
+      if (padding != null) child = Padding(padding: padding!, child: child);
+      return child;
+    }
+
     // ── Fallback: legacy markdown renderer ───────────────────────────────────
+    // Only reached when content does NOT look like JSON at all (true legacy
+    // markdown / plain text), so it is always safe to render verbatim.
+    _debugLog('legacy_markdown', success: true);
     Widget child = AiMessageContent(data: content, isDark: dark);
     if (padding != null) child = Padding(padding: padding!, child: child);
     return child;
+  }
+
+  /// Temporary diagnostic logging (Phase 11 audit) — logs which rendering
+  /// path was taken so any remaining JSON-leak source can be pinpointed from
+  /// the logs. Safe to remove/disable once the rollout is verified clean.
+  void _debugLog(String path, {required bool success}) {
+    assert(() {
+      // ignore: avoid_print
+      print('[AiContentRenderer] path=$path success=$success '
+          'len=${content.length} preview="${content.substring(0, content.length > 60 ? 60 : content.length)}"');
+      return true;
+    }());
   }
 
   /// Returns true if the string appears to be intended as JSON

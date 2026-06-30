@@ -752,6 +752,17 @@ class LecturerProvider extends ChangeNotifier {
   /// the validator may leave content blank — so we check both fields.
   ///
   /// In legacy markdown mode, scan the plain text for the marker heading.
+  /// Returns true if `s` is shaped like a (possibly malformed) JSON blocks
+  /// response rather than legacy markdown — used to stop the legacy
+  /// plain-text scanner in [_extractCheckQuestion] from ever running on raw
+  /// JSON, which was the source of stray JSON fragments leaking into chat.
+  static bool _looksLikeJsonBlocks(String s) {
+    final t = s.trim();
+    return t.startsWith('{') ||
+        t.startsWith('```json') ||
+        t.contains('"blocks"');
+  }
+
   String? _extractCheckQuestion(String lesson) {
     // ── Attempt 1: Parse as JSON blocks (JSON / _JSON_MODE path) ─────────
     try {
@@ -803,6 +814,17 @@ class LecturerProvider extends ChangeNotifier {
     }
 
     // ── Attempt 2: Legacy plain-text marker scan (markdown / legacy mode) ─
+    // GUARD (Phase 11 fix): `lesson` in _JSON_MODE is ALWAYS a JSON blocks
+    // string, never legacy markdown. If Attempt 1 above failed to decode it
+    // (malformed JSON from a weaker fallback provider, schema mismatch,
+    // etc.), this scan used to fall through and search the RAW JSON TEXT for
+    // the "Check Your Understanding" substring, then grab whatever JSON
+    // fragment followed it as the "question" — leaking stray `{`, `"`, `,`
+    // syntax straight into the chat. This scan must only ever run on text
+    // that is NOT JSON in the first place.
+    if (_looksLikeJsonBlocks(lesson)) {
+      return null;
+    }
     const marker = 'Check Your Understanding';
     final idx = lesson.indexOf(marker);
     if (idx == -1) return null;

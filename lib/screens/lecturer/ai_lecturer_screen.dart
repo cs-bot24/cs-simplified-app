@@ -1480,11 +1480,16 @@ class _ExamResultSheet extends StatelessWidget {
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(result.overallFeedback,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white70 : Colors.black54)),
+              // Phase 11 — was a raw Text() widget. Any leaked/malformed JSON
+              // from the backend's custom exam-grading schema (e.g. a model
+              // that nested blocks-JSON inside "overall_feedback") used to be
+              // shown to the user verbatim. Route through the single
+              // rendering entry point so it can never bypass parsing/fallback.
+              child: AiContentRenderer(
+                content: result.overallFeedback,
+                isDark: isDark,
+                selectable: false,
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -1526,10 +1531,14 @@ class _ExamResultSheet extends StatelessWidget {
                                   color: verdictColor)),
                         ]),
                         const SizedBox(height: 4),
-                        Text(r.feedback,
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: isDark ? Colors.white70 : Colors.black54)),
+                        // Phase 11 — same fix as overallFeedback above: route
+                        // through AiContentRenderer instead of a raw Text().
+                        AiContentRenderer(
+                          content: r.feedback,
+                          isDark: isDark,
+                          selectable: false,
+                          padding: EdgeInsets.zero,
+                        ),
                       ],
                     ),
                   );
