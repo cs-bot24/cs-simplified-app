@@ -301,6 +301,34 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  /// Archives a finished exam's countdown — hides it from the active
+  /// dashboard while keeping every readiness statistic intact.
+  static Future<Map<String, dynamic>> archiveExamCountdown({
+    required String courseCode,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/readiness/$courseCode/archive'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Removes the countdown completely (clears the exam date). Study
+  /// statistics are left untouched — only the countdown itself is deleted.
+  static Future<Map<String, dynamic>> deleteExamCountdown({
+    required String courseCode,
+  }) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/exam-prep/readiness/$courseCode'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   static Future<Map<String, dynamic>> getDailyExamTopics({
     required String courseCode,
     String courseTitle = '',
@@ -312,6 +340,39 @@ class ApiClient {
         headers: _headers(auth: true),
       );
       return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Explicit completion callback for a Daily Topic — called by the AI
+  /// Tutor when the student taps "Mark Complete" at the end of an Exam
+  /// Lesson. Never inferred from chat text.
+  static Future<Map<String, dynamic>> completeDailyTopic({
+    required String courseCode,
+    required String topic,
+    String courseTitle = '',
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/daily-topics/$courseCode/complete'
+            '?course_title=${Uri.encodeComponent(courseTitle)}'),
+        headers: _headers(auth: true),
+        body:    jsonEncode({'topic': topic}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// All-time completed Daily Topic names for a course — lets Exam Prep
+  /// show completed badges immediately without regenerating the AI list.
+  static Future<List<dynamic>> getCompletedDailyTopics({
+    required String courseCode,
+  }) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/daily-topics/$courseCode/completed'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res) as List<dynamic>;
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
@@ -1022,6 +1083,12 @@ class ApiClient {
     String? pdfCourseCode,
     String? pdfLevelName,
     String? pdfCategoryName,
+    // ── Exam Prep -> AI Tutor "Exam Lesson" mode ────────────────────────────
+    String? examTopic,
+    String? examCourseCode,
+    String? examCourseTitle,
+    int?    examDaysUntil,
+    bool    examIsReview      = false,
     // ── Phase 4: Live conversation history ────────────────────────────────
     // List of {role, content} maps built from the in-memory _messages list.
     // Sending this gives the AI full session context so follow-up questions
@@ -1040,6 +1107,11 @@ class ApiClient {
         if (pdfCourseCode    != null) 'pdf_course_code':    pdfCourseCode,
         if (pdfLevelName     != null) 'pdf_level_name':     pdfLevelName,
         if (pdfCategoryName  != null) 'pdf_category_name':  pdfCategoryName,
+        if (examTopic        != null) 'exam_topic':         examTopic,
+        if (examCourseCode   != null) 'exam_course_code':   examCourseCode,
+        if (examCourseTitle  != null) 'exam_course_title':  examCourseTitle,
+        if (examDaysUntil    != null) 'exam_days_until':    examDaysUntil,
+        'exam_is_review': examIsReview,
         // Always send history — empty list means no prior context (first message)
         'conversation_history': conversationHistory ?? [],
       };

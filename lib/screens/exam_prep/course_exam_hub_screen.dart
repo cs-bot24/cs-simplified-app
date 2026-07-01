@@ -1783,6 +1783,8 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
   bool            _loading        = true;
   bool            _showTopics     = false;
   bool            _settingDate    = false;
+  bool            _archiving      = false;
+  bool            _deleting       = false;
 
   @override
   void initState() {
@@ -1799,12 +1801,75 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
       final data = ReadinessData.fromJson(res);
       if (mounted) setState(() { _readiness = data; _loading = false; });
 
-      // If exam date is set, also load today's recommended topics
-      if (data.examDate != null && mounted) {
+      // Only fetch Daily Topics for an active, upcoming exam — not for an
+      // archived or already-finished one.
+      if (data.examDate != null && !data.isArchived && !data.isExamPast && mounted) {
         _loadTopics();
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _archiveExam(BuildContext context) async {
+    setState(() => _archiving = true);
+    try {
+      final res  = await ApiClient.archiveExamCountdown(courseCode: widget.course.courseCode);
+      final data = ReadinessData.fromJson(res);
+      if (mounted) setState(() { _readiness = data; _archiving = false; });
+    } catch (_) {
+      if (mounted) setState(() => _archiving = false);
+    }
+  }
+
+  Future<void> _deleteExam(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Exam Countdown?'),
+        content: const Text(
+            'This removes the countdown for this exam completely. Your study '
+            'statistics (materials read, quiz scores, completed topics) will '
+            'be kept — only the countdown itself is removed.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: _kRed),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await ApiClient.deleteExamCountdown(courseCode: widget.course.courseCode);
+      if (mounted) {
+        setState(() {
+          _readiness  = _readiness == null ? null : ReadinessData(
+            courseCode:        _readiness!.courseCode,
+            courseTitle:       _readiness!.courseTitle,
+            readinessPercent:  _readiness!.readinessPercent,
+            materialsRead:     _readiness!.materialsRead,
+            practiceSessions:  _readiness!.practiceSessions,
+            quizSessions:      _readiness!.quizSessions,
+            revisionSessions:  _readiness!.revisionSessions,
+            focusAreasViewed:  _readiness!.focusAreasViewed,
+            avgQuizScore:      _readiness!.avgQuizScore,
+            examDate:          null,
+            daysUntilExam:     null,
+            isArchived:        false,
+            archivedAt:        null,
+          );
+          _topics    = null;
+          _deleting  = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -1816,10 +1881,54 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
       );
       final raw    = res['topics_json'] as String? ?? '{}';
       final parsed = jsonDecode(raw) as Map<String, dynamic>;
+      final completed = List<String>.from(
+          res['completed_topics'] as List? ?? const []);
       if (mounted) {
-        setState(() => _topics = DailyTopicsData.fromJson(parsed));
+        setState(() => _topics = DailyTopicsData.fromJson(parsed).copyWith(
+              completedTopics:     completed,
+              personalized:        res['personalized'] as bool? ?? false,
+              materialSourceCount: (res['material_source_count'] as num?)?.toInt() ?? 0,
+            ));
       }
     } catch (_) {}
+  }
+
+  bool _isTopicCompleted(String topic) =>
+      _topics?.completedTopics.contains(topic) ?? false;
+
+  int get _todayCompletedCount => _topics == null
+      ? 0
+      : _topics!.todayTopics.where((t) => _isTopicCompleted(t.topic)).length;
+
+  /// Auto-launches AI Tutor in Exam Lesson mode for [topic] — the student
+  /// never has to type anything, the lesson begins on its own. Reopening an
+  /// already-completed topic passes isReview so the AI acknowledges that
+  /// and the tutor shows "Previously completed".
+  Future<void> _openTopicLesson(BuildContext context, DailyTopic topic) async {
+    final ai       = context.read<AiProvider>();
+    final isReview = _isTopicCompleted(topic.topic);
+
+    ai.prepareExamLesson(
+      topic:         topic.topic,
+      courseCode:    widget.course.courseCode,
+      courseTitle:   widget.course.courseTitle,
+      daysUntilExam: _readiness?.daysUntilExam,
+      isReview:      isReview,
+    );
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AiTutorScreen()),
+    );
+
+    if (context.mounted) ai.endExamLesson();
+
+    // result == true means the student tapped "Mark Complete" — refresh
+    // readiness + the topic list immediately, no app restart needed.
+    if (result == true && mounted) {
+      await _load();
+      await _loadTopics();
+    }
   }
 
   Future<void> _pickExamDate(BuildContext context) async {
@@ -1908,6 +2017,162 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
       );
     }
 
+    // Archived → compact card, statistics kept but off the active dashboard
+    if (data.isArchived) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withOpacity(0.04) : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: (isDark ? Colors.white : Colors.black).withOpacity(0.08)),
+        ),
+        child: Row(children: [
+          const Text('📦', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Exam Archived',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: scheme.onSurface)),
+                Text(
+                  'Readiness ${data.readinessPercent.round()}% · stats kept, hidden from dashboard',
+                  style: TextStyle(
+                      fontSize: 11, color: isDark ? Colors.white54 : Colors.black45),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _settingDate ? null : () => _pickExamDate(context),
+            child: const Text('Set New Exam'),
+          ),
+        ]),
+      );
+    }
+
+    // Exam date has passed → finished status + Edit / Delete / Archive
+    if (data.isExamPast) {
+      return Container(
+        decoration: BoxDecoration(
+          color: scheme.primary.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: scheme.primary.withOpacity(0.2)),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Text('🏁', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Exam Finished',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: scheme.onSurface)),
+                    Text('Hope it went well!',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white60 : Colors.black54)),
+                  ],
+                ),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            Text('Would you like to archive this exam?',
+                style: TextStyle(
+                    fontSize: 12, color: isDark ? Colors.white54 : Colors.black45)),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _pickExamDate(context),
+                  icon: const Icon(Icons.edit_calendar_rounded, size: 15),
+                  label: const Text('Edit'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _deleting ? null : () => _deleteExam(context),
+                  style: OutlinedButton.styleFrom(foregroundColor: _kRed),
+                  icon: _deleting
+                      ? const SizedBox(width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.delete_outline_rounded, size: 15),
+                  label: const Text('Delete'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _archiving ? null : () => _archiveExam(context),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: scheme.primary, foregroundColor: Colors.white),
+                  icon: _archiving
+                      ? const SizedBox(width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.archive_outlined, size: 15),
+                  label: const Text('Archive'),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      );
+    }
+
+    // Exam is TODAY → dynamic motivational status, no numeric countdown
+    if (data.isExamToday) {
+      final variantA = widget.course.courseCode.hashCode.isEven;
+      return Container(
+        decoration: BoxDecoration(
+          color: _kGreen.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _kGreen.withOpacity(0.3)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(children: [
+          const Text('🍀', style: TextStyle(fontSize: 28)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(variantA ? 'Today is your exam!' : 'Exam Day',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: scheme.onSurface)),
+                const SizedBox(height: 2),
+                Text(
+                  variantA
+                      ? "Best of luck! You've prepared for this."
+                      : 'Stay calm. Revise lightly. Trust your preparation.',
+                  style: TextStyle(
+                      fontSize: 12, color: isDark ? Colors.white60 : Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _pickExamDate(context),
+            child: Icon(Icons.edit_calendar_rounded,
+                size: 18, color: Colors.grey[400]),
+          ),
+        ]),
+      );
+    }
+
     // Exam date set → show countdown + optional daily topics
     final days   = data.daysUntilExam ?? 0;
     final urgency = data.urgencyLabel;
@@ -1930,22 +2195,31 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
           Padding(
             padding: const EdgeInsets.all(14),
             child: Row(children: [
-              // Days badge
+              // Days badge (shows Days + Hours in the last 24 hours)
               Container(
-                width: 54, height: 54,
+                width: data.isLastDay ? 64 : 54,
+                height: 54,
                 decoration: BoxDecoration(
-                    color: color.withOpacity(0.15), shape: BoxShape.circle),
+                    color: color.withOpacity(0.15),
+                    shape: data.isLastDay ? BoxShape.rectangle : BoxShape.circle,
+                    borderRadius: data.isLastDay ? BorderRadius.circular(14) : null),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('$days',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: color)),
-                    Text(days == 1 ? 'day' : 'days',
-                        style: TextStyle(fontSize: 9, color: color)),
-                  ],
+                  children: data.isLastDay
+                      ? [
+                          Text('1 day',
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w900, color: color)),
+                          Text('${data.hoursRemaining}h left',
+                              style: TextStyle(fontSize: 9, color: color)),
+                        ]
+                      : [
+                          Text('$days',
+                              style: TextStyle(
+                                  fontSize: 20, fontWeight: FontWeight.w900, color: color)),
+                          Text(days == 1 ? 'day' : 'days',
+                              style: TextStyle(fontSize: 9, color: color)),
+                        ],
                 ),
               ),
               const SizedBox(width: 12),
@@ -1959,26 +2233,47 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                             fontSize: 14,
                             color: scheme.onSurface)),
                     const SizedBox(height: 2),
-                    Text(dateFmt.format(data.examDate!),
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? Colors.white54 : Colors.black45)),
+                    Text(
+                      data.isLastDay
+                          ? '${dateFmt.format(data.examDate!)} · Days Remaining: 1 · Hours Remaining: ${data.hoursRemaining}'
+                          : dateFmt.format(data.examDate!),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white54 : Colors.black45)),
                     const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(20),
+                    Wrap(spacing: 6, runSpacing: 4, children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          urgency.isEmpty ? '' : '$urgency Priority',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: color),
+                        ),
                       ),
-                      child: Text(
-                        urgency.isEmpty ? '' : '$urgency Priority',
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: color),
-                      ),
-                    ),
+                      if (days < 7)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            data.intensityLabel,
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: scheme.primary),
+                          ),
+                        ),
+                    ]),
                   ],
                 ),
               ),
@@ -2010,6 +2305,21 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                           fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ),
+                  if (_todayCompletedCount > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _kGreen.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '$_todayCompletedCount/${_topics!.todayTopics.length} done',
+                        style: const TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.w700, color: _kGreen),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Icon(
                     _showTopics
                         ? Icons.keyboard_arrow_up_rounded
@@ -2020,55 +2330,103 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                 ]),
               ),
             ),
+            if (_showTopics && _topics!.personalized)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                child: Row(children: [
+                  const Icon(Icons.auto_awesome_rounded, size: 12, color: _kGreen),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      'Personalized from ${_topics!.materialSourceCount} of your uploaded '
+                      'material${_topics!.materialSourceCount == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                          fontSize: 10, fontWeight: FontWeight.w600, color: _kGreen),
+                    ),
+                  ),
+                ]),
+              ),
             if (_showTopics)
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ..._topics!.todayTopics.map((t) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 20, height: 20,
-                            margin: const EdgeInsets.only(top: 1, right: 8),
-                            decoration: BoxDecoration(
-                                color: color.withOpacity(0.15),
-                                shape: BoxShape.circle),
-                            child: Center(
-                              child: Text(
-                                '${_topics!.todayTopics.indexOf(t) + 1}',
-                                style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                    color: color),
+                    ..._topics!.todayTopics.map((t) {
+                      final done = _isTopicCompleted(t.topic);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => _openTopicLesson(context, t),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 20, height: 20,
+                                    margin: const EdgeInsets.only(top: 1, right: 8),
+                                    decoration: BoxDecoration(
+                                        color: done
+                                            ? _kGreen.withOpacity(0.18)
+                                            : color.withOpacity(0.15),
+                                        shape: BoxShape.circle),
+                                    child: Center(
+                                      child: done
+                                          ? const Icon(Icons.check_rounded,
+                                              size: 13, color: _kGreen)
+                                          : Text(
+                                              '${_topics!.todayTopics.indexOf(t) + 1}',
+                                              style: TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: color),
+                                            ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(t.topic,
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                                decoration: done
+                                                    ? TextDecoration.lineThrough
+                                                    : TextDecoration.none,
+                                                color: done
+                                                    ? (isDark ? Colors.white38 : Colors.black38)
+                                                    : null)),
+                                        Text(
+                                          done
+                                              ? 'Completed · tap to review again'
+                                              : '${t.estimatedMinutes} min · ${t.why}',
+                                          style: TextStyle(
+                                              fontSize: 10,
+                                              color: done
+                                                  ? _kGreen
+                                                  : (isDark
+                                                      ? Colors.white54
+                                                      : Colors.black45)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(Icons.chevron_right_rounded,
+                                      size: 16,
+                                      color: isDark ? Colors.white38 : Colors.black26),
+                                ],
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(t.topic,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12)),
-                                Text(
-                                  '${t.estimatedMinutes} min · ${t.why}',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: isDark
-                                          ? Colors.white54
-                                          : Colors.black45),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
+                        ),
+                      );
+                    }),
                     if (_topics!.dailyTip.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Container(

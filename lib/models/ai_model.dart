@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 
 enum ExplanationLevel { beginner, intermediate, advanced }
 
-enum AiMode { normal, examPrep }
+enum AiMode { normal, examPrep, examLesson }
 
 class AiMessage {
   final String text;

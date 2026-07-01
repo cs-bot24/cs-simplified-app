@@ -60,6 +60,20 @@ class AiProvider extends ChangeNotifier {
   final List<String> _sessionConcepts = [];
   String?            _sessionSummary;
 
+  // ── Exam Prep -> AI Tutor "Exam Lesson" mode ──────────────────────────────
+  // Populated by prepareExamLesson() when a Daily Topic card is tapped in
+  // Exam Prep, BEFORE AiTutorScreen is pushed. The screen then calls
+  // beginExamLessonIfNeeded() on its first frame to auto-start teaching —
+  // the student never has to type anything.
+  String? _examTopic;
+  String? _examCourseCode;
+  String? _examCourseTitle;
+  int?    _examDaysUntil;
+  bool    _examIsReview           = false;
+  bool    _examLessonStarted      = false;
+  bool    _examLessonMarkedComplete = false;
+  bool    _completingExamLesson   = false;
+
   // ── Public getters ────────────────────────────────────────────────────────
 
   List<AiMessage>  get messages        => List.unmodifiable(_messages);
@@ -81,12 +95,110 @@ class AiProvider extends ChangeNotifier {
   List<String>     get sessionConcepts => List.unmodifiable(_sessionConcepts);
   bool             get hasSessionContext => _sessionTopics.isNotEmpty;
 
+  // ── Exam Lesson getters ───────────────────────────────────────────────────
+  bool    get isExamLesson       => _mode == AiMode.examLesson;
+  String? get examTopic          => _examTopic;
+  String? get examCourseTitle    => _examCourseTitle;
+  bool    get examIsReview       => _examIsReview;
+  bool    get examLessonMarkedComplete => _examLessonMarkedComplete;
+  bool    get completingExamLesson     => _completingExamLesson;
+  /// True once the lesson has produced its first response and is ready to
+  /// show the "Mark this topic as completed?" action bar.
+  bool    get examLessonAwaitingAction =>
+      isExamLesson && _examLessonStarted && !_examLessonMarkedComplete &&
+      !loading && _messages.isNotEmpty && !_messages.last.isUser;
+
   // ── Mode & Level ──────────────────────────────────────────────────────────
 
   void setMode(AiMode m) { _mode = m; notifyListeners(); }
 
   void toggleExamPrep() {
     _mode = _mode == AiMode.examPrep ? AiMode.normal : AiMode.examPrep;
+    notifyListeners();
+  }
+
+  // ── Exam Lesson lifecycle ─────────────────────────────────────────────────
+
+  /// Called by Exam Prep BEFORE pushing AiTutorScreen. Sets up the context
+  /// for a self-starting Exam Lesson — does NOT make the network call yet
+  /// (the screen isn't mounted). [isReview] is true when the student tapped
+  /// a topic that's already marked complete.
+  void prepareExamLesson({
+    required String topic,
+    required String courseCode,
+    required String courseTitle,
+    int? daysUntilExam,
+    bool isReview = false,
+  }) {
+    _mode                       = AiMode.examLesson;
+    _examTopic                  = topic;
+    _examCourseCode             = courseCode;
+    _examCourseTitle            = courseTitle;
+    _examDaysUntil              = daysUntilExam;
+    _examIsReview               = isReview;
+    _examLessonStarted          = false;
+    _examLessonMarkedComplete   = false;
+    _messages.clear();
+    notifyListeners();
+  }
+
+  /// Called from AiTutorScreen's first frame. Auto-teaches the topic with
+  /// no user input required. No-op if already started (e.g. hot-restart of
+  /// the same screen instance) or if not actually in exam-lesson mode.
+  Future<void> beginExamLessonIfNeeded() async {
+    if (!isExamLesson || _examLessonStarted || _examTopic == null) return;
+    _examLessonStarted = true;
+    await _sendRequest(
+      question: 'Begin today\'s exam lesson on $_examTopic.',
+      announceOnly: true,
+    );
+  }
+
+  /// Student tapped "Mark Complete" at the end of an Exam Lesson.
+  /// Sends an explicit completion callback to Exam Prep's readiness tracker
+  /// (never inferred from parsing the chat text).
+  Future<bool> markExamTopicComplete() async {
+    if (_examCourseCode == null || _examTopic == null) return false;
+    _completingExamLesson = true;
+    notifyListeners();
+    try {
+      await ApiClient.completeDailyTopic(
+        courseCode:  _examCourseCode!,
+        courseTitle: _examCourseTitle ?? _examCourseCode!,
+        topic:       _examTopic!,
+      );
+      _examLessonMarkedComplete = true;
+      return true;
+    } catch (_) {
+      _error = 'Could not save your progress. Please check your connection and try again.';
+      _state = AiState.error;
+      return false;
+    } finally {
+      _completingExamLesson = false;
+      notifyListeners();
+    }
+  }
+
+  /// Student tapped "Review Again" — dismiss the completion prompt for this
+  /// session without marking it complete, so they can keep reading.
+  void dismissExamLessonPrompt() {
+    _examLessonStarted = false;
+    notifyListeners();
+  }
+
+  /// Called when leaving AiTutorScreen after an Exam Lesson. Resets to
+  /// normal AI Tutor mode and clears the lesson-specific chat + context so
+  /// the general AI Tutor comes back clean next time it's opened.
+  void endExamLesson() {
+    _mode = AiMode.normal;
+    _examTopic = null;
+    _examCourseCode = null;
+    _examCourseTitle = null;
+    _examDaysUntil = null;
+    _examIsReview = false;
+    _examLessonStarted = false;
+    _examLessonMarkedComplete = false;
+    _messages.clear();
     notifyListeners();
   }
 
@@ -337,22 +449,28 @@ class AiProvider extends ChangeNotifier {
     String? pdfCourseCode,
     String? pdfLevelName,
     String? pdfCategoryName,
+    // True for the auto-triggered opening message of an Exam Lesson — the
+    // question is synthesized internally, so no user bubble is shown for it.
+    bool    announceOnly     = false,
   }) async {
     final trimmed = question.trim();
     if (trimmed.isEmpty && imageBase64 == null) return;
 
-    // Add user message to the correct message list
+    // Add user message to the correct message list (skipped for the
+    // system-triggered Exam Lesson opener — the student typed nothing).
     final messageList = isPdfRequest ? _pdfMessages : _messages;
-    final userMsg = AiMessage(
-      text:      isImage
-          ? (trimmed.isEmpty ? '📷 Image question' : '📷 $trimmed')
-          : trimmed,
-      isUser:    true,
-      timestamp: DateTime.now(),
-      isImage:   isImage,
-      mode:      _mode,
-    );
-    messageList.add(userMsg);
+    if (!announceOnly) {
+      final userMsg = AiMessage(
+        text:      isImage
+            ? (trimmed.isEmpty ? '📷 Image question' : '📷 $trimmed')
+            : trimmed,
+        isUser:    true,
+        timestamp: DateTime.now(),
+        isImage:   isImage,
+        mode:      _mode,
+      );
+      messageList.add(userMsg);
+    }
 
     _state = AiState.loading;
     _error = null;
@@ -361,13 +479,20 @@ class AiProvider extends ChangeNotifier {
     // ── Phase 4: Build history from all messages BEFORE this new question ──
     // We exclude the user message we just added (it's the question being sent).
     // The history is everything before it — completed exchanges only.
-    final historySource = messageList.sublist(0, messageList.length - 1);
+    // (announceOnly never adds a user message, so there's nothing to exclude.)
+    final historySource = announceOnly
+        ? messageList
+        : messageList.sublist(0, messageList.length - 1);
     final history = _buildConversationHistory(historySource);
 
     try {
       final data = await ApiClient.askAi(
         question:            trimmed,
-        mode:                _mode == AiMode.examPrep ? 'exam_prep' : 'normal',
+        mode:                switch (_mode) {
+          AiMode.examPrep   => 'exam_prep',
+          AiMode.examLesson => 'exam_lesson',
+          AiMode.normal     => 'normal',
+        },
         level:               _level.name,
         imageBase64:         imageBase64,
         imageMimeType:       imageMimeType,
@@ -377,6 +502,11 @@ class AiProvider extends ChangeNotifier {
         pdfLevelName:        pdfLevelName,
         pdfCategoryName:     pdfCategoryName,
         conversationHistory: history,
+        examTopic:           isExamLesson ? _examTopic        : null,
+        examCourseCode:      isExamLesson ? _examCourseCode    : null,
+        examCourseTitle:     isExamLesson ? _examCourseTitle   : null,
+        examDaysUntil:       isExamLesson ? _examDaysUntil     : null,
+        examIsReview:        isExamLesson ? _examIsReview      : false,
       );
 
       final aiMessage = AiMessage(

@@ -149,6 +149,8 @@ class ReadinessData {
   final double?  avgQuizScore;
   final DateTime? examDate;
   final int?     daysUntilExam;
+  final bool     isArchived;
+  final DateTime? archivedAt;
 
   const ReadinessData({
     required this.courseCode,
@@ -162,6 +164,8 @@ class ReadinessData {
     this.avgQuizScore,
     this.examDate,
     this.daysUntilExam,
+    this.isArchived = false,
+    this.archivedAt,
   });
 
   factory ReadinessData.fromJson(Map<String, dynamic> j) => ReadinessData(
@@ -178,15 +182,46 @@ class ReadinessData {
         ? DateTime.tryParse(j['exam_date'] as String)
         : null,
     daysUntilExam:    (j['days_until_exam'] as num?)?.toInt(),
+    isArchived:       j['is_archived'] as bool? ?? false,
+    archivedAt:       j['archived_at'] != null
+        ? DateTime.tryParse(j['archived_at'] as String)
+        : null,
   );
 
   /// Label for urgency based on days remaining
   String get urgencyLabel {
     if (daysUntilExam == null) return '';
+    if (daysUntilExam! < 0)  return 'Finished';
     if (daysUntilExam! <= 1)  return 'Critical';
     if (daysUntilExam! <= 3)  return 'High';
     if (daysUntilExam! <= 7)  return 'Medium';
     return 'Low';
+  }
+
+  bool get isExamToday    => daysUntilExam == 0;
+  bool get isExamPast     => (daysUntilExam ?? 0) < 0;
+  bool get isLastDay      => daysUntilExam == 1;
+
+  /// Hours remaining until the exam day begins (midnight of examDate).
+  /// Only meaningful in the "last 24 hours" window (isLastDay == true).
+  int get hoursRemaining {
+    if (examDate == null) return 0;
+    final examMidnight = DateTime(examDate!.year, examDate!.month, examDate!.day);
+    final diff = examMidnight.difference(DateTime.now());
+    if (diff.isNegative) return 0;
+    return diff.inHours + (diff.inMinutes % 60 > 0 ? 1 : 0);
+  }
+
+  /// Daily Topics recommendation intensity — mirrors the backend's tiering
+  /// in generate_daily_exam_topics() so the UI label always matches what
+  /// the AI was actually told to do.
+  String get intensityLabel {
+    final d = daysUntilExam;
+    if (d == null) return '';
+    if (d <= 1)  return 'Revision only — no new topics';
+    if (d <= 4)  return 'High intensity — 5 topics/day';
+    if (d <= 7)  return 'Steady pace — 3 topics/day';
+    return 'Relaxed pace — 3-4 topics/day';
   }
 }
 
@@ -216,6 +251,9 @@ class DailyTopicsData {
   final int           estimatedStudyHours;
   final List<DailyTopic> todayTopics;
   final String        dailyTip;
+  final List<String>  completedTopics;
+  final bool          personalized;
+  final int           materialSourceCount;
 
   const DailyTopicsData({
     required this.daysUntilExam,
@@ -223,6 +261,9 @@ class DailyTopicsData {
     required this.estimatedStudyHours,
     required this.todayTopics,
     required this.dailyTip,
+    this.completedTopics = const [],
+    this.personalized = false,
+    this.materialSourceCount = 0,
   });
 
   factory DailyTopicsData.fromJson(Map<String, dynamic> j) => DailyTopicsData(
@@ -233,5 +274,21 @@ class DailyTopicsData {
         .map((t) => DailyTopic.fromJson(t as Map<String, dynamic>))
         .toList(),
     dailyTip: j['daily_tip'] as String? ?? '',
+    completedTopics: List<String>.from(j['completed_topics'] as List? ?? const []),
+  );
+
+  DailyTopicsData copyWith({
+    List<String>? completedTopics,
+    bool?          personalized,
+    int?           materialSourceCount,
+  }) => DailyTopicsData(
+    daysUntilExam:       daysUntilExam,
+    urgencyLabel:         urgencyLabel,
+    estimatedStudyHours: estimatedStudyHours,
+    todayTopics:         todayTopics,
+    dailyTip:            dailyTip,
+    completedTopics:     completedTopics ?? this.completedTopics,
+    personalized:        personalized ?? this.personalized,
+    materialSourceCount: materialSourceCount ?? this.materialSourceCount,
   );
 }

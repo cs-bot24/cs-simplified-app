@@ -41,6 +41,8 @@ class _AiTutorScreenState extends State<AiTutorScreen>
       final ai = context.read<AiProvider>();
       ai.loadPlan();
       ai.loadUsage();
+      // No-op unless Exam Prep pre-seeded this screen via prepareExamLesson().
+      ai.beginExamLessonIfNeeded();
     });
   }
 
@@ -255,6 +257,11 @@ class _AiTutorScreenState extends State<AiTutorScreen>
                     onDismiss: () => context.read<AiProvider>().clearError())
                 : const SizedBox.shrink(),
           ),
+          Consumer<AiProvider>(
+            builder: (_, ai, __) => ai.examLessonAwaitingAction
+                ? _ExamLessonActionBar(scheme: scheme)
+                : const SizedBox.shrink(),
+          ),
           _InputBar(
             controller: _controller,
             focusNode:  _inputFocus,
@@ -273,8 +280,16 @@ class _AiTutorScreenState extends State<AiTutorScreen>
         builder: (_, ai, __) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('AI Tutor', style: TextStyle(fontSize: 17)),
-            if (ai.questionsToday > 0)
+            Text(
+              ai.isExamLesson ? (ai.examTopic ?? 'Exam Lesson') : 'AI Tutor',
+              style: const TextStyle(fontSize: 17),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (ai.isExamLesson)
+              Text(ai.examCourseTitle ?? 'Exam Prep lesson',
+                  style: TextStyle(fontSize: 11, color: scheme.primary.withOpacity(0.7)))
+            else if (ai.questionsToday > 0)
               Text('${ai.questionsToday} questions today',
                   style: TextStyle(fontSize: 11, color: scheme.primary.withOpacity(0.7))),
           ],
@@ -342,6 +357,39 @@ class _ModeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final ai = context.watch<AiProvider>();
 
+    if (ai.isExamLesson) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: Colors.orange.withOpacity(0.08),
+        child: Row(
+          children: [
+            const Icon(Icons.menu_book_rounded, size: 13, color: Colors.orange),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                ai.examIsReview
+                    ? 'Previously completed • reviewing again'
+                    : 'Exam Lesson • teaching from scratch',
+                style: const TextStyle(
+                    fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (ai.examLessonMarkedComplete)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('✓ Completed',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.green)),
+              ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -384,6 +432,102 @@ class _ModeBar extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+// ── Exam Lesson completion bar ────────────────────────────────────────────────
+//
+// Shown at the end of every Exam Lesson: "Mark this topic as completed?"
+// with explicit ✓ Mark Complete / Review Again actions. Marking complete
+// sends an explicit callback to Exam Prep (never inferred from chat text)
+// and pops back so the Daily Topics card can refresh live.
+
+class _ExamLessonActionBar extends StatefulWidget {
+  final ColorScheme scheme;
+  const _ExamLessonActionBar({required this.scheme});
+
+  @override
+  State<_ExamLessonActionBar> createState() => _ExamLessonActionBarState();
+}
+
+class _ExamLessonActionBarState extends State<_ExamLessonActionBar> {
+  bool _justCompleted = false;
+
+  Future<void> _onMarkComplete() async {
+    final ai = context.read<AiProvider>();
+    final ok = await ai.markExamTopicComplete();
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _justCompleted = true);
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (mounted) Navigator.of(context).pop(true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ai.error ?? 'Could not save progress. Try again.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ai      = context.watch<AiProvider>();
+    final loading = ai.completingExamLesson;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: BoxDecoration(
+        color: widget.scheme.primary.withOpacity(0.06),
+        border: Border(top: BorderSide(color: widget.scheme.primary.withOpacity(0.15))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _justCompleted
+                ? '✓ Nice work — marked as completed!'
+                : 'Mark this topic as completed?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _justCompleted ? Colors.green : widget.scheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: loading || _justCompleted
+                      ? null
+                      : () => context.read<AiProvider>().dismissExamLessonPrompt(),
+                  child: const Text('Review Again'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: loading || _justCompleted ? null : _onMarkComplete,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: loading
+                      ? const SizedBox(
+                          width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check_circle_rounded, size: 16),
+                  label: const Text('Mark Complete'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -650,6 +794,17 @@ class _MessageBubble extends StatelessWidget {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text('EXAM', style: TextStyle(fontSize: 9, color: Colors.orange, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                  if (message.mode == AiMode.examLesson) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('LESSON', style: TextStyle(fontSize: 9, color: Colors.orange, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ],
