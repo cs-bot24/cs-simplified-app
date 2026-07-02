@@ -26,6 +26,37 @@ const _kAmberL = Color(0xFFB45309);
 const _kGreen  = Color(0xFF4CAF50);
 const _kRed    = Color(0xFFE53935);
 
+/// Auto-launches AI Tutor in Exam Lesson mode for [topic] — the student
+/// never has to type anything, the lesson begins on its own. Shared by
+/// every place a topic recommendation can be tapped (Daily Topics, Exam
+/// Focus Areas, ...) so they all open the exact same teaching experience.
+Future<bool?> launchExamLesson(
+  BuildContext context, {
+  required String topic,
+  required String courseCode,
+  required String courseTitle,
+  int?    daysUntilExam,
+  bool    isReview = false,
+}) async {
+  final ai = context.read<AiProvider>();
+
+  ai.prepareExamLesson(
+    topic:         topic,
+    courseCode:    courseCode,
+    courseTitle:   courseTitle,
+    daysUntilExam: daysUntilExam,
+    isReview:      isReview,
+  );
+
+  final result = await Navigator.push<bool>(
+    context,
+    MaterialPageRoute(builder: (_) => const AiTutorScreen()),
+  );
+
+  if (context.mounted) ai.endExamLesson();
+  return result;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // Course Exam Hub
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1280,7 +1311,8 @@ class _FocusAreasScreenState extends State<_FocusAreasScreen> {
                   color: isDark ? Colors.white54 : Colors.black45)),
           const SizedBox(height: 10),
 
-          ...data.focusAreas.map((f) => _FocusAreaCard(area: f, isDark: isDark)),
+          ...data.focusAreas.map((f) => _FocusAreaCard(
+                area: f, isDark: isDark, course: widget.course)),
         ],
       ),
     );
@@ -1288,9 +1320,10 @@ class _FocusAreasScreenState extends State<_FocusAreasScreen> {
 }
 
 class _FocusAreaCard extends StatelessWidget {
-  final FocusArea area;
-  final bool      isDark;
-  const _FocusAreaCard({required this.area, required this.isDark});
+  final FocusArea  area;
+  final bool       isDark;
+  final ExamCourse course;
+  const _FocusAreaCard({required this.area, required this.isDark, required this.course});
 
   Color get _weightColor {
     switch (area.estimatedWeight.toLowerCase()) {
@@ -1300,11 +1333,25 @@ class _FocusAreaCard extends StatelessWidget {
     }
   }
 
+  Future<void> _openLesson(BuildContext context, String topic) {
+    return launchExamLesson(
+      context,
+      topic:       topic,
+      courseCode:  course.courseCode,
+      courseTitle: course.courseTitle,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openLesson(context, area.topic),
+        child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1348,6 +1395,9 @@ class _FocusAreaCard extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       color: _weightColor)),
             ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded,
+                size: 16, color: isDark ? Colors.white38 : Colors.black26),
           ]),
           if (area.why.isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -1361,22 +1411,27 @@ class _FocusAreaCard extends StatelessWidget {
             Wrap(
               spacing: 6,
               runSpacing: 4,
-              children: area.subtopics.map((s) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withOpacity(0.07)
-                      : Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(20),
+              children: area.subtopics.map((s) => GestureDetector(
+                onTap: () => _openLesson(context, s),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.07)
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(s,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white70 : Colors.black54)),
                 ),
-                child: Text(s,
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white70 : Colors.black54)),
               )).toList(),
             ),
           ],
         ],
+      ),
+        ),
       ),
     );
   }
@@ -1785,6 +1840,7 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
   bool            _settingDate    = false;
   bool            _archiving      = false;
   bool            _deleting       = false;
+  bool            _loadingTopics  = false;
 
   @override
   void initState() {
@@ -1873,24 +1929,31 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
     }
   }
 
-  Future<void> _loadTopics() async {
+  Future<void> _loadTopics({bool forceRefresh = false}) async {
+    if (mounted) setState(() => _loadingTopics = true);
     try {
       final res = await ApiClient.getDailyExamTopics(
-        courseCode:  widget.course.courseCode,
-        courseTitle: widget.course.courseTitle,
+        courseCode:   widget.course.courseCode,
+        courseTitle:  widget.course.courseTitle,
+        forceRefresh: forceRefresh,
       );
       final raw    = res['topics_json'] as String? ?? '{}';
       final parsed = jsonDecode(raw) as Map<String, dynamic>;
       final completed = List<String>.from(
           res['completed_topics'] as List? ?? const []);
       if (mounted) {
-        setState(() => _topics = DailyTopicsData.fromJson(parsed).copyWith(
-              completedTopics:     completed,
-              personalized:        res['personalized'] as bool? ?? false,
-              materialSourceCount: (res['material_source_count'] as num?)?.toInt() ?? 0,
-            ));
+        setState(() {
+          _topics = DailyTopicsData.fromJson(parsed).copyWith(
+            completedTopics:     completed,
+            personalized:        res['personalized'] as bool? ?? false,
+            materialSourceCount: (res['material_source_count'] as num?)?.toInt() ?? 0,
+          );
+          _loadingTopics = false;
+        });
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _loadingTopics = false);
+    }
   }
 
   bool _isTopicCompleted(String topic) =>
@@ -1905,10 +1968,10 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
   /// already-completed topic passes isReview so the AI acknowledges that
   /// and the tutor shows "Previously completed".
   Future<void> _openTopicLesson(BuildContext context, DailyTopic topic) async {
-    final ai       = context.read<AiProvider>();
     final isReview = _isTopicCompleted(topic.topic);
 
-    ai.prepareExamLesson(
+    final result = await launchExamLesson(
+      context,
       topic:         topic.topic,
       courseCode:    widget.course.courseCode,
       courseTitle:   widget.course.courseTitle,
@@ -1916,15 +1979,10 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
       isReview:      isReview,
     );
 
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AiTutorScreen()),
-    );
-
-    if (context.mounted) ai.endExamLesson();
-
     // result == true means the student tapped "Mark Complete" — refresh
-    // readiness + the topic list immediately, no app restart needed.
+    // readiness + the completed-topics badges immediately, no app restart
+    // needed. The topic LIST itself does not regenerate (see backend
+    // caching) — only completion state changes.
     if (result == true && mounted) {
       await _load();
       await _loadTopics();
@@ -2286,9 +2344,48 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
             ]),
           ),
 
-          // Daily topics (expandable)
-          if (_topics != null) ...[
+          // Daily topics (expandable) — also shown while the very first
+          // generation for today is still in flight, so the student sees
+          // clear "Generating..." progress instead of nothing happening.
+          if (_topics != null || _loadingTopics) ...[
             const Divider(height: 1),
+            if (_topics == null && _loadingTopics)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Text('📚', style: TextStyle(fontSize: 14)),
+                      const SizedBox(width: 8),
+                      Text(
+                        "Generating your topics for today…",
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.primary),
+                      ),
+                    ]),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: LinearProgressIndicator(
+                        minHeight: 5,
+                        backgroundColor: scheme.primary.withOpacity(0.12),
+                        valueColor: AlwaysStoppedAnimation(scheme.primary),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      "Reading your uploaded materials to personalize today's plan…",
+                      style: TextStyle(
+                          fontSize: 10.5,
+                          color: isDark ? Colors.white54 : Colors.black45),
+                    ),
+                  ],
+                ),
+              )
+            else ...[
             InkWell(
               onTap: () => setState(() => _showTopics = !_showTopics),
               borderRadius: const BorderRadius.vertical(
@@ -2305,6 +2402,24 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                           fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ),
+                  if (_loadingTopics)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: SizedBox(
+                        width: 12, height: 12,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: scheme.primary),
+                      ),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: () => _loadTopics(forceRefresh: true),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Icon(Icons.refresh_rounded,
+                            size: 15, color: Colors.grey[400]),
+                      ),
+                    ),
                   if (_todayCompletedCount > 0) ...[
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -2455,6 +2570,7 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                   ],
                 ),
               ),
+            ],
           ],
         ],
       ),

@@ -332,11 +332,13 @@ class ApiClient {
   static Future<Map<String, dynamic>> getDailyExamTopics({
     required String courseCode,
     String courseTitle = '',
+    bool   forceRefresh = false,
   }) async {
     try {
       final res = await http.get(
         Uri.parse('$_base/exam-prep/daily-topics/$courseCode'
-            '?course_title=${Uri.encodeComponent(courseTitle)}'),
+            '?course_title=${Uri.encodeComponent(courseTitle)}'
+            '&force_refresh=$forceRefresh'),
         headers: _headers(auth: true),
       );
       return _handle(res);
