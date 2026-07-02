@@ -38,6 +38,31 @@ AiBlockType _typeFromString(String s) {
   return map[s] ?? AiBlockType.unknown;
 }
 
+/// Coerces any decoded-JSON value to plain readable text.
+///
+/// AI providers occasionally emit a nested object (e.g.
+/// {"type":"text","content":"..."}) inside a bullet_list/numbered_list
+/// "items" array, or inside a table cell, instead of a plain string. Naively
+/// calling toString() on that produced a raw Dart map dump in the UI
+/// (e.g. "{type: text, content: ...}"). This pulls the actual text out
+/// instead.
+String _coerceBlockText(dynamic e) {
+  if (e == null) return '';
+  if (e is String) return e.trim();
+  if (e is Map) {
+    for (final key in const ['content', 'text', 'item', 'value', 'label', 'name']) {
+      final v = e[key];
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    }
+    // Nothing text-like found — last resort, join any string values.
+    return e.values.whereType<String>().map((s) => s.trim()).where((s) => s.isNotEmpty).join(' — ');
+  }
+  if (e is List) {
+    return e.map(_coerceBlockText).where((s) => s.isNotEmpty).join(', ');
+  }
+  return e.toString().trim();
+}
+
 // ── Single block ──────────────────────────────────────────────────────────────
 
 @immutable
@@ -74,18 +99,18 @@ class AiBlock {
   // lists
   List<String> get items =>
       (raw['items'] as List<dynamic>? ?? [])
-          .map((e) => e.toString().trim())
+          .map(_coerceBlockText)
           .where((e) => e.isNotEmpty)
           .toList();
 
   // table
   List<String> get headers =>
-      (raw['headers'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      (raw['headers'] as List<dynamic>? ?? []).map(_coerceBlockText).toList();
 
   List<List<String>> get rows =>
       (raw['rows'] as List<dynamic>? ?? []).map((row) {
-        if (row is List) return row.map((c) => c.toString()).toList();
-        return <String>[row.toString()];
+        if (row is List) return row.map(_coerceBlockText).toList();
+        return <String>[_coerceBlockText(row)];
       }).toList();
 
   // diagram
@@ -95,7 +120,7 @@ class AiBlock {
   String? _s(String key) {
     final v = raw[key];
     if (v == null) return null;
-    final s = v.toString().trim();
+    final s = _coerceBlockText(v);
     return s.isEmpty ? null : s;
   }
 }
