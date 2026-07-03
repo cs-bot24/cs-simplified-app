@@ -1652,4 +1652,142 @@ class ApiClient {
       return _handle(res);
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
+
+  // ── AI Mock Exam — Phase 1: CBT Engine ────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getMockExamConfig({
+    required String courseCode,
+    required String courseTitle,
+  }) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$courseCode/config'
+            '?course_title=${Uri.encodeComponent(courseTitle)}'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Returns the in-progress attempt for [courseCode], or null if none.
+  static Future<Map<String, dynamic>?> getActiveMockExam(String courseCode) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$courseCode/active'),
+        headers: _headers(auth: true),
+      );
+      if (res.statusCode == 404 || res.statusCode == 410) return null;
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> startMockExam({
+    required String courseCode,
+    required String courseTitle,
+    required int    questionCount,
+    required String difficulty,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/mock-exam/start'),
+        headers: _headers(auth: true),
+        body: jsonEncode({
+          'course_code':    courseCode,
+          'course_title':   courseTitle,
+          'question_count': questionCount,
+          'difficulty':     difficulty,
+        }),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getMockExamAttempt(int attemptId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Autosave — fire immediately after every selection / question visit.
+  static Future<Map<String, dynamic>> saveMockExamAnswer({
+    required int    attemptId,
+    required int    questionId,
+    dynamic         answer,
+    bool            visited = true,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId/answer'),
+        headers: _headers(auth: true),
+        body: jsonEncode({
+          'question_id': questionId,
+          'answer':      answer,
+          'visited':     visited,
+        }),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> toggleMockExamFlag({
+    required int attemptId,
+    required int questionId,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId/flag'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'question_id': questionId}),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> submitMockExam(int attemptId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId/submit'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Re-fetches a previously submitted exam's full AI review (Phase 2).
+  static Future<Map<String, dynamic>> getMockExamReview(int attemptId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId/review'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Retries AI explanation generation if it wasn't ready right after submit.
+  static Future<Map<String, dynamic>> regenerateMockExamExplanations(int attemptId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId/regenerate-explanations'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Past submitted mock exams for a course — stored permanently (Phase 2).
+  static Future<List<dynamic>> getMockExamHistory(String courseCode) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$courseCode/history'),
+        headers: _headers(auth: true),
+      );
+      final result = _handle(res);
+      return result is List ? result : <dynamic>[];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
 }

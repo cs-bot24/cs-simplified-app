@@ -20,42 +20,16 @@ import '../../screens/pdf/pdf_viewer_screen.dart';
 import '../../screens/ai/ai_tutor_screen.dart';
 import '../../widgets/ai_content_renderer.dart';
 import '../../widgets/premium_gate.dart';
+import '../../utils/exam_lesson_launcher.dart';
+import 'mock_exam_screen.dart';
 
 const _kAmber  = Color(0xFFD97706);
 const _kAmberL = Color(0xFFB45309);
 const _kGreen  = Color(0xFF4CAF50);
 const _kRed    = Color(0xFFE53935);
 
-/// Auto-launches AI Tutor in Exam Lesson mode for [topic] — the student
-/// never has to type anything, the lesson begins on its own. Shared by
-/// every place a topic recommendation can be tapped (Daily Topics, Exam
-/// Focus Areas, ...) so they all open the exact same teaching experience.
-Future<bool?> launchExamLesson(
-  BuildContext context, {
-  required String topic,
-  required String courseCode,
-  required String courseTitle,
-  int?    daysUntilExam,
-  bool    isReview = false,
-}) async {
-  final ai = context.read<AiProvider>();
-
-  ai.prepareExamLesson(
-    topic:         topic,
-    courseCode:    courseCode,
-    courseTitle:   courseTitle,
-    daysUntilExam: daysUntilExam,
-    isReview:      isReview,
-  );
-
-  final result = await Navigator.push<bool>(
-    context,
-    MaterialPageRoute(builder: (_) => const AiTutorScreen()),
-  );
-
-  if (context.mounted) ai.endExamLesson();
-  return result;
-}
+/// Auto-launches AI Tutor in Exam Lesson mode — see utils/exam_lesson_launcher.dart
+/// (moved there in Phase 2 so Mock Exam's weak-topic review can share it too).
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Course Exam Hub
@@ -198,6 +172,12 @@ class _ActionGrid extends StatelessWidget {
         onTap: () => _push(context, _QuizSetupScreen(course: course)),
       ),
       _ActionDef(
+        emoji: '🖥️',
+        label: 'Mock\nExam',
+        color: const Color(0xFF0EA5E9),
+        onTap: () => _push(context, MockExamSetupScreen(course: course)),
+      ),
+      _ActionDef(
         emoji: '📖',
         label: 'Quick\nRevision',
         color: const Color(0xFF10B981),
@@ -230,8 +210,8 @@ class _ActionGrid extends StatelessWidget {
       ),
       itemBuilder: (_, i) {
         final a = actions[i];
-        // "Ask AI" spans full width if it's the last odd item
-        if (a.wide && actions.length % 2 != 0 && i == actions.length - 1) {
+        // "Ask AI" always spans full width, regardless of item-count parity.
+        if (a.wide && i == actions.length - 1) {
           return GridView.count(
             shrinkWrap: true,
             crossAxisCount: 1,

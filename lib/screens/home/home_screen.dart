@@ -515,6 +515,20 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             // ── 2b. Study Reminders card ─────────────────────────────────────
             const SliverToBoxAdapter(child: _StudyRemindersCard()),
 
+            // ── 2c. Daily quote ──────────────────────────────────────────────
+            // Placed right after the occasional Exam Prep / Study Plan
+            // banners but before Study Champions, so it's always visible on
+            // launch (those two banners only render occasionally, so this
+            // used to require scrolling past Trending + Continue Reading to
+            // find it most of the time).
+            if (home.data?.dailyQuote != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: QuoteCard(quote: home.data!.dailyQuote!),
+                ),
+              ),
+
             // ── 3. Leaderboard entry card ────────────────────────────────────
             if (home.data != null)
               SliverToBoxAdapter(
@@ -572,15 +586,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                 ),
               ),
             ],
-
-            // ── 6. Daily quote ──────────────────────────────────────────────
-            if (home.data?.dailyQuote != null)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: QuoteCard(quote: home.data!.dailyQuote!),
-                ),
-              ),
 
             // ── 7. Quick Actions ────────────────────────────────────────────
             SliverToBoxAdapter(
