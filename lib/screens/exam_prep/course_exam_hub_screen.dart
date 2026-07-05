@@ -1694,6 +1694,14 @@ class _ExamReadinessCardState extends State<_ExamReadinessCard> {
         label: 'Focus Viewed',
         done:  data.focusAreasViewed,
       ),
+      _ActivityItem(
+        icon:  '🖥️',
+        label: 'Mock Exam',
+        done:  data.mockExamCount > 0,
+        value: data.avgMockExamScore != null
+            ? '${data.avgMockExamScore!.round()}%'
+            : null,
+      ),
     ];
 
     return Container(
@@ -1720,6 +1728,19 @@ class _ExamReadinessCardState extends State<_ExamReadinessCard> {
                     fontSize: 18,
                     color: color)),
           ]),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(data.readinessLabel,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+            ),
+          ),
           const SizedBox(height: 8),
 
           // Progress bar
@@ -1889,12 +1910,15 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
             courseCode:        _readiness!.courseCode,
             courseTitle:       _readiness!.courseTitle,
             readinessPercent:  _readiness!.readinessPercent,
+            readinessLabel:    _readiness!.readinessLabel,
             materialsRead:     _readiness!.materialsRead,
             practiceSessions:  _readiness!.practiceSessions,
             quizSessions:      _readiness!.quizSessions,
             revisionSessions:  _readiness!.revisionSessions,
             focusAreasViewed:  _readiness!.focusAreasViewed,
             avgQuizScore:      _readiness!.avgQuizScore,
+            mockExamCount:     _readiness!.mockExamCount,
+            avgMockExamScore:  _readiness!.avgMockExamScore,
             examDate:          null,
             daysUntilExam:     null,
             isArchived:        false,
@@ -2447,7 +2471,7 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ..._topics!.todayTopics.map((t) {
+                    ..._topics!.sortedTopics.map((t) {
                       final done = _isTopicCompleted(t.topic);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
@@ -2475,7 +2499,7 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                                           ? const Icon(Icons.check_rounded,
                                               size: 13, color: _kGreen)
                                           : Text(
-                                              '${_topics!.todayTopics.indexOf(t) + 1}',
+                                              '${_topics!.sortedTopics.indexOf(t) + 1}',
                                               style: TextStyle(
                                                   fontSize: 9,
                                                   fontWeight: FontWeight.w700,
