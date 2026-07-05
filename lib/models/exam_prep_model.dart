@@ -141,12 +141,15 @@ class ReadinessData {
   final String   courseCode;
   final String   courseTitle;
   final double   readinessPercent;
+  final String   readinessLabel;   // Not Ready | Needs Revision | Almost Ready | Exam Ready
   final int      materialsRead;
   final int      practiceSessions;
   final int      quizSessions;
   final int      revisionSessions;
   final bool     focusAreasViewed;
   final double?  avgQuizScore;
+  final int      mockExamCount;
+  final double?  avgMockExamScore;
   final DateTime? examDate;
   final int?     daysUntilExam;
   final bool     isArchived;
@@ -156,12 +159,15 @@ class ReadinessData {
     required this.courseCode,
     required this.courseTitle,
     required this.readinessPercent,
+    this.readinessLabel = 'Not Ready',
     required this.materialsRead,
     required this.practiceSessions,
     required this.quizSessions,
     required this.revisionSessions,
     required this.focusAreasViewed,
     this.avgQuizScore,
+    this.mockExamCount = 0,
+    this.avgMockExamScore,
     this.examDate,
     this.daysUntilExam,
     this.isArchived = false,
@@ -172,12 +178,15 @@ class ReadinessData {
     courseCode:       j['course_code']       as String,
     courseTitle:      j['course_title']      as String,
     readinessPercent: (j['readiness_percent'] as num?)?.toDouble() ?? 0,
+    readinessLabel:   j['readiness_label'] as String? ?? 'Not Ready',
     materialsRead:    (j['materials_read']   as num?)?.toInt() ?? 0,
     practiceSessions: (j['practice_sessions'] as num?)?.toInt() ?? 0,
     quizSessions:     (j['quiz_sessions']    as num?)?.toInt() ?? 0,
     revisionSessions: (j['revision_sessions'] as num?)?.toInt() ?? 0,
     focusAreasViewed: j['focus_areas_viewed'] as bool? ?? false,
     avgQuizScore:     (j['avg_quiz_score']   as num?)?.toDouble(),
+    mockExamCount:    (j['mock_exam_count'] as num?)?.toInt() ?? 0,
+    avgMockExamScore: (j['avg_mock_exam_score'] as num?)?.toDouble(),
     examDate:         j['exam_date'] != null
         ? DateTime.tryParse(j['exam_date'] as String)
         : null,
@@ -291,4 +300,18 @@ class DailyTopicsData {
     personalized:        personalized ?? this.personalized,
     materialSourceCount: materialSourceCount ?? this.materialSourceCount,
   );
+
+  /// Phase 3 — Daily Topics Integration: the backend already orders
+  /// [todayTopics] weakest-mock-exam-topic first. This keeps that order for
+  /// anything not yet done, but sinks completed topics to the bottom of the
+  /// list instead of hiding them, so progress is visible and completed work
+  /// gradually moves down rather than disappearing.
+  List<DailyTopic> get sortedTopics {
+    final incomplete = <DailyTopic>[];
+    final done        = <DailyTopic>[];
+    for (final t in todayTopics) {
+      (completedTopics.contains(t.topic) ? done : incomplete).add(t);
+    }
+    return [...incomplete, ...done];
+  }
 }
