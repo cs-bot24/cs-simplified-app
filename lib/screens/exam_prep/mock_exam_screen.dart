@@ -8,7 +8,9 @@
 // MockExamResultScreen (score only — no analytics/AI explanations in Phase 1).
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
@@ -17,6 +19,7 @@ import '../../models/mock_exam_model.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/premium_gate.dart';
 import '../../utils/exam_lesson_launcher.dart';
+import 'mock_exam_history_screen.dart';
 
 const _kMockPrimary = Color(0xFF0EA5E9);   // sky blue — distinct from other exam tools
 const _kMockDark    = Color(0xFF0369A1);
@@ -24,6 +27,28 @@ const _kGreen       = Color(0xFF22C55E);
 const _kAmber       = Color(0xFFF59E0B);
 const _kRed         = Color(0xFFEF4444);
 const _kGrey        = Color(0xFF9CA3AF);
+
+/// Phase 5 polish — one consistent transition (subtle fade + upward slide)
+/// used across every Mock Exam screen change, instead of the platform's
+/// default abrupt push, so Setup → Exam → Result → History feels like one
+/// smooth flow rather than separate disconnected screens.
+Route<T> _mockExamRoute<T>(Widget page) {
+  return PageRouteBuilder<T>(
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Setup screen
@@ -44,6 +69,8 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
 
   int    _count      = 20;
   String _difficulty = 'medium';
+  String _mode       = 'exam';   // practice | exam | challenge (Phase 5)
+  bool   _lecturerStyle = false;      // Premium
   bool   _starting    = false;
   String? _startError;
 
@@ -92,7 +119,7 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
       }
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => MockExamScreen(
+        _mockExamRoute(MockExamScreen(
             course: widget.course, attempt: attempt)),
       );
     } catch (_) {
@@ -110,7 +137,7 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => MockExamResultScreen(
+        _mockExamRoute(MockExamResultScreen(
             course: widget.course, review: review)),
       );
     } catch (_) {
@@ -130,12 +157,14 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
         courseTitle:   widget.course.courseTitle,
         questionCount: _count,
         difficulty:    _difficulty,
+        mode:          _mode,
+        lecturerStyle: _lecturerStyle,
       );
       final attempt = MockExamAttempt.fromJson(raw);
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => MockExamScreen(
+        _mockExamRoute(MockExamScreen(
             course: widget.course, attempt: attempt)),
       );
     } catch (e) {
@@ -150,6 +179,47 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
 
   int get _estimatedMinutes =>
       _config?.estimatedMinutes[_count.toString()] ?? ((_count * 1.5).round());
+
+  void _showPremiumSheet(BuildContext context, String feature) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('👑', style: TextStyle(fontSize: 40)),
+            const SizedBox(height: 12),
+            Text('$feature is a Premium feature',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 8),
+            const Text(
+                'Upgrade to unlock unlimited mock exams, bigger question sets, '
+                'Challenge Mode, Lecturer Style exams, AI Readiness Prediction, '
+                'and Advanced Analytics.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _kMockPrimary, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: const Text('Got it', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +237,16 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
         title: const Text('Mock Exam'),
         backgroundColor: _kMockDark,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'History & Stats',
+            icon: const Icon(Icons.bar_chart_rounded),
+            onPressed: () => Navigator.push(
+        context,
+        _mockExamRoute(MockExamHistoryScreen(course: widget.course)),
+            ),
+          ),
+        ],
       ),
       body: _loadingConfig
           ? const Center(child: CircularProgressIndicator(color: _kMockPrimary))
@@ -239,6 +319,115 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
             ),
           ),
 
+          if (!cfg.isPremium && cfg.monthlyLimit != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _kAmber.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _kAmber.withOpacity(0.3)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.info_outline_rounded, size: 16, color: _kAmber),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                      'Practice Mode: ${cfg.monthlyRemaining ?? 0} of ${cfg.monthlyLimit} '
+                      'free mock exams left this month.',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _kAmber)),
+                ),
+              ]),
+            ),
+          ],
+
+          const SizedBox(height: 20),
+          Row(children: [
+            const Text('Mode', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            const Spacer(),
+            if (!cfg.untimedPractice || !cfg.challengeMode)
+              _PremiumChip(onTap: () => _showPremiumSheet(context, 'Practice & Challenge Modes')),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: _ModeCard(
+                emoji: '📗', label: 'Practice',
+                subtitle: 'Untimed · hints',
+                selected: _mode == 'practice',
+                locked: !cfg.untimedPractice,
+                onTap: () {
+                  if (!cfg.untimedPractice) {
+                    _showPremiumSheet(context, 'Practice Mode');
+                    return;
+                  }
+                  setState(() => _mode = 'practice');
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _ModeCard(
+                emoji: '📝', label: 'Exam',
+                subtitle: 'Timed · standard',
+                selected: _mode == 'exam',
+                onTap: () => setState(() => _mode = 'exam'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _ModeCard(
+                emoji: '🔥', label: 'Challenge',
+                subtitle: 'Hard · adaptive',
+                selected: _mode == 'challenge',
+                locked: !cfg.challengeMode,
+                onTap: () {
+                  if (!cfg.challengeMode) {
+                    _showPremiumSheet(context, 'Challenge Mode');
+                    return;
+                  }
+                  setState(() => _mode = 'challenge');
+                },
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Text(
+              _mode == 'practice'
+                  ? 'No timer. Get immediate feedback and hints after every question.'
+                  : _mode == 'challenge'
+                      ? 'Hardest questions only, mixed topics, difficulty adapts to how you\'re doing.'
+                      : 'Timer enabled. Feedback and explanations are shown after you submit.',
+              style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.black45)),
+
+          if (_mode == 'exam') ...[
+            const SizedBox(height: 20),
+            Row(children: [
+              const Text('Lecturer Style', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              const Spacer(),
+              if (!cfg.lecturerStyle)
+                _PremiumChip(onTap: () => _showPremiumSheet(context, 'Lecturer Style Exams')),
+            ]),
+            const SizedBox(height: 6),
+            Text('Generate questions phrased the way your lecturer writes exams.',
+                style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.black45)),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: _lecturerStyle && cfg.lecturerStyle,
+              onChanged: (v) {
+                if (!cfg.lecturerStyle) {
+                  _showPremiumSheet(context, 'Lecturer Style Exams');
+                  return;
+                }
+                setState(() => _lecturerStyle = v);
+              },
+              activeColor: _kMockPrimary,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Match my lecturer\'s style', style: TextStyle(fontSize: 13)),
+            ),
+          ],
+
           if (cfg.hasActiveAttempt) ...[
             const SizedBox(height: 16),
             Container(
@@ -295,8 +484,13 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
           ],
 
           const SizedBox(height: 24),
-          const Text('Number of questions',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          Row(children: [
+            const Text('Number of questions',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            const Spacer(),
+            if (!cfg.isPremium)
+              _PremiumChip(onTap: () => _showPremiumSheet(context, '20 / 50 / 100 Questions')),
+          ]),
           const SizedBox(height: 10),
           Row(
             children: cfg.questionCountOptions.map((n) {
@@ -334,44 +528,61 @@ class _MockExamSetupScreenState extends State<MockExamSetupScreen> {
           ),
 
           const SizedBox(height: 24),
-          const Text('Difficulty',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-          const SizedBox(height: 10),
-          Row(
-            children: cfg.difficultyOptions.map((d) {
-              final selected = d == _difficulty;
-              final label = d[0].toUpperCase() + d.substring(1);
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () => setState(() => _difficulty = d),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? _kMockPrimary
-                            : (isDark ? Colors.white.withOpacity(0.07)
-                                      : Colors.grey.shade100),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: selected ? _kMockPrimary : Colors.transparent,
-                            width: 2),
+          if (_mode == 'challenge') ...[
+            const Text('Difficulty', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: _kRed.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _kRed.withOpacity(0.3)),
+              ),
+              child: const Text('🔥 Hard only — Challenge Mode',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: _kRed)),
+            ),
+          ] else ...[
+            const Text('Difficulty',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            const SizedBox(height: 10),
+            Row(
+              children: cfg.difficultyOptions.map((d) {
+                final selected = d == _difficulty;
+                final label = d[0].toUpperCase() + d.substring(1);
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _difficulty = d),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? _kMockPrimary
+                              : (isDark ? Colors.white.withOpacity(0.07)
+                                        : Colors.grey.shade100),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: selected ? _kMockPrimary : Colors.transparent,
+                              width: 2),
+                        ),
+                        child: Text(label,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                color: selected ? Colors.white
+                                    : Theme.of(context).colorScheme.onSurface)),
                       ),
-                      child: Text(label,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              color: selected ? Colors.white
-                                  : Theme.of(context).colorScheme.onSurface)),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
-          ),
+                );
+              }).toList(),
+            ),
+          ],
 
           const SizedBox(height: 20),
           Container(
@@ -448,6 +659,8 @@ class _MockExamScreenState extends State<MockExamScreen> {
   late Timer      _timer;
   late int        _secondsLeft;
   bool            _submitting = false;
+  bool            _generatingBatch = false;
+  bool            _loadingHint = false;
 
   @override
   void initState() {
@@ -457,6 +670,7 @@ class _MockExamScreenState extends State<MockExamScreen> {
     _markVisited(_currentQuestion.id);
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!widget.attempt.timerEnabled) return;   // Practice Mode — untimed
       if (_secondsLeft <= 0) {
         _timer.cancel();
         _autoSubmit();
@@ -497,6 +711,10 @@ class _MockExamScreenState extends State<MockExamScreen> {
   }
 
   void _select(dynamic value) {
+    // Phase 5 — Practice Mode: once answered, the question shows immediate
+    // feedback and locks — matches how the feedback banner is presented.
+    if (_attempt.isPracticeMode && _currentQuestion.isAnswered) return;
+    HapticFeedback.selectionClick();
     setState(() => _currentQuestion.selectedAnswer = value);
     // Autosave immediately — every selected answer is saved right away.
     ApiClient.saveMockExamAnswer(
@@ -505,6 +723,27 @@ class _MockExamScreenState extends State<MockExamScreen> {
       answer: value,
       visited: true,
     ).catchError((_) => <String, dynamic>{});
+  }
+
+  Future<void> _requestHint() async {
+    if (_loadingHint || _currentQuestion.hint != null) return;
+    setState(() => _loadingHint = true);
+    try {
+      final raw = await ApiClient.getMockExamHint(
+        attemptId: _attempt.attemptId,
+        questionId: _currentQuestion.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _currentQuestion.hint = raw['hint'] as String?;
+        _loadingHint = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingHint = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not get a hint right now. Please try again.')));
+    }
   }
 
   void _toggleFlag() {
@@ -531,8 +770,40 @@ class _MockExamScreenState extends State<MockExamScreen> {
   void _next() {
     if (_current < _attempt.questions.length - 1) {
       _goTo(_current + 1);
-    } else {
-      _confirmSubmit();
+      return;
+    }
+    if (_attempt.isChallengeMode && _attempt.hasMoreToGenerate) {
+      _fetchNextBatch();
+      return;
+    }
+    _confirmSubmit();
+  }
+
+  Future<void> _fetchNextBatch() async {
+    if (_generatingBatch) return;
+    setState(() => _generatingBatch = true);
+    try {
+      final raw = await ApiClient.generateMockExamNextBatch(_attempt.attemptId);
+      final rawQuestions = raw['questions'] as List;
+      // Only append the truly new questions — reparsing the whole list would
+      // wipe the in-session selectedAnswer state already held locally for
+      // the first batch (already safely autosaved server-side either way).
+      final newOnes = rawQuestions
+          .skip(_attempt.questions.length)
+          .map((q) => MockExamQuestion.fromJson(q as Map<String, dynamic>))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _attempt.questions.addAll(newOnes);
+        _attempt.generatedCount = (raw['generated_count'] as num).toInt();
+        _generatingBatch = false;
+      });
+      _goTo(_current + 1);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _generatingBatch = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not generate the next set of challenge questions. Please try again.')));
     }
   }
 
@@ -577,7 +848,7 @@ class _MockExamScreenState extends State<MockExamScreen> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => MockExamResultScreen(
+        _mockExamRoute(MockExamResultScreen(
             course: widget.course, review: review)),
       );
     } catch (_) {
@@ -641,20 +912,35 @@ class _MockExamScreenState extends State<MockExamScreen> {
             Text('Question ${_current + 1} of $total',
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
             const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: isRed ? _kRed : Colors.white24,
-                borderRadius: BorderRadius.circular(20),
+            if (_attempt.timerEnabled)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isRed ? _kRed : Colors.white24,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.timer_outlined, size: 14, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(_timeLabel,
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                ]),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('📗', style: TextStyle(fontSize: 12)),
+                  SizedBox(width: 4),
+                  Text('Untimed',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                ]),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.timer_outlined, size: 14, color: Colors.white),
-                const SizedBox(width: 4),
-                Text(_timeLabel,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
-              ]),
-            ),
           ]),
           actions: [
             IconButton(
@@ -716,57 +1002,140 @@ class _MockExamScreenState extends State<MockExamScreen> {
                       final letter = q.type == 'true_false'
                           ? null
                           : String.fromCharCode(65 + i);
+
+                      // Phase 5 — Practice Mode: once answered, reveal
+                      // correct/incorrect immediately instead of waiting
+                      // for submission.
+                      final showFeedback = _attempt.isPracticeMode && q.isAnswered;
+                      final isCorrectOption = showFeedback && q.correctAnswer == i;
+                      final isWrongSelected = showFeedback && selected && !isCorrectOption;
+
+                      Color bg = selected
+                          ? _kMockPrimary.withOpacity(0.12)
+                          : (isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade50);
+                      Color border = selected
+                          ? _kMockPrimary
+                          : (isDark ? Colors.white12 : Colors.grey.shade200);
+                      Color fg = selected ? _kMockPrimary : scheme.onSurface;
+                      Color circle = selected ? _kMockPrimary : Colors.transparent;
+
+                      if (isCorrectOption) {
+                        bg = _kGreen.withOpacity(0.14);
+                        border = _kGreen;
+                        fg = _kGreen;
+                        circle = _kGreen;
+                      } else if (isWrongSelected) {
+                        bg = _kRed.withOpacity(0.12);
+                        border = _kRed;
+                        fg = _kRed;
+                        circle = _kRed;
+                      }
+
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: GestureDetector(
-                          onTap: () => _select(i),
+                          onTap: showFeedback ? null : () => _select(i),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 150),
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
-                              color: selected
-                                  ? _kMockPrimary.withOpacity(0.12)
-                                  : (isDark ? Colors.white.withOpacity(0.05)
-                                            : Colors.grey.shade50),
+                              color: bg,
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: selected ? _kMockPrimary
-                                      : (isDark ? Colors.white12 : Colors.grey.shade200),
-                                  width: selected ? 2 : 1),
+                              border: Border.all(color: border, width: selected || showFeedback ? 2 : 1),
                             ),
                             child: Row(children: [
                               Container(
                                 width: 28, height: 28,
                                 decoration: BoxDecoration(
-                                  color: selected ? _kMockPrimary : Colors.transparent,
+                                  color: circle,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                      color: selected ? _kMockPrimary : Colors.grey.shade400),
+                                      color: circle != Colors.transparent ? circle : Colors.grey.shade400),
                                 ),
                                 child: Center(
-                                  child: letter != null
-                                      ? Text(letter,
-                                          style: TextStyle(
-                                              fontSize: 12, fontWeight: FontWeight.w700,
-                                              color: selected ? Colors.white : Colors.grey))
-                                      : Icon(
-                                          selected ? Icons.check : null,
-                                          size: 14,
-                                          color: selected ? Colors.white : Colors.grey),
+                                  child: isCorrectOption
+                                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                                      : isWrongSelected
+                                          ? const Icon(Icons.close, size: 14, color: Colors.white)
+                                          : (letter != null
+                                              ? Text(letter,
+                                                  style: TextStyle(
+                                                      fontSize: 12, fontWeight: FontWeight.w700,
+                                                      color: selected ? Colors.white : Colors.grey))
+                                              : Icon(
+                                                  selected ? Icons.check : null,
+                                                  size: 14,
+                                                  color: selected ? Colors.white : Colors.grey)),
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(q.options[i],
-                                    style: TextStyle(
-                                        fontSize: 14,
-                                        color: selected ? _kMockPrimary : scheme.onSurface)),
+                                    style: TextStyle(fontSize: 14, color: fg)),
                               ),
                             ]),
                           ),
                         ),
                       );
                     }),
+
+                    if (_attempt.isPracticeMode && q.isAnswered) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: (q.isCorrect ? _kGreen : _kRed).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(children: [
+                          Icon(q.isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                              size: 18, color: q.isCorrect ? _kGreen : _kRed),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                                q.isCorrect ? 'Correct!' : 'Not quite — the correct answer is highlighted above.',
+                                style: TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600,
+                                    color: q.isCorrect ? _kGreen : _kRed)),
+                          ),
+                        ]),
+                      ),
+                    ],
+
+                    if (_attempt.isPracticeMode && !q.isAnswered) ...[
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _loadingHint ? null : _requestHint,
+                          icon: _loadingHint
+                              ? const SizedBox(width: 14, height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: _kMockPrimary))
+                              : const Icon(Icons.lightbulb_outline_rounded, size: 16, color: _kMockPrimary),
+                          label: Text(q.hint == null ? 'Get a hint' : 'Hint',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _kMockPrimary)),
+                        ),
+                      ),
+                      if (q.hint != null)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(children: [
+                            const Text('💡', style: TextStyle(fontSize: 14)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(q.hint!,
+                                  style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                            ),
+                          ]),
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -805,15 +1174,25 @@ class _MockExamScreenState extends State<MockExamScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: _submitting ? null : _next,
+                    onPressed: (_submitting || _generatingBatch) ? null : _next,
                     style: ElevatedButton.styleFrom(
                         backgroundColor: _kMockPrimary,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: Text(
-                        _current < total - 1 ? 'Next' : 'Submit Exam',
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    child: _generatingBatch
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(width: 16, height: 16,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                              SizedBox(width: 10),
+                              Text('Adapting difficulty…', style: TextStyle(fontWeight: FontWeight.w700)),
+                            ],
+                          )
+                        : Text(
+                            _current < total - 1 ? 'Next' : 'Submit Exam',
+                            style: const TextStyle(fontWeight: FontWeight.w700)),
                   ),
                 ),
               ]),
@@ -920,7 +1299,21 @@ class _QuestionNavigatorSheet extends StatelessWidget {
             const SizedBox(height: 16),
             Wrap(
               spacing: 10, runSpacing: 10,
-              children: List.generate(attempt.questions.length, (i) {
+              children: List.generate(attempt.questionCount, (i) {
+                if (i >= attempt.questions.length) {
+                  // Challenge Mode: not generated yet — locked placeholder.
+                  return Container(
+                    width: 42, height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.grey.shade400),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.lock_outline_rounded, size: 15, color: Colors.grey),
+                    ),
+                  );
+                }
                 final q      = attempt.questions[i];
                 final status = attempt.statusFor(q.id);
                 final isCurrent = i == current;
@@ -1001,6 +1394,51 @@ class MockExamResultScreen extends StatefulWidget {
 class _MockExamResultScreenState extends State<MockExamResultScreen> {
   late MockExamReview _review = widget.review;
   bool _regenerating = false;
+  bool _showCelebration = false;
+  double? _readinessPercent;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_review.celebration.celebrate) {
+      // Brief, tasteful celebration — never more than once per result, and
+      // only for a genuine milestone (90%+ or a big jump over last time).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _showCelebration = true);
+        Future.delayed(const Duration(milliseconds: 1800), () {
+          if (mounted) setState(() => _showCelebration = false);
+          _maybeShowAchievements();
+        });
+      });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowAchievements());
+    }
+    _loadReadiness();
+  }
+
+  Future<void> _loadReadiness() async {
+    try {
+      final raw = await ApiClient.getExamReadiness(
+        courseCode: widget.course.courseCode, courseTitle: widget.course.courseTitle,
+      );
+      if (!mounted) return;
+      setState(() => _readinessPercent = (raw['readiness_percent'] as num?)?.toDouble());
+    } catch (_) {
+      // Certificate is a bonus — silently skip if readiness can't be fetched.
+    }
+  }
+
+  void _maybeShowAchievements() {
+    if (!mounted || _review.newlyUnlocked.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _AchievementUnlockedSheet(achievements: _review.newlyUnlocked),
+    );
+  }
 
   Color _gradeColor(String grade) => switch (grade) {
     'A' => _kGreen,
@@ -1066,10 +1504,15 @@ class _MockExamResultScreenState extends State<MockExamResultScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: Stack(children: [
+        SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
+            if (_readinessPercent != null && _readinessPercent! > 90) ...[
+              const _ExamReadyCertificate(),
+              const SizedBox(height: 16),
+            ],
             if (review.autoSubmitted) ...[
               Container(
                 width: double.infinity,
@@ -1151,7 +1594,27 @@ class _MockExamResultScreenState extends State<MockExamResultScreen> {
               _CountChip(label: 'Skipped', count: review.skippedCount, color: _kGrey),
             ]),
 
-            if (!review.explanationsReady) ...[
+            if (review.aiExplanationsLocked) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(children: [
+                  Text('👑', style: TextStyle(fontSize: 16)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                        'Upgrade to Premium for AI explanations on every wrong answer.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFFB45309),
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ]),
+              ),
+            ] else if (!review.explanationsReady) ...[
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
@@ -1264,21 +1727,218 @@ class _MockExamResultScreenState extends State<MockExamResultScreen> {
                     question: q,
                     courseCode: widget.course.courseCode,
                     courseTitle: widget.course.courseTitle,
+                    explanationsLocked: review.aiExplanationsLocked,
                   )),
             ],
 
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(
+        context,
+        _mockExamRoute(MockExamHistoryScreen(course: widget.course)),
+                ),
                 style: OutlinedButton.styleFrom(
                     foregroundColor: _kMockPrimary,
                     side: const BorderSide(color: _kMockPrimary),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                icon: const Icon(Icons.bar_chart_rounded, size: 18),
+                label: const Text('View History & Progress',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
                 child: const Text('Back to Exam Prep',
                     style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+        ),
+        if (_showCelebration) const _CelebrationOverlay(),
+      ]),
+    );
+  }
+}
+
+class _ExamReadyCertificate extends StatelessWidget {
+  const _ExamReadyCertificate();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0EA5E9), Color(0xFF0369A1)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: _kMockPrimary.withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Column(
+        children: [
+          const Text('🏆', style: TextStyle(fontSize: 36)),
+          const SizedBox(height: 10),
+          const Text('Congratulations!',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
+          const SizedBox(height: 6),
+          const Text('You appear well prepared for your examination.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 13, height: 1.4)),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text('EXAM READY CERTIFICATE',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 0.6)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Phase 5 — tasteful, brief celebration (never more than ~1.8s, and only
+/// for a genuine milestone) rather than a flashy effect on every result.
+class _CelebrationOverlay extends StatefulWidget {
+  const _CelebrationOverlay();
+
+  @override
+  State<_CelebrationOverlay> createState() => _CelebrationOverlayState();
+}
+
+class _CelebrationOverlayState extends State<_CelebrationOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  static const _emojis = ['🎉', '⭐', '🎊', '✨', '🏆'];
+  late final List<_Particle> _particles = List.generate(18, (i) {
+    final angle = (i / 18) * 2 * 3.14159 + (i.isEven ? 0.15 : -0.15);
+    return _Particle(
+      emoji: _emojis[i % _emojis.length],
+      angle: angle,
+      distance: 90 + (i % 4) * 30,
+      delay: (i % 5) * 0.05,
+      size: 18 + (i % 3) * 6,
+    );
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = _controller.value;
+          return Stack(
+            children: _particles.map((p) {
+              final localT = ((t - p.delay).clamp(0.0, 1.0)) / (1 - p.delay);
+              final dist = p.distance * Curves.easeOut.transform(localT);
+              final opacity = (1 - localT).clamp(0.0, 1.0);
+              final dx = dist * math.cos(p.angle);
+              final dy = dist * math.sin(p.angle) - (40 * localT);   // gentle upward drift
+              return Positioned(
+                left: MediaQuery.of(context).size.width / 2 + dx - p.size / 2,
+                top: MediaQuery.of(context).size.height / 2 + dy - p.size / 2,
+                child: Opacity(
+                  opacity: opacity,
+                  child: Text(p.emoji, style: TextStyle(fontSize: p.size)),
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _Particle {
+  final String emoji;
+  final double angle;
+  final double distance;
+  final double delay;
+  final double size;
+  const _Particle({
+    required this.emoji, required this.angle, required this.distance,
+    required this.delay, required this.size,
+  });
+}
+
+class _AchievementUnlockedSheet extends StatelessWidget {
+  final List<Achievement> achievements;
+  const _AchievementUnlockedSheet({required this.achievements});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Achievement Unlocked!',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 16),
+            ...achievements.map((a) => Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                  ),
+                  child: Row(children: [
+                    Text(a.emoji, style: const TextStyle(fontSize: 28)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(a.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                          const SizedBox(height: 2),
+                          Text(a.description,
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                        ],
+                      ),
+                    ),
+                  ]),
+                )),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _kMockPrimary, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: const Text('Nice!', style: TextStyle(fontWeight: FontWeight.w700)),
               ),
             ),
           ],
@@ -1340,8 +2000,10 @@ class _QuestionReviewCard extends StatefulWidget {
   final GradedQuestion question;
   final String         courseCode;
   final String         courseTitle;
+  final bool           explanationsLocked;
   const _QuestionReviewCard({
     required this.question, required this.courseCode, required this.courseTitle,
+    this.explanationsLocked = false,
   });
 
   @override
@@ -1423,6 +2085,11 @@ class _QuestionReviewCardState extends State<_QuestionReviewCard> {
                       const SizedBox(height: 8),
                     ],
                     _ReviewLine(label: 'Key concept', text: exp.keyConcept, color: _kMockPrimary),
+                  ] else if (widget.explanationsLocked) ...[
+                    _ReviewLine(label: 'Correct answer', text: q.correctAnswer.toString(), color: _kGreen),
+                    const SizedBox(height: 8),
+                    const Text('👑 Upgrade to Premium for a full AI explanation of this question.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFFB45309), fontWeight: FontWeight.w600)),
                   ] else ...[
                     Text(
                         q.status == 'skipped'
@@ -1483,6 +2150,80 @@ class _ReviewLine extends StatelessWidget {
 }
 
 // ── Shared small widgets ─────────────────────────────────────────────────────
+
+class _PremiumChip extends StatelessWidget {
+  final VoidCallback onTap;
+  const _PremiumChip({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.amber.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+          Text('👑', style: TextStyle(fontSize: 10)),
+          SizedBox(width: 3),
+          Text('Premium', style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFFB45309))),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ModeCard extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final String subtitle;
+  final bool   selected;
+  final bool   locked;
+  final VoidCallback onTap;
+  const _ModeCard({
+    required this.emoji, required this.label, required this.subtitle,
+    required this.selected, this.locked = false, required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? _kMockPrimary.withOpacity(0.12)
+              : (isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade50),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: selected ? _kMockPrimary : (isDark ? Colors.white12 : Colors.grey.shade200),
+              width: selected ? 2 : 1),
+        ),
+        child: Column(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Text(emoji, style: const TextStyle(fontSize: 18)),
+            if (locked) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.lock_rounded, size: 12, color: Colors.amber),
+            ],
+          ]),
+          const SizedBox(height: 6),
+          Text(label, style: TextStyle(
+              fontWeight: FontWeight.w700, fontSize: 13,
+              color: selected ? _kMockPrimary : Theme.of(context).colorScheme.onSurface)),
+          const SizedBox(height: 2),
+          Text(subtitle, textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : Colors.black45)),
+        ]),
+      ),
+    );
+  }
+}
 
 class _ErrorState extends StatelessWidget {
   final String       message;
