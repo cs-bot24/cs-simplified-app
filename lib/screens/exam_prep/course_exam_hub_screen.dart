@@ -19,6 +19,7 @@ import '../../providers/ai_provider.dart';
 import '../../screens/pdf/pdf_viewer_screen.dart';
 import '../../screens/ai/ai_tutor_screen.dart';
 import '../../widgets/ai_content_renderer.dart';
+import '../../widgets/ai_message_content.dart';
 import '../../widgets/premium_gate.dart';
 import '../../utils/exam_lesson_launcher.dart';
 import 'mock_exam_screen.dart';
@@ -27,6 +28,37 @@ const _kAmber  = Color(0xFFD97706);
 const _kAmberL = Color(0xFFB45309);
 const _kGreen  = Color(0xFF4CAF50);
 const _kRed    = Color(0xFFE53935);
+
+/// Style sheet used when rendering question/option/explanation text through
+/// [AiMessageContent] so the visual weight matches the plain-Text() look
+/// these widgets replace, while still rendering any LaTeX math inline.
+MarkdownStyleSheet _mathTextStyle(
+  bool isDark, {
+  double fontSize = 14,
+  FontWeight fontWeight = FontWeight.normal,
+  Color? color,
+  double height = 1.5,
+}) {
+  final textColor = color ?? (isDark ? Colors.white.withOpacity(0.9) : Colors.black87);
+  return MarkdownStyleSheet(
+    p: TextStyle(fontSize: fontSize, fontWeight: fontWeight, color: textColor, height: height),
+    // Fix 10: programming-course questions embed fenced code blocks
+    // (```java ... ```) inside the question text — style them clearly so
+    // they never render as broken/plain-wrapped text.
+    code: TextStyle(
+      fontFamily: 'monospace',
+      fontSize: fontSize - 1,
+      backgroundColor: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE8ECF8),
+      color: isDark ? const Color(0xFF82B1FF) : const Color(0xFF1A237E),
+    ),
+    codeblockDecoration: BoxDecoration(
+      color: isDark ? const Color(0xFF0D1117) : const Color(0xFFF6F8FA),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: Colors.grey.withOpacity(0.2)),
+    ),
+    codeblockPadding: const EdgeInsets.all(12),
+  );
+}
 
 /// Auto-launches AI Tutor in Exam Lesson mode — see utils/exam_lesson_launcher.dart
 /// (moved there in Phase 2 so Mock Exam's weak-topic review can share it too).
@@ -807,10 +839,11 @@ class _QuizScreenState extends State<_QuizScreen> {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _accentColor.withOpacity(0.2)),
               ),
-              child: Text(_q.question,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600,
-                      height: 1.5)),
+              child: AiMessageContent(
+                data: _q.question,
+                isDark: isDark,
+                styleSheet: _mathTextStyle(isDark, fontSize: 15, fontWeight: FontWeight.w600),
+              ),
             ),
             const SizedBox(height: 18),
 
@@ -861,12 +894,15 @@ class _QuizScreenState extends State<_QuizScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(_q.options[i],
-                            style: TextStyle(
-                                fontSize: 14,
-                                color: selected
-                                    ? _accentColor
-                                    : scheme.onSurface)),
+                        child: AiMessageContent(
+                          data: _q.options[i],
+                          isDark: isDark,
+                          styleSheet: _mathTextStyle(
+                            isDark,
+                            fontSize: 14,
+                            color: selected ? _accentColor : scheme.onSurface,
+                          ),
+                        ),
                       ),
                     ]),
                   ),
@@ -1021,30 +1057,36 @@ class _QuizResultScreenState extends State<_QuizResultScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Q${q.id}. ${q.question}',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 13)),
+                        AiMessageContent(
+                          data: 'Q${q.id}. ${q.question}',
+                          isDark: isDark,
+                          styleSheet: _mathTextStyle(isDark, fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
                         const SizedBox(height: 6),
-                        Text(
-                            '✅ Correct: ${q.options[q.correctIndex]}',
-                            style: const TextStyle(
-                                fontSize: 12, color: _kGreen,
-                                fontWeight: FontWeight.w600)),
+                        AiMessageContent(
+                          data: '✅ Correct: ${q.options[q.correctIndex]}',
+                          isDark: isDark,
+                          styleSheet: _mathTextStyle(isDark, fontSize: 12, fontWeight: FontWeight.w600, color: _kGreen),
+                        ),
                         if (q.selectedIndex != null) ...[
                           const SizedBox(height: 2),
-                          Text(
-                              '❌ You chose: ${q.options[q.selectedIndex!]}',
-                              style: const TextStyle(
-                                  fontSize: 12, color: _kRed)),
+                          AiMessageContent(
+                            data: '❌ You chose: ${q.options[q.selectedIndex!]}',
+                            isDark: isDark,
+                            styleSheet: _mathTextStyle(isDark, fontSize: 12, color: _kRed),
+                          ),
                         ],
                         if (q.explanation.isNotEmpty) ...[
                           const SizedBox(height: 6),
-                          Text(q.explanation,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark
-                                      ? Colors.white60
-                                      : Colors.black54)),
+                          AiMessageContent(
+                            data: q.explanation,
+                            isDark: isDark,
+                            styleSheet: _mathTextStyle(
+                              isDark,
+                              fontSize: 11,
+                              color: isDark ? Colors.white60 : Colors.black54,
+                            ),
+                          ),
                         ],
                       ],
                     ),
@@ -1061,15 +1103,16 @@ class _QuizResultScreenState extends State<_QuizResultScreen> {
                 return ListTile(
                   dense: true,
                   leading: Text(correct ? '✅' : (q.isAnswered ? '❌' : '—')),
-                  title: Text('Q${q.id}. ${q.question}',
-                      style: const TextStyle(fontSize: 12),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                  subtitle: Text(
-                      'Answer: ${q.options[q.correctIndex]}',
-                      style: const TextStyle(
-                          fontSize: 11, color: _kGreen,
-                          fontWeight: FontWeight.w600)),
+                  title: AiMessageContent(
+                    data: 'Q${q.id}. ${q.question}',
+                    isDark: isDark,
+                    styleSheet: _mathTextStyle(isDark, fontSize: 12),
+                  ),
+                  subtitle: AiMessageContent(
+                    data: 'Answer: ${q.options[q.correctIndex]}',
+                    isDark: isDark,
+                    styleSheet: _mathTextStyle(isDark, fontSize: 11, fontWeight: FontWeight.w600, color: _kGreen),
+                  ),
                 );
               }).toList(),
             ),
