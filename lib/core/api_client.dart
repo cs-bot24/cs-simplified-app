@@ -1686,6 +1686,8 @@ class ApiClient {
     required String courseTitle,
     required int    questionCount,
     required String difficulty,
+    String  mode = 'practice',
+    bool    lecturerStyle = false,
   }) async {
     try {
       final res = await http.post(
@@ -1696,6 +1698,8 @@ class ApiClient {
           'course_title':   courseTitle,
           'question_count': questionCount,
           'difficulty':     difficulty,
+          'mode':           mode,
+          'lecturer_style': lecturerStyle,
         }),
       );
       return _handle(res);
@@ -1784,6 +1788,115 @@ class ApiClient {
     try {
       final res = await http.get(
         Uri.parse('$_base/exam-prep/mock-exam/$courseCode/history'),
+        headers: _headers(auth: true),
+      );
+      final result = _handle(res);
+      return result is List ? result : <dynamic>[];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Phase 3 — Mock Exam Dashboard (history, stats, weak topics) ────────────
+
+  /// Full mock exam history — optionally scoped to one course — most recent first.
+  static Future<List<dynamic>> getAllMockExamHistory({String? courseCode}) async {
+    try {
+      final qs  = courseCode != null ? '?course_code=${Uri.encodeComponent(courseCode)}' : '';
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/all/history$qs'),
+        headers: _headers(auth: true),
+      );
+      final result = _handle(res);
+      return result is List ? result : <dynamic>[];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Highest/lowest/average score, total exams, total + average time.
+  static Future<Map<String, dynamic>> getMockExamStatistics({String? courseCode}) async {
+    try {
+      final qs  = courseCode != null ? '?course_code=${Uri.encodeComponent(courseCode)}' : '';
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/all/statistics$qs'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Weak topics ranked weakest-to-strongest, aggregated across every mock
+  /// exam taken for this course.
+  static Future<List<dynamic>> getMockExamWeakTopics(String courseCode) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$courseCode/weak-topics'),
+        headers: _headers(auth: true),
+      );
+      final result = _handle(res);
+      return result is List ? result : <dynamic>[];
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Phase 4 — Premium Mock Exam features ────────────────────────────────────
+
+  /// Challenge Mode: generates the adaptively-harder second half of
+  /// questions, biased by how the student did on the first half.
+  static Future<Map<String, dynamic>> generateMockExamNextBatch(int attemptId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId/next-batch'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// AI Readiness Prediction — expected score range + confidence (Premium).
+  static Future<Map<String, dynamic>> getMockExamReadinessPrediction({
+    required String courseCode,
+    String courseTitle = '',
+  }) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$courseCode/readiness-prediction'
+            '?course_title=${Uri.encodeComponent(courseTitle)}'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Advanced Analytics — topic mastery, difficulty trend, heatmap (Premium).
+  static Future<Map<String, dynamic>> getMockExamAnalytics(String courseCode) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/$courseCode/analytics'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Phase 5 — Practice Mode hints, Achievements ─────────────────────────────
+
+  /// Practice Mode only — returns (and caches server-side) a short hint for
+  /// one question, without revealing the answer.
+  static Future<Map<String, dynamic>> getMockExamHint({
+    required int attemptId,
+    required int questionId,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_base/exam-prep/mock-exam/$attemptId/questions/$questionId/hint'),
+        headers: _headers(auth: true),
+      );
+      return _handle(res);
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Account-wide achievements (First Mock Exam, 5 Exams, 90% Club, etc).
+  static Future<List<dynamic>> getMockExamAchievements() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/exam-prep/mock-exam/all/achievements'),
         headers: _headers(auth: true),
       );
       final result = _handle(res);
