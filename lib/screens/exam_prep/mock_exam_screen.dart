@@ -12,14 +12,47 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../core/api_client.dart';
 import '../../models/exam_prep_model.dart';
 import '../../models/mock_exam_model.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/premium_gate.dart';
+import '../../widgets/ai_message_content.dart';
 import '../../utils/exam_lesson_launcher.dart';
 import 'mock_exam_history_screen.dart';
+
+/// Style sheet used when rendering question/option/explanation text through
+/// [AiMessageContent] so the visual weight matches the plain-Text() look
+/// these widgets replace, while still rendering any LaTeX math inline.
+MarkdownStyleSheet _questionStyleSheet(
+  bool isDark, {
+  double fontSize = 14,
+  FontWeight fontWeight = FontWeight.normal,
+  Color? color,
+  double height = 1.5,
+}) {
+  final textColor = color ?? (isDark ? Colors.white.withOpacity(0.9) : Colors.black87);
+  return MarkdownStyleSheet(
+    p: TextStyle(fontSize: fontSize, fontWeight: fontWeight, color: textColor, height: height),
+    // Fix 10: programming-course questions embed fenced code blocks
+    // (```java ... ```) inside the question text — style them clearly so
+    // they never render as broken/plain-wrapped text.
+    code: TextStyle(
+      fontFamily: 'monospace',
+      fontSize: fontSize - 1,
+      backgroundColor: isDark ? const Color(0xFF1A1A1A) : const Color(0xFFE8ECF8),
+      color: isDark ? const Color(0xFF82B1FF) : const Color(0xFF1A237E),
+    ),
+    codeblockDecoration: BoxDecoration(
+      color: isDark ? const Color(0xFF0D1117) : const Color(0xFFF6F8FA),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: Colors.grey.withOpacity(0.2)),
+    ),
+    codeblockPadding: const EdgeInsets.all(12),
+  );
+}
 
 const _kMockPrimary = Color(0xFF0EA5E9);   // sky blue — distinct from other exam tools
 const _kMockDark    = Color(0xFF0369A1);
@@ -988,9 +1021,11 @@ class _MockExamScreenState extends State<MockExamScreen> {
                               const Icon(Icons.flag_rounded, size: 16, color: _kRed),
                           ]),
                           const SizedBox(height: 10),
-                          Text(q.question,
-                              style: const TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.w600, height: 1.5)),
+                          AiMessageContent(
+                            data: q.question,
+                            isDark: isDark,
+                            styleSheet: _questionStyleSheet(isDark, fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
                         ],
                       ),
                     ),
@@ -1070,8 +1105,11 @@ class _MockExamScreenState extends State<MockExamScreen> {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Text(q.options[i],
-                                    style: TextStyle(fontSize: 14, color: fg)),
+                                child: AiMessageContent(
+                                  data: q.options[i],
+                                  isDark: isDark,
+                                  styleSheet: _questionStyleSheet(isDark, fontSize: 14, color: fg),
+                                ),
                               ),
                             ]),
                           ),
@@ -1130,8 +1168,11 @@ class _MockExamScreenState extends State<MockExamScreen> {
                             const Text('💡', style: TextStyle(fontSize: 14)),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(q.hint!,
-                                  style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                              child: AiMessageContent(
+                                data: q.hint!,
+                                isDark: isDark,
+                                styleSheet: _questionStyleSheet(isDark, fontSize: 12),
+                              ),
                             ),
                           ]),
                         ),
@@ -2057,10 +2098,11 @@ class _QuestionReviewCardState extends State<_QuestionReviewCard> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(q.question,
-                      maxLines: _expanded ? null : 2,
-                      overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  child: AiMessageContent(
+                    data: q.question,
+                    isDark: isDark,
+                    styleSheet: _questionStyleSheet(isDark, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
                 ),
                 Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
                     color: _kGrey, size: 20),
@@ -2136,6 +2178,7 @@ class _ReviewLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (text.isEmpty) return const SizedBox.shrink();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2143,7 +2186,11 @@ class _ReviewLine extends StatelessWidget {
             style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800,
                 color: color ?? _kGrey, letterSpacing: 0.4)),
         const SizedBox(height: 3),
-        Text(text, style: const TextStyle(fontSize: 13, height: 1.4)),
+        AiMessageContent(
+          data: text,
+          isDark: isDark,
+          styleSheet: _questionStyleSheet(isDark, fontSize: 13),
+        ),
       ],
     );
   }
