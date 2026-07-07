@@ -118,31 +118,67 @@ TextStyle _bodyStyle(bool dark, {double size = 14.5}) => TextStyle(
   height: 1.6,
 );
 
-// Renders inline math: splits text by $...$ and renders each part
+// Matches, across all block-card body text (Definition/Theorem/Proof/Example/
+// Solution/Warning/Tip cards, bullet lists, table cells, plain paragraphs):
+//   1: $$...$$          (display)
+//   2: \[...\]          (display)
+//   3: \(...\)          (inline)
+//   4: $...$            (inline)
+//   5/6: bare \begin{ENV}...\end{ENV} with NO surrounding delimiters at all
+//        (ENV backreferenced via \5 so \begin{bmatrix}...\end{pmatrix} can't
+//        mismatch) — this bare-environment case is what previously fell
+//        straight through to a raw, unrendered Text() below.
+final RegExp _mathSpanRegex = RegExp(
+  r'\$\$([\s\S]+?)\$\$'
+  r'|\\\[([\s\S]+?)\\\]'
+  r'|\\\(([\s\S]+?)\\\)'
+  r'|\$((?:[^$\\]|\\.)+?)\$'
+  r'|\\begin\{(matrix|bmatrix|pmatrix|vmatrix|Bmatrix|Vmatrix|smallmatrix|cases|aligned|align\*?|gathered|array)\}([\s\S]+?)\\end\{\5\}',
+);
+
+bool _looksLikeItMightContainMath(String text) =>
+    text.contains(r'$') || text.contains(r'\[') || text.contains(r'\(') || text.contains(r'\begin{');
+
+// Renders inline text with embedded math in ANY of the forms above.
 Widget _inlineText(String text, bool dark, {double size = 14.5}) {
-  if (!text.contains(r'$')) {
+  if (!_looksLikeItMightContainMath(text)) {
     return Text(text, style: _bodyStyle(dark, size: size));
   }
 
   final parts = <InlineSpan>[];
-  final regex  = RegExp(r'\$((?:[^$\\]|\\.)+?)\$');
-  int   last   = 0;
+  int   last  = 0;
 
-  for (final match in regex.allMatches(text)) {
+  for (final match in _mathSpanRegex.allMatches(text)) {
     if (match.start > last) {
       parts.add(TextSpan(
         text: text.substring(last, match.start),
         style: _bodyStyle(dark, size: size),
       ));
     }
+
+    String latex;
+    bool   display;
+    if (match.group(1) != null) {
+      latex = match.group(1)!;   display = true;                    // $$...$$
+    } else if (match.group(2) != null) {
+      latex = match.group(2)!;   display = true;                    // \[...\]
+    } else if (match.group(3) != null) {
+      latex = match.group(3)!;   display = false;                   // \(...\)
+    } else if (match.group(5) != null) {
+      latex = '\\begin{${match.group(5)}}${match.group(6)}\\end{${match.group(5)}}';
+      display = true;                                                // bare \begin{...}
+    } else {
+      latex = match.group(4) ?? ''; display = false;                 // $...$
+    }
+
     parts.add(WidgetSpan(
       alignment: PlaceholderAlignment.middle,
       child: Math.tex(
-        match.group(1) ?? '',
-        mathStyle: MathStyle.text,
+        latex,
+        mathStyle: display ? MathStyle.display : MathStyle.text,
         textStyle: TextStyle(fontSize: size, color: _textColor(dark)),
         onErrorFallback: (e) => Text(
-          '\$${match.group(1)}\$',
+          latex,
           style: TextStyle(fontSize: size, color: _textColor(dark),
               fontFamily: 'monospace'),
         ),
