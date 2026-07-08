@@ -24,6 +24,17 @@ import '../../widgets/premium_gate.dart';
 import '../../utils/exam_lesson_launcher.dart';
 import 'mock_exam_screen.dart';
 
+/// True if [text] is empty, whitespace-only, or nothing but bare/unclosed
+/// math delimiters ("$", "$$", "\(", "\)", etc. left over from a malformed
+/// AI generation) — i.e. it would render as a visually blank option box.
+bool _isDegenerateOptionText(String text) =>
+    RegExp(r'^[\s$\\()\[\]]*$').hasMatch(text);
+
+/// Returns option text safe to render — the original text, or a clear,
+/// honest placeholder if it's degenerate, so an option box is never blank.
+String _safeOptionText(String text) =>
+    _isDegenerateOptionText(text) ? '(option unavailable)' : text;
+
 const _kAmber  = Color(0xFFD97706);
 const _kAmberL = Color(0xFFB45309);
 const _kGreen  = Color(0xFF4CAF50);
@@ -895,7 +906,7 @@ class _QuizScreenState extends State<_QuizScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: AiMessageContent(
-                          data: _q.options[i],
+                          data: _safeOptionText(_q.options[i]),
                           isDark: isDark,
                           styleSheet: _mathTextStyle(
                             isDark,
@@ -1064,14 +1075,14 @@ class _QuizResultScreenState extends State<_QuizResultScreen> {
                         ),
                         const SizedBox(height: 6),
                         AiMessageContent(
-                          data: '✅ Correct: ${q.options[q.correctIndex]}',
+                          data: '✅ Correct: ${_safeOptionText(q.options[q.correctIndex])}',
                           isDark: isDark,
                           styleSheet: _mathTextStyle(isDark, fontSize: 12, fontWeight: FontWeight.w600, color: _kGreen),
                         ),
                         if (q.selectedIndex != null) ...[
                           const SizedBox(height: 2),
                           AiMessageContent(
-                            data: '❌ You chose: ${q.options[q.selectedIndex!]}',
+                            data: '❌ You chose: ${_safeOptionText(q.options[q.selectedIndex!])}',
                             isDark: isDark,
                             styleSheet: _mathTextStyle(isDark, fontSize: 12, color: _kRed),
                           ),
@@ -1109,7 +1120,7 @@ class _QuizResultScreenState extends State<_QuizResultScreen> {
                     styleSheet: _mathTextStyle(isDark, fontSize: 12),
                   ),
                   subtitle: AiMessageContent(
-                    data: 'Answer: ${q.options[q.correctIndex]}',
+                    data: 'Answer: ${_safeOptionText(q.options[q.correctIndex])}',
                     isDark: isDark,
                     styleSheet: _mathTextStyle(isDark, fontSize: 11, fontWeight: FontWeight.w600, color: _kGreen),
                   ),
