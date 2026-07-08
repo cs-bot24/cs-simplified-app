@@ -178,9 +178,9 @@ Widget _inlineText(String text, bool dark, {double size = 14.5}) {
         mathStyle: display ? MathStyle.display : MathStyle.text,
         textStyle: TextStyle(fontSize: size, color: _textColor(dark)),
         onErrorFallback: (e) => Text(
-          latex,
-          style: TextStyle(fontSize: size, color: _textColor(dark),
-              fontFamily: 'monospace'),
+          '⚠ math expression unavailable',
+          style: TextStyle(fontSize: size * 0.9, fontStyle: FontStyle.italic,
+              color: _textColor(dark).withOpacity(0.6)),
         ),
       ),
     ));
@@ -205,21 +205,26 @@ Widget _mathWidget(String latex, bool dark, {bool display = true, double size = 
     mathStyle: display ? MathStyle.display : MathStyle.text,
     textStyle: TextStyle(fontSize: size, color: _textColor(dark)),
     onErrorFallback: (e) {
-      // Fallback: show styled raw LaTeX rather than broken render
+      // Never show the raw LaTeX source to the user — just a clean,
+      // visually consistent "couldn't render this" notice.
       return Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: _kRed.withOpacity(0.08),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: _kRed.withOpacity(0.3)),
         ),
-        child: Text(
-          latex,
-          style: TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 12,
-            color: _kRed.withOpacity(0.8),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 14, color: _kRed.withOpacity(0.8)),
+            const SizedBox(width: 6),
+            Text(
+              'This expression could not be displayed',
+              style: TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic,
+                  color: _kRed.withOpacity(0.8)),
+            ),
+          ],
         ),
       );
     },
