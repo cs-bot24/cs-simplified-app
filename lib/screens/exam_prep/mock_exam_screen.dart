@@ -54,6 +54,17 @@ MarkdownStyleSheet _questionStyleSheet(
   );
 }
 
+/// True if [text] is empty, whitespace-only, or nothing but bare/unclosed
+/// math delimiters ("$", "$$", "\(", "\)", etc. left over from a malformed
+/// AI generation) — i.e. it would render as a visually blank option box.
+bool _isDegenerateOptionText(String text) =>
+    RegExp(r'^[\s$\\()\[\]]*$').hasMatch(text);
+
+/// Returns option text safe to render — the original text, or a clear,
+/// honest placeholder if it's degenerate, so an option box is never blank.
+String _safeOptionText(String text) =>
+    _isDegenerateOptionText(text) ? '(option unavailable)' : text;
+
 const _kMockPrimary = Color(0xFF0EA5E9);   // sky blue — distinct from other exam tools
 const _kMockDark    = Color(0xFF0369A1);
 const _kGreen       = Color(0xFF22C55E);
@@ -1106,7 +1117,7 @@ class _MockExamScreenState extends State<MockExamScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: AiMessageContent(
-                                  data: q.options[i],
+                                  data: _safeOptionText(q.options[i]),
                                   isDark: isDark,
                                   styleSheet: _questionStyleSheet(isDark, fontSize: 14, color: fg),
                                 ),
