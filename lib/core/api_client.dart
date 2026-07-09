@@ -286,10 +286,15 @@ class ApiClient {
     required String courseCode,
     required String courseTitle,
     required DateTime examDate,
+    int? examHour,
+    int? examMinute,
   }) async {
     try {
       final body = <String, dynamic>{
         'exam_date': examDate.toIso8601String().substring(0, 10),
+        if (examHour != null && examMinute != null)
+          'exam_time':
+              '${examHour.toString().padLeft(2, '0')}:${examMinute.toString().padLeft(2, '0')}',
       };
       final res = await http.put(
         Uri.parse('$_base/exam-prep/readiness/$courseCode/exam-date'
