@@ -1887,7 +1887,7 @@ class _ExamCountdownCard extends StatefulWidget {
   State<_ExamCountdownCard> createState() => _ExamCountdownCardState();
 }
 
-class _ExamCountdownCardState extends State<_ExamCountdownCard> {
+class _ExamCountdownCardState extends State<_ExamCountdownCard> with WidgetsBindingObserver {
   ReadinessData?  _readiness;
   DailyTopicsData? _topics;
   bool            _loading        = true;
@@ -1896,11 +1896,85 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
   bool            _archiving      = false;
   bool            _deleting       = false;
   bool            _loadingTopics  = false;
+  Timer?          _tick;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    // The exam-day/exam-past/hours-remaining state below is derived from
+    // `examDate` + "now" — it must never go stale just because this screen
+    // was opened once and left in memory (backgrounded, kept alive in a
+    // tab, etc.), or it gets stuck showing whatever day it was on first
+    // load forever (e.g. permanently stuck on "Exam Day" and never reaching
+    // the "Exam Finished" / Edit-Delete-Archive state). A cheap periodic
+    // rebuild is enough since the actual date math happens fresh in build()
+    // — no network call, just re-evaluating DateTime.now().
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Also do a real server refetch on resume — covers the exam date (or
+    // readiness stats) having changed elsewhere while this screen sat
+    // backgrounded, not just the local day/hour countdown.
+    if (state == AppLifecycleState.resumed && mounted) _load();
+  }
+
+  /// Days until the exam, computed fresh from `now` — NOT the possibly-stale
+  /// value the server returned on the last fetch (see the comment on _tick).
+  int? get _liveDaysUntilExam {
+    final examDate = _readiness?.examDate;
+    if (examDate == null) return null;
+    final today = DateTime.now();
+    final examMidnight = DateTime(examDate.year, examDate.month, examDate.day);
+    final todayMidnight = DateTime(today.year, today.month, today.day);
+    return examMidnight.difference(todayMidnight).inDays;
+  }
+
+  /// The exact exam moment: the student's set time if they gave one,
+  /// otherwise midnight of examDate (the original, time-less behaviour).
+  DateTime? get _liveExamDateTime => _readiness?.examDateTime;
+
+  bool get _liveIsExamToday => _liveDaysUntilExam == 0;
+  // Past the PRECISE exam moment (date + time, if a time was set) — not
+  // just "the next calendar day" — so a countdown for "today at 10:00 AM"
+  // correctly flips to Exam Finished right after 10:00 AM, not at midnight.
+  bool get _liveIsExamPast {
+    final target = _liveExamDateTime;
+    if (target == null) return false;
+    return DateTime.now().isAfter(target);
+  }
+  bool get _liveIsLastDay   => _liveDaysUntilExam == 1;
+
+  /// Hours remaining until the exact exam moment (student's set time, or
+  /// midnight of examDate if no time was set).
+  int get _liveHoursRemaining {
+    final target = _liveExamDateTime;
+    if (target == null) return 0;
+    final diff = target.difference(DateTime.now());
+    if (diff.isNegative) return 0;
+    return diff.inHours;
+  }
+
+  String get _liveUrgencyLabel {
+    final d = _liveDaysUntilExam;
+    if (d == null) return '';
+    if (_liveIsExamPast) return 'Finished';
+    if (d <= 1) return 'Critical';
+    if (d <= 3) return 'High';
+    if (d <= 7) return 'Medium';
+    return 'Low';
   }
 
   Future<void> _load() async {
@@ -1913,8 +1987,8 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
       if (mounted) setState(() { _readiness = data; _loading = false; });
 
       // Only fetch Daily Topics for an active, upcoming exam — not for an
-      // archived or already-finished one.
-      if (data.examDate != null && !data.isArchived && !data.isExamPast && mounted) {
+      // archived or already-finished one. Uses the live (not stale) check.
+      if (data.examDate != null && !data.isArchived && !_liveIsExamPast && mounted) {
         _loadTopics();
       }
     } catch (_) {
@@ -2059,12 +2133,30 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
     );
     if (picked == null || !mounted) return;
 
+    // Ask for the exact exam time too — pre-filled with whatever's already
+    // set (Edit), or a sensible 9:00 AM default (new countdown). This is
+    // what makes "Hours Remaining" and the Exam Day → Exam Finished switch
+    // match the student's actual exam time instead of assuming midnight.
+    final existingHour   = _readiness?.examHour;
+    final existingMinute = _readiness?.examMinute;
+    final pickedTime = await showTimePicker(
+      // ignore: use_build_context_synchronously
+      context: context,
+      initialTime: (existingHour != null && existingMinute != null)
+          ? TimeOfDay(hour: existingHour, minute: existingMinute)
+          : const TimeOfDay(hour: 9, minute: 0),
+      helpText: 'What time is your exam?',
+    );
+    if (!mounted) return;
+
     setState(() => _settingDate = true);
     try {
       final res = await ApiClient.setExamDate(
         courseCode:  widget.course.courseCode,
         courseTitle: widget.course.courseTitle,
         examDate:    picked,
+        examHour:    pickedTime?.hour,
+        examMinute:  pickedTime?.minute,
       );
       final data = ReadinessData.fromJson(res);
       if (mounted) {
@@ -2172,7 +2264,7 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
     }
 
     // Exam date has passed → finished status + Edit / Delete / Archive
-    if (data.isExamPast) {
+    if (_liveIsExamPast) {
       return Container(
         decoration: BoxDecoration(
           color: scheme.primary.withOpacity(0.06),
@@ -2248,7 +2340,7 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
     }
 
     // Exam is TODAY → dynamic motivational status, no numeric countdown
-    if (data.isExamToday) {
+    if (_liveIsExamToday) {
       final variantA = widget.course.courseCode.hashCode.isEven;
       return Container(
         decoration: BoxDecoration(
@@ -2290,14 +2382,25 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
     }
 
     // Exam date set → show countdown + optional daily topics
-    final days   = data.daysUntilExam ?? 0;
-    final urgency = data.urgencyLabel;
+    final days   = _liveDaysUntilExam ?? 0;
+    final urgency = _liveUrgencyLabel;
     final color  = days <= 1
         ? _kRed
         : days <= 3
             ? Colors.orange
             : days <= 7 ? _kAmber : _kGreen;
     final dateFmt = DateFormat('EEE, d MMM yyyy');
+    final timeFmt = DateFormat('h:mm a');
+    // "Thu, 9 Jul 2026 at 10:00 AM" when a time was set, otherwise just the
+    // date — never invents a time the student didn't actually choose.
+    String formatExamDate(DateTime d) {
+      final base = dateFmt.format(d);
+      if (data.hasExamTime) {
+        final t = DateTime(d.year, d.month, d.day, data.examHour!, data.examMinute!);
+        return '$base at ${timeFmt.format(t)}';
+      }
+      return base;
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -2313,20 +2416,20 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
             child: Row(children: [
               // Days badge (shows Days + Hours in the last 24 hours)
               Container(
-                width: data.isLastDay ? 64 : 54,
+                width: _liveIsLastDay ? 64 : 54,
                 height: 54,
                 decoration: BoxDecoration(
                     color: color.withOpacity(0.15),
-                    shape: data.isLastDay ? BoxShape.rectangle : BoxShape.circle,
-                    borderRadius: data.isLastDay ? BorderRadius.circular(14) : null),
+                    shape: _liveIsLastDay ? BoxShape.rectangle : BoxShape.circle,
+                    borderRadius: _liveIsLastDay ? BorderRadius.circular(14) : null),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: data.isLastDay
+                  children: _liveIsLastDay
                       ? [
                           Text('1 day',
                               style: TextStyle(
                                   fontSize: 13, fontWeight: FontWeight.w900, color: color)),
-                          Text('${data.hoursRemaining}h left',
+                          Text('${_liveHoursRemaining}h left',
                               style: TextStyle(fontSize: 9, color: color)),
                         ]
                       : [
@@ -2350,9 +2453,9 @@ class _ExamCountdownCardState extends State<_ExamCountdownCard> {
                             color: scheme.onSurface)),
                     const SizedBox(height: 2),
                     Text(
-                      data.isLastDay
-                          ? '${dateFmt.format(data.examDate!)} · Days Remaining: 1 · Hours Remaining: ${data.hoursRemaining}'
-                          : dateFmt.format(data.examDate!),
+                      _liveIsLastDay
+                          ? '${formatExamDate(data.examDate!)} · Days Remaining: 1 · Hours Remaining: ${_liveHoursRemaining}'
+                          : formatExamDate(data.examDate!),
                       style: TextStyle(
                           fontSize: 11,
                           color: isDark ? Colors.white54 : Colors.black45)),
