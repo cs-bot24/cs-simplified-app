@@ -151,6 +151,11 @@ class ReadinessData {
   final int      mockExamCount;
   final double?  avgMockExamScore;
   final DateTime? examDate;
+  /// Student-set exact exam time (e.g. 10, 0 for 10:00 AM). Both null means
+  /// no time was set — the exam is treated as starting at midnight of
+  /// examDate, exactly as it always has (fully backward compatible).
+  final int?     examHour;
+  final int?     examMinute;
   final int?     daysUntilExam;
   final bool     isArchived;
   final DateTime? archivedAt;
@@ -169,33 +174,61 @@ class ReadinessData {
     this.mockExamCount = 0,
     this.avgMockExamScore,
     this.examDate,
+    this.examHour,
+    this.examMinute,
     this.daysUntilExam,
     this.isArchived = false,
     this.archivedAt,
   });
 
-  factory ReadinessData.fromJson(Map<String, dynamic> j) => ReadinessData(
-    courseCode:       j['course_code']       as String,
-    courseTitle:      j['course_title']      as String,
-    readinessPercent: (j['readiness_percent'] as num?)?.toDouble() ?? 0,
-    readinessLabel:   j['readiness_label'] as String? ?? 'Not Ready',
-    materialsRead:    (j['materials_read']   as num?)?.toInt() ?? 0,
-    practiceSessions: (j['practice_sessions'] as num?)?.toInt() ?? 0,
-    quizSessions:     (j['quiz_sessions']    as num?)?.toInt() ?? 0,
-    revisionSessions: (j['revision_sessions'] as num?)?.toInt() ?? 0,
-    focusAreasViewed: j['focus_areas_viewed'] as bool? ?? false,
-    avgQuizScore:     (j['avg_quiz_score']   as num?)?.toDouble(),
-    mockExamCount:    (j['mock_exam_count'] as num?)?.toInt() ?? 0,
-    avgMockExamScore: (j['avg_mock_exam_score'] as num?)?.toDouble(),
-    examDate:         j['exam_date'] != null
-        ? DateTime.tryParse(j['exam_date'] as String)
-        : null,
-    daysUntilExam:    (j['days_until_exam'] as num?)?.toInt(),
-    isArchived:       j['is_archived'] as bool? ?? false,
-    archivedAt:       j['archived_at'] != null
-        ? DateTime.tryParse(j['archived_at'] as String)
-        : null,
-  );
+  factory ReadinessData.fromJson(Map<String, dynamic> j) {
+    int? examHour, examMinute;
+    final rawTime = j['exam_time'] as String?;
+    if (rawTime != null && rawTime.isNotEmpty) {
+      final parts = rawTime.split(':');
+      if (parts.length >= 2) {
+        examHour   = int.tryParse(parts[0]);
+        examMinute = int.tryParse(parts[1]);
+      }
+    }
+    return ReadinessData(
+      courseCode:       j['course_code']       as String,
+      courseTitle:      j['course_title']      as String,
+      readinessPercent: (j['readiness_percent'] as num?)?.toDouble() ?? 0,
+      readinessLabel:   j['readiness_label'] as String? ?? 'Not Ready',
+      materialsRead:    (j['materials_read']   as num?)?.toInt() ?? 0,
+      practiceSessions: (j['practice_sessions'] as num?)?.toInt() ?? 0,
+      quizSessions:     (j['quiz_sessions']    as num?)?.toInt() ?? 0,
+      revisionSessions: (j['revision_sessions'] as num?)?.toInt() ?? 0,
+      focusAreasViewed: j['focus_areas_viewed'] as bool? ?? false,
+      avgQuizScore:     (j['avg_quiz_score']   as num?)?.toDouble(),
+      mockExamCount:    (j['mock_exam_count'] as num?)?.toInt() ?? 0,
+      avgMockExamScore: (j['avg_mock_exam_score'] as num?)?.toDouble(),
+      examDate:         j['exam_date'] != null
+          ? DateTime.tryParse(j['exam_date'] as String)
+          : null,
+      examHour:         examHour,
+      examMinute:       examMinute,
+      daysUntilExam:    (j['days_until_exam'] as num?)?.toInt(),
+      isArchived:       j['is_archived'] as bool? ?? false,
+      archivedAt:       j['archived_at'] != null
+          ? DateTime.tryParse(j['archived_at'] as String)
+          : null,
+    );
+  }
+
+  /// The exam date combined with the student's set time (or midnight if no
+  /// time was set) — the single source of truth for "has the exam actually
+  /// started yet", used instead of assuming the exam happens at midnight.
+  DateTime? get examDateTime {
+    if (examDate == null) return null;
+    return DateTime(
+      examDate!.year, examDate!.month, examDate!.day,
+      examHour ?? 0, examMinute ?? 0,
+    );
+  }
+
+  bool get hasExamTime => examHour != null && examMinute != null;
 
   /// Label for urgency based on days remaining
   String get urgencyLabel {
@@ -211,12 +244,13 @@ class ReadinessData {
   bool get isExamPast     => (daysUntilExam ?? 0) < 0;
   bool get isLastDay      => daysUntilExam == 1;
 
-  /// Hours remaining until the exam day begins (midnight of examDate).
-  /// Only meaningful in the "last 24 hours" window (isLastDay == true).
+  /// Hours remaining until the exact exam moment (the student's set time,
+  /// or midnight of examDate if no time was set). Only meaningful in the
+  /// "last 24 hours" window (isLastDay == true).
   int get hoursRemaining {
-    if (examDate == null) return 0;
-    final examMidnight = DateTime(examDate!.year, examDate!.month, examDate!.day);
-    final diff = examMidnight.difference(DateTime.now());
+    final target = examDateTime;
+    if (target == null) return 0;
+    final diff = target.difference(DateTime.now());
     if (diff.isNegative) return 0;
     return diff.inHours + (diff.inMinutes % 60 > 0 ? 1 : 0);
   }
