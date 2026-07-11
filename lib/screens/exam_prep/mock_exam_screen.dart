@@ -12,14 +12,15 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../core/api_client.dart';
 import '../../models/exam_prep_model.dart';
 import '../../models/mock_exam_model.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/premium_gate.dart';
+import '../../widgets/ai_message_content.dart';
 import '../../utils/exam_lesson_launcher.dart';
-import 'mock_exam_history_screen.dart';
 
 const _kMockPrimary = Color(0xFF0EA5E9);   // sky blue — distinct from other exam tools
 const _kMockDark    = Color(0xFF0369A1);
@@ -988,9 +989,11 @@ class _MockExamScreenState extends State<MockExamScreen> {
                               const Icon(Icons.flag_rounded, size: 16, color: _kRed),
                           ]),
                           const SizedBox(height: 10),
-                          Text(q.question,
-                              style: const TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.w600, height: 1.5)),
+                          AiMessageContent(
+                            data: q.question,
+                            isDark: isDark,
+                            styleSheet: _questionStyleSheet(isDark, fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
                         ],
                       ),
                     ),
@@ -1071,71 +1074,15 @@ class _MockExamScreenState extends State<MockExamScreen> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(q.options[i],
-                                    style: TextStyle(fontSize: 14, color: fg)),
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        color: selected ? _kMockPrimary : scheme.onSurface)),
                               ),
                             ]),
                           ),
                         ),
                       );
                     }),
-
-                    if (_attempt.isPracticeMode && q.isAnswered) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: (q.isCorrect ? _kGreen : _kRed).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(children: [
-                          Icon(q.isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                              size: 18, color: q.isCorrect ? _kGreen : _kRed),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                                q.isCorrect ? 'Correct!' : 'Not quite — the correct answer is highlighted above.',
-                                style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.w600,
-                                    color: q.isCorrect ? _kGreen : _kRed)),
-                          ),
-                        ]),
-                      ),
-                    ],
-
-                    if (_attempt.isPracticeMode && !q.isAnswered) ...[
-                      const SizedBox(height: 4),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _loadingHint ? null : _requestHint,
-                          icon: _loadingHint
-                              ? const SizedBox(width: 14, height: 14,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: _kMockPrimary))
-                              : const Icon(Icons.lightbulb_outline_rounded, size: 16, color: _kMockPrimary),
-                          label: Text(q.hint == null ? 'Get a hint' : 'Hint',
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _kMockPrimary)),
-                        ),
-                      ),
-                      if (q.hint != null)
-                        Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(top: 4),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(children: [
-                            const Text('💡', style: TextStyle(fontSize: 14)),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(q.hint!,
-                                  style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
-                            ),
-                          ]),
-                        ),
-                    ],
                   ],
                 ),
               ),
@@ -2057,10 +2004,11 @@ class _QuestionReviewCardState extends State<_QuestionReviewCard> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(q.question,
-                      maxLines: _expanded ? null : 2,
-                      overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  child: AiMessageContent(
+                    data: q.question,
+                    isDark: isDark,
+                    styleSheet: _questionStyleSheet(isDark, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
                 ),
                 Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
                     color: _kGrey, size: 20),
@@ -2136,6 +2084,7 @@ class _ReviewLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (text.isEmpty) return const SizedBox.shrink();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2143,7 +2092,11 @@ class _ReviewLine extends StatelessWidget {
             style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800,
                 color: color ?? _kGrey, letterSpacing: 0.4)),
         const SizedBox(height: 3),
-        Text(text, style: const TextStyle(fontSize: 13, height: 1.4)),
+        AiMessageContent(
+          data: text,
+          isDark: isDark,
+          styleSheet: _questionStyleSheet(isDark, fontSize: 13),
+        ),
       ],
     );
   }
