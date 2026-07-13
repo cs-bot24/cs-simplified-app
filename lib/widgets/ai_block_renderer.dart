@@ -178,9 +178,9 @@ Widget _inlineText(String text, bool dark, {double size = 14.5}) {
         mathStyle: display ? MathStyle.display : MathStyle.text,
         textStyle: TextStyle(fontSize: size, color: _textColor(dark)),
         onErrorFallback: (e) => Text(
-          latex,
-          style: TextStyle(fontSize: size, color: _textColor(dark),
-              fontFamily: 'monospace'),
+          '⚠ math expression unavailable',
+          style: TextStyle(fontSize: size * 0.9, fontStyle: FontStyle.italic,
+              color: _textColor(dark).withOpacity(0.6)),
         ),
       ),
     ));
@@ -197,6 +197,117 @@ Widget _inlineText(String text, bool dark, {double size = 14.5}) {
   return Text.rich(TextSpan(children: parts));
 }
 
+// Matches fenced code blocks (```lang\n...\n```) embedded directly inside
+// otherwise-plain card text — e.g. a "Solution" or worked "Example" card
+// where the model wrote out Java/Python/etc. code as part of its narrative
+// instead of emitting a separate CODE block. Without this, that code would
+// flow through _inlineText as one run-on paragraph with no monospace font,
+// no line breaks, and no copy button — exactly the "all in one line, hard
+// to read" bug this exists to fix.
+final RegExp _fencedCodeRegex = RegExp(r'```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```');
+
+/// Renders card body text that may contain one or more fenced code blocks
+/// mixed in with plain narrative text. Plain segments still go through
+/// _inlineText (so bare/inline math keeps rendering); code segments get the
+/// same proper code-block treatment as a dedicated CODE block.
+Widget _richContent(String content, bool dark, {double size = 14.5}) {
+  if (!content.contains('```')) {
+    return _inlineText(content, dark, size: size);
+  }
+
+  final children = <Widget>[];
+  int last = 0;
+  for (final m in _fencedCodeRegex.allMatches(content)) {
+    if (m.start > last) {
+      final before = content.substring(last, m.start).trim();
+      if (before.isNotEmpty) {
+        children.add(_inlineText(before, dark, size: size));
+        children.add(const SizedBox(height: 8));
+      }
+    }
+    final lang = (m.group(1) ?? '').trim();
+    final code = (m.group(2) ?? '').trimRight();
+    if (code.trim().isNotEmpty) {
+      children.add(_InlineCodeBlock(content: code, language: lang, dark: dark));
+      children.add(const SizedBox(height: 8));
+    }
+    last = m.end;
+  }
+  if (last < content.length) {
+    final after = content.substring(last).trim();
+    if (after.isNotEmpty) {
+      children.add(_inlineText(after, dark, size: size));
+    }
+  }
+  if (children.isNotEmpty && children.last is SizedBox) {
+    children.removeLast();
+  }
+  if (children.isEmpty) {
+    // Fell through without producing anything usable (e.g. content was
+    // only a stray/unterminated fence) — fall back to plain rendering
+    // rather than showing a blank card.
+    return _inlineText(content, dark, size: size);
+  }
+  return Column(crossAxisAlignment: CrossAxisAlignment.start, children: children);
+}
+
+/// Same visual treatment as _CodeCard (header bar with language label + copy
+/// button, monospace body, horizontal scroll for long lines), but takes
+/// plain content/language instead of an AiBlock — used by _richContent for
+/// code fences discovered embedded inside another card's text.
+class _InlineCodeBlock extends StatelessWidget {
+  final String content;
+  final String language;
+  final bool   dark;
+  const _InlineCodeBlock({required this.content, required this.language, required this.dark});
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = dark ? const Color(0xFF0D1117) : const Color(0xFFF6F8FA);
+    final txColor = dark ? const Color(0xFFE6EDF3) : const Color(0xFF24292F);
+
+    return Container(
+      width:      double.infinity,
+      decoration: BoxDecoration(
+        color:        bgColor,
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: Colors.grey.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.grey.withOpacity(0.15))),
+            ),
+            child: Row(children: [
+              Text(
+                language.isNotEmpty ? language : 'code',
+                style: TextStyle(fontSize: 11, color: Colors.grey.withOpacity(0.7),
+                    fontFamily: 'monospace'),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => Clipboard.setData(ClipboardData(text: content)),
+                child: Icon(Icons.copy_rounded, size: 14, color: Colors.grey.withOpacity(0.6)),
+              ),
+            ]),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(14),
+            child: Text(
+              content,
+              style: TextStyle(fontFamily: 'monospace', fontSize: 13, color: txColor, height: 1.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // Safe math render with fallback
 Widget _mathWidget(String latex, bool dark, {bool display = true, double size = 15}) {
   if (latex.isEmpty) return const SizedBox.shrink();
@@ -205,21 +316,26 @@ Widget _mathWidget(String latex, bool dark, {bool display = true, double size = 
     mathStyle: display ? MathStyle.display : MathStyle.text,
     textStyle: TextStyle(fontSize: size, color: _textColor(dark)),
     onErrorFallback: (e) {
-      // Fallback: show styled raw LaTeX rather than broken render
+      // Never show the raw LaTeX source to the user — just a clean,
+      // visually consistent "couldn't render this" notice.
       return Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: _kRed.withOpacity(0.08),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: _kRed.withOpacity(0.3)),
         ),
-        child: Text(
-          latex,
-          style: TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 12,
-            color: _kRed.withOpacity(0.8),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 14, color: _kRed.withOpacity(0.8)),
+            const SizedBox(width: 6),
+            Text(
+              'This expression could not be displayed',
+              style: TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic,
+                  color: _kRed.withOpacity(0.8)),
+            ),
+          ],
         ),
       );
     },
@@ -262,7 +378,7 @@ class _TextCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      _inlineText(block.content, dark);
+      _richContent(block.content, dark);
 }
 
 // ── Math ─────────────────────────────────────────────────────────────────────
@@ -532,7 +648,7 @@ class _ExerciseCard extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            child: _inlineText(block.content, dark),
+            child: _richContent(block.content, dark),
           ),
         ],
       ),
@@ -910,7 +1026,7 @@ class _LabeledCard extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-          child: _inlineText(content, dark),
+          child: _richContent(content, dark),
         ),
       ],
     ),

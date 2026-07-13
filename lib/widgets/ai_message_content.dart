@@ -290,13 +290,27 @@ class _MathFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SelectableText(
-      content,
-      style: TextStyle(
-        fontFamily: 'monospace',
-        fontSize: 13,
-        color: isDark ? Colors.white60 : Colors.black54,
-      ),
+    // Never surface the raw, unparsed LaTeX source to the user — if KaTeX
+    // couldn't render it, showing the broken markup itself is exactly the
+    // "raw LaTeX leak" this widget exists to prevent. A short, honest,
+    // professional notice instead.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.error_outline, size: 14,
+            color: (isDark ? Colors.white60 : Colors.black45)),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'This expression could not be displayed',
+            style: TextStyle(
+              fontStyle: FontStyle.italic,
+              fontSize: 13,
+              color: isDark ? Colors.white60 : Colors.black54,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -313,7 +327,94 @@ class _MathFallback extends StatelessWidget {
 ///
 /// 2. Normalise `\( ... \)` → `$ ... $` and `\[ ... \]` → `$$ ... $$`
 ///    (some models emit these alternate LaTeX delimiters).
+// A token that's unambiguously part of a math expression when it sits next
+// to a bare LaTeX command: the command itself, a short alphanumeric token
+// that contains at least one digit (row/variable labels like "R1", "2R2",
+// "x1"), or a run of bare operator characters. Deliberately excludes plain
+// multi-letter English words (which never contain digits), so expansion
+// stops cleanly at the surrounding sentence text.
+final RegExp _mathyTokenCore = RegExp(
+  r'^(\\[a-zA-Z]+(\{[^{}]*\})*'
+  r'|(?=[A-Za-z0-9]{1,7}$)(?=[A-Za-z0-9]*\d)[A-Za-z0-9]+'
+  r'|[+\-=<>*/^_]+)$',
+);
+final RegExp _trailingPunct = RegExp(r'[.,;:!?]+$');
+final RegExp _leadingPunct  = RegExp(r'^[(\[]+');
+
+/// Tests a raw whitespace-delimited word against [_mathyTokenCore] after
+/// stripping sentence punctuation stuck to it (e.g. "3.", "\infty,") so
+/// trailing/leading punctuation doesn't block an otherwise-valid expansion.
+bool _isMathyWord(String word) {
+  final core = word.replaceFirst(_trailingPunct, '').replaceFirst(_leadingPunct, '');
+  if (core.isEmpty) return false;
+  return _mathyTokenCore.hasMatch(core);
+}
+
+/// Wraps bare/undelimited LaTeX command runs — e.g. "R1 \rightarrow R2" or
+/// "x \leq 5" typed with NO `$` anywhere — in `$...$` so they render as math
+/// instead of leaking as raw LaTeX text. Runs BEFORE every other
+/// preprocessing step, and skips any text already inside an existing
+/// `$...$`/`$$...$$` span so nothing is ever double-wrapped.
+String _wrapBareLatexRuns(String text) {
+  if (!text.contains(r'\')) return text;   // fast path: no backslash, nothing to do
+
+  final protected = <List<int>>[];
+  for (final m in RegExp(r'\$\$[\s\S]*?\$\$|\$(?:[^\$\n]|\\.)+?\$').allMatches(text)) {
+    protected.add([m.start, m.end]);
+  }
+  bool isProtected(int pos) => protected.any((p) => pos >= p[0] && pos < p[1]);
+
+  final words = RegExp(r'\S+').allMatches(text).toList();
+  if (words.isEmpty) return text;
+
+  final spansToWrap = <List<int>>[];   // word-index [startIdx, endIdx] inclusive
+  int i = 0;
+  while (i < words.length) {
+    final w = words[i].group(0)!;
+    if (w.startsWith(r'\') &&
+        RegExp(r'^\\[a-zA-Z]+').hasMatch(w) &&
+        !isProtected(words[i].start)) {
+      int left = i;
+      while (left - 1 >= 0 &&
+          !isProtected(words[left - 1].start) &&
+          _isMathyWord(words[left - 1].group(0)!)) {
+        left--;
+      }
+      int right = i;
+      while (right + 1 < words.length &&
+          !isProtected(words[right + 1].start) &&
+          _isMathyWord(words[right + 1].group(0)!)) {
+        right++;
+      }
+      spansToWrap.add([left, right]);
+      i = right + 1;
+    } else {
+      i++;
+    }
+  }
+  if (spansToWrap.isEmpty) return text;
+
+  final buffer = StringBuffer();
+  int lastEnd = 0;
+  for (final span in spansToWrap) {
+    final startChar = words[span[0]].start;
+    final endChar   = words[span[1]].end;
+    buffer.write(text.substring(lastEnd, startChar));
+    buffer.write(r'$');
+    buffer.write(text.substring(startChar, endChar));
+    buffer.write(r'$');
+    lastEnd = endChar;
+  }
+  buffer.write(text.substring(lastEnd));
+  return buffer.toString();
+}
+
 String _preprocess(String text) {
+  // Step 0: wrap bare LaTeX command runs with no $ at all (arrows, greek
+  // letters, operators typed standalone — e.g. row-operation instructions
+  // like "R1 \rightarrow R1 - 2R2") so they never leak as raw text.
+  text = _wrapBareLatexRuns(text);
+
   // Step 1: normalise alternate delimiters
   text = text.replaceAllMapped(
     RegExp(r'\\\((.+?)\\\)', dotAll: true),
