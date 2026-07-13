@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
 import '../models/material_model.dart';
+import '../models/offline_material.dart';
+import '../providers/offline_provider.dart';
 import '../widgets/file_type_badge.dart';
 import '../core/file_opener.dart';
 import '../screens/pdf/pdf_viewer_screen.dart';
@@ -10,8 +14,10 @@ import '../screens/pdf/pdf_viewer_screen.dart';
 ///   MaterialCard.horizontal(material: m)  — fixed-width card for horizontal scroll
 ///   MaterialCard.vertical(material: m)    — full-width compact row
 ///
-/// PDF → PdfViewerScreen
-/// Office docs → FileOpener.openExternal (device app)
+/// PDF → PdfViewerScreen (which opens the local copy instantly if one
+/// exists — see `_bootstrapViewer` there — otherwise falls back online)
+/// Office docs → FileOpener.openExternal (device app; not offline-capable
+/// in this phase — offline materials only cover PDFs per the spec)
 class MaterialCard extends StatelessWidget {
   final MaterialModel material;
   final _Variant _variant;
@@ -29,6 +35,8 @@ class MaterialCard extends StatelessWidget {
           url:        material.fileUrl,
           title:      material.materialTitle,
           materialId: material.id,
+          courseCode: material.courseCode,
+          categoryName: material.categoryName,
         ),
       ));
     } else {
@@ -86,13 +94,19 @@ class MaterialCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                color:        color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(_icon, size: 20, color: color),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color:        color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(_icon, size: 20, color: color),
+                ),
+                if (material.isPdf) _OfflineBadge(material: material, compact: true),
+              ],
             ),
             const SizedBox(height: 8),
             FileTypeBadge(fileType: material.fileType),
@@ -164,8 +178,64 @@ class MaterialCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Colors.grey[400]),
+          if (material.isPdf)
+            _OfflineBadge(material: material, compact: false)
+          else
+            Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Colors.grey[400]),
         ]),
+      ),
+    );
+  }
+}
+
+/// The four-state download indicator from the spec:
+///   Not Downloaded → cloud icon (tap to download)
+///   Downloading    → progress ring + percentage (tap to cancel)
+///   Downloaded     → green "available offline" check
+///   Update Available → small update badge (tap to update)
+class _OfflineBadge extends StatelessWidget {
+  final MaterialModel material;
+  final bool compact;
+  const _OfflineBadge({required this.material, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final offline = context.watch<OfflineProvider>();
+    final status = offline.statusOf(material.id);
+
+    Widget icon;
+    VoidCallback? onTap;
+
+    switch (status) {
+      case OfflineStatus.notDownloaded:
+      case OfflineStatus.failed:
+        icon = Icon(Icons.cloud_download_outlined, size: compact ? 18 : 20, color: Colors.grey[400]);
+        onTap = () => offline.download(material);
+      case OfflineStatus.downloading:
+      case OfflineStatus.queued:
+      case OfflineStatus.paused:
+        final pct = offline.progressOf(material.id);
+        icon = SizedBox(
+          width: compact ? 18 : 20, height: compact ? 18 : 20,
+          child: CircularProgressIndicator(
+            value: pct > 0 ? pct : null, strokeWidth: 2,
+          ),
+        );
+        onTap = () => offline.cancelDownload(material.id);
+      case OfflineStatus.downloaded:
+        icon = const Icon(Icons.offline_pin_rounded, color: Colors.green);
+        onTap = null;
+      case OfflineStatus.updateAvailable:
+        icon = Icon(Icons.update_rounded, size: compact ? 18 : 20, color: Colors.amber[700]);
+        onTap = () => offline.update(material);
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: icon,
       ),
     );
   }

@@ -1127,6 +1127,67 @@ class _MockExamScreenState extends State<MockExamScreen> {
                         ),
                       );
                     }),
+
+                    if (_attempt.isPracticeMode && q.isAnswered) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: (q.isCorrect ? _kGreen : _kRed).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(children: [
+                          Icon(q.isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                              size: 18, color: q.isCorrect ? _kGreen : _kRed),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                                q.isCorrect ? 'Correct!' : 'Not quite — the correct answer is highlighted above.',
+                                style: TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600,
+                                    color: q.isCorrect ? _kGreen : _kRed)),
+                          ),
+                        ]),
+                      ),
+                    ],
+
+                    if (_attempt.isPracticeMode && !q.isAnswered) ...[
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _loadingHint ? null : _requestHint,
+                          icon: _loadingHint
+                              ? const SizedBox(width: 14, height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: _kMockPrimary))
+                              : const Icon(Icons.lightbulb_outline_rounded, size: 16, color: _kMockPrimary),
+                          label: Text(q.hint == null ? 'Get a hint' : 'Hint',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _kMockPrimary)),
+                        ),
+                      ),
+                      if (q.hint != null)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(children: [
+                            const Text('💡', style: TextStyle(fontSize: 14)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: AiMessageContent(
+                                data: q.hint!,
+                                isDark: isDark,
+                                styleSheet: _questionStyleSheet(isDark, fontSize: 12),
+                              ),
+                            ),
+                          ]),
+                        ),
+                    ],
                   ],
                 ),
               ),

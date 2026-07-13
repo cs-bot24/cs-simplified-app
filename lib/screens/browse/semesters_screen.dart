@@ -27,6 +27,9 @@ class _SemestersScreenState extends State<SemestersScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.semester.semesterName)),
       body: a.loading ? const LoadingView()
+          : (a.courses.isEmpty && a.error != null)
+              ? ErrorView(message: a.error!,
+                  onRetry: () => context.read<AcademicProvider>().fetchCourses(widget.semester.id))
           : a.courses.isEmpty
               ? const Center(child: Text('No courses available yet.'))
               : ListView.separated(

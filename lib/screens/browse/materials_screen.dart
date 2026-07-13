@@ -4,6 +4,7 @@ import '../../models/material_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
 import '../../providers/offline_provider.dart';
+import '../../models/offline_material.dart';
 import '../../widgets/file_type_badge.dart';
 import '../../core/file_opener.dart';
 import '../pdf/pdf_viewer_screen.dart';
@@ -54,6 +55,8 @@ class _MaterialsScreenState extends State<MaterialsScreen>
           url:        widget.material.fileUrl,
           title:      widget.material.materialTitle,
           materialId: widget.material.id,
+          courseCode: widget.courseCode,
+          categoryName: widget.material.categoryName,
         ),
       ));
     } else {
@@ -92,7 +95,7 @@ class _MaterialsScreenState extends State<MaterialsScreen>
               icon: Icon(isBookmark
                   ? Icons.bookmark_rounded
                   : Icons.bookmark_outline_rounded),
-              onPressed: () => academic.toggleBookmark(m.id),
+              onPressed: () => academic.toggleBookmark(m),
             ),
         ],
       ),
@@ -195,7 +198,7 @@ class _MaterialsScreenState extends State<MaterialsScreen>
             SizedBox(
               width: double.infinity, height: 52,
               child: OutlinedButton.icon(
-                onPressed: () => academic.toggleBookmark(m.id),
+                onPressed: () => academic.toggleBookmark(m),
                 icon: Icon(isBookmark
                     ? Icons.bookmark_remove_outlined
                     : Icons.bookmark_add_outlined),
@@ -205,8 +208,73 @@ class _MaterialsScreenState extends State<MaterialsScreen>
               ),
             ),
           ],
+
+          // ── Offline button ────────────────────────────────────────────────
+          if (m.isPdf) ...[
+            const SizedBox(height: 12),
+            _OfflineActionButton(material: m),
+          ],
         ]),
       ),
     );
+  }
+}
+
+/// Save Offline / Downloading… / Downloaded / Update Available button,
+/// shown on the material detail screen.
+class _OfflineActionButton extends StatelessWidget {
+  final MaterialModel material;
+  const _OfflineActionButton({required this.material});
+
+  @override
+  Widget build(BuildContext context) {
+    final offline = context.watch<OfflineProvider>();
+    final status = offline.statusOf(material.id);
+
+    switch (status) {
+      case OfflineStatus.downloaded:
+        return SizedBox(
+          width: double.infinity, height: 52,
+          child: OutlinedButton.icon(
+            onPressed: null,
+            icon: const Icon(Icons.offline_pin_rounded, color: Colors.green),
+            label: const Text('Available Offline', style: TextStyle(color: Colors.green)),
+          ),
+        );
+      case OfflineStatus.downloading:
+      case OfflineStatus.queued:
+      case OfflineStatus.paused:
+        final pct = offline.progressOf(material.id);
+        return SizedBox(
+          width: double.infinity, height: 52,
+          child: OutlinedButton.icon(
+            onPressed: () => offline.cancelDownload(material.id),
+            icon: SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, value: pct > 0 ? pct : null),
+            ),
+            label: Text('Downloading${pct > 0 ? ' ${(pct * 100).toInt()}%' : '…'} (tap to cancel)'),
+          ),
+        );
+      case OfflineStatus.updateAvailable:
+        return SizedBox(
+          width: double.infinity, height: 52,
+          child: OutlinedButton.icon(
+            onPressed: () => offline.update(material),
+            icon: const Icon(Icons.update_rounded, color: Colors.amber),
+            label: const Text('Updated Version Available — Tap to Update'),
+          ),
+        );
+      case OfflineStatus.notDownloaded:
+      case OfflineStatus.failed:
+        return SizedBox(
+          width: double.infinity, height: 52,
+          child: OutlinedButton.icon(
+            onPressed: () => offline.download(material),
+            icon: const Icon(Icons.cloud_download_outlined),
+            label: const Text('Save Offline'),
+          ),
+        );
+    }
   }
 }

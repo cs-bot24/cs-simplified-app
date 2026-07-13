@@ -42,8 +42,11 @@ import 'pdf_viewer_mobile.dart' if (dart.library.html) 'pdf_viewer_web.dart';
 import 'pdf_web_panels_stub.dart' if (dart.library.html) 'pdf_web_panels.dart';
     
 import '../../core/api_client.dart';
+import '../../models/material_model.dart';
 import '../../models/offline_material.dart';
 import '../../models/rating_model.dart';
+import '../../services/pdf/i_pdf_renderer.dart';
+import '../../services/pdf/pdf_renderer_service.dart';
 import '../../providers/ai_provider.dart';
 import '../../providers/offline_provider.dart';
 import '../../providers/leaderboard_provider.dart';
@@ -111,8 +114,32 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // ── UI state ──────────────────────────────────────────────────────────────
   bool _isLoading     = true;
   bool _hasError      = false;
-  bool _isDownloading = false;
-  double _downloadProgress = 0;
+
+  // ── Offline / local-first viewing ────────────────────────────────────────
+  // When non-null, a verified local copy exists and is rendered via
+  // PdfRendererService — the WebView/Google-Drive-viewer path is never
+  // initialised in that case, so opening a downloaded PDF never touches
+  // the network (see _bootstrapViewer()).
+  String? _localFilePath;
+  int     _localInitialPage = 1;
+  int?    _localPageCount;
+
+  // Web-only download state (Offline Materials System is mobile-only for
+  // this phase — web keeps the original browser-download behaviour).
+  bool   _webIsDownloading = false;
+  double _webDownloadProgress = 0;
+
+  bool get _isDownloading => kIsWeb
+      ? _webIsDownloading
+      : (widget.materialId != null &&
+          context.watch<OfflineProvider>().statusOf(widget.materialId!) ==
+              OfflineStatus.downloading);
+
+  double get _downloadProgress => kIsWeb
+      ? _webDownloadProgress
+      : (widget.materialId != null
+          ? context.watch<OfflineProvider>().progressOf(widget.materialId!)
+          : 0);
 
   // ── AI bottom sheet ───────────────────────────────────────────────────────
   bool _aiSheetOpen = false;
@@ -151,13 +178,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _initWebView();
     _stopwatch.start();
     if (widget.materialId != null) {
       ApiClient.recordMaterialView(widget.materialId!);
       _fetchRating();
       _startStudyTimer();
     }
+    _bootstrapViewer();
   }
 
   Future<void> _fetchRating() async {
@@ -264,6 +291,60 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     super.dispose();
   }
 
+  // ── Local-first bootstrap ────────────────────────────────────────────────
+  //
+  // IMPORTANT RULE: if a verified local copy exists, this screen must NEVER
+  // contact the backend or Google Drive to display it. `resolveLocalPath`
+  // only returns a path after confirming the file exists and passes a
+  // basic integrity check — no network call is made either way.
+  Future<void> _bootstrapViewer() async {
+    if (!kIsWeb && widget.materialId != null) {
+      final offline = context.read<OfflineProvider>();
+      final localPath = await offline.resolveLocalPath(widget.materialId!);
+      if (localPath != null) {
+        final saved = offline.materialFor(widget.materialId!)?.lastOpenedPage ?? 0;
+        var startPage = 1;
+        if (saved > 1 && mounted) {
+          startPage = await _confirmResumePage(saved) ? saved : 1;
+        }
+        if (!mounted) return;
+        setState(() {
+          _localFilePath = localPath;
+          _localInitialPage = startPage;
+          _isLoading = false;
+        });
+        return;
+      }
+    }
+    // No usable local copy — fall back to the existing online viewer.
+    _initWebView();
+  }
+
+  /// "Continue from Page XX? Yes / No" — per the Offline Materials spec.
+  Future<bool> _confirmResumePage(int page) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _kSurface(ctx),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Continue reading?', style: TextStyle(color: Colors.white)),
+        content: Text('Continue from page $page?',
+            style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Start Over'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   // ── WebView init ──────────────────────────────────────────────────────────
 
   void _initWebView() {
@@ -355,40 +436,55 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   // ── Download ──────────────────────────────────────────────────────────────
 
   Future<void> _downloadPdf() async {
-    setState(() { _isDownloading = true; _downloadProgress = 0; });
-    try {
-      // downloadPdf() is resolved by the conditional import:
-      //   • Mobile: uses Dio + dart:io (pdf_viewer_mobile.dart)
-      //   • Web:    opens via url_launcher (pdf_viewer_web.dart)
-      await downloadPdf(
-        url:   widget.url,
-        title: widget.title,
-        onProgress: (p) {
-          if (mounted) setState(() => _downloadProgress = p);
-        },
-        onToast: (msg, {required bool success}) =>
-            _toast(msg, success: success),
-        onSaved: (filePath) async {
-          if (widget.materialId != null) {
-            ApiClient.logDownload(widget.materialId!);
-          }
-          if (widget.materialId != null && mounted) {
-            // File size tracking only makes sense on mobile, but OfflineMaterial
-            // accepts 0 gracefully on web (never reached because web stub
-            // doesn't call onSaved).
-            context.read<OfflineProvider>().addDownload(OfflineMaterial(
-              materialId:    widget.materialId!,
-              title:         widget.title,
-              filePath:      filePath,
-              fileSizeBytes: 0,
-              downloadedAt:  DateTime.now(),
-            ));
-          }
-        },
-      );
-    } finally {
-      if (mounted) setState(() { _isDownloading = false; _downloadProgress = 0; });
+    if (kIsWeb) {
+      // Web keeps the original "save via browser download" flow — the
+      // Offline Materials System (local DB + Syncfusion renderer) targets
+      // mobile for this phase; see pdf_viewer_web.dart.
+      setState(() { _webIsDownloading = true; _webDownloadProgress = 0; });
+      try {
+        await downloadPdf(
+          url:   widget.url,
+          title: widget.title,
+          onProgress: (p) {
+            if (mounted) setState(() => _webDownloadProgress = p);
+          },
+          onToast: (msg, {required bool success}) =>
+              _toast(msg, success: success),
+          onSaved: (_) async {
+            if (widget.materialId != null) ApiClient.logDownload(widget.materialId!);
+          },
+        );
+      } finally {
+        if (mounted) setState(() { _webIsDownloading = false; _webDownloadProgress = 0; });
+      }
+      return;
     }
+
+    if (widget.materialId == null) {
+      _toast('This file cannot be saved for offline use.', success: false);
+      return;
+    }
+    final offline = context.read<OfflineProvider>();
+    if (offline.isDownloaded(widget.materialId!)) return;
+
+    // DownloadManager runs the actual transfer in the background — the
+    // app bar icon and overlay below react automatically via the
+    // OfflineProvider ChangeNotifier, so no manual progress plumbing here.
+    await offline.download(MaterialModel(
+      id:            widget.materialId!,
+      courseId:      0, // Unknown from this entry point; MaterialCard's
+                         // download button (which has full course context)
+                         // is the primary path for course-level counts.
+      categoryId:    0,
+      materialTitle: widget.title,
+      fileUrl:       widget.url,
+      fileType:      'pdf',
+      isVisible:     true,
+      uploadedAt:    '',
+      courseCode:    widget.courseCode,
+      categoryName:  widget.categoryName,
+    ));
+    ApiClient.logDownload(widget.materialId!);
   }
 
   Future<void> _openExternally() async {
@@ -472,13 +568,50 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           onPressed: _openExternally,
           tooltip: 'Open in Browser',
         ),
-        IconButton(
-          icon: const Icon(Icons.download_rounded, color: Colors.white),
-          onPressed: _isDownloading ? null : _downloadPdf,
-          tooltip: 'Download PDF',
-        ),
+        _buildDownloadAction(),
       ],
     );
+  }
+
+  Widget _buildDownloadAction() {
+    if (kIsWeb || widget.materialId == null) {
+      return IconButton(
+        icon: const Icon(Icons.download_rounded, color: Colors.white),
+        onPressed: _isDownloading ? null : _downloadPdf,
+        tooltip: 'Download PDF',
+      );
+    }
+    final status = context.watch<OfflineProvider>().statusOf(widget.materialId!);
+    switch (status) {
+      case OfflineStatus.downloaded:
+        return const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          child: Icon(Icons.offline_pin_rounded, color: Colors.greenAccent),
+        );
+      case OfflineStatus.downloading:
+      case OfflineStatus.queued:
+      case OfflineStatus.paused:
+        return const Padding(
+          padding: EdgeInsets.all(16),
+          child: SizedBox(
+            width: 18, height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+          ),
+        );
+      case OfflineStatus.updateAvailable:
+        return IconButton(
+          icon: const Icon(Icons.update_rounded, color: Colors.amberAccent),
+          onPressed: _downloadPdf,
+          tooltip: 'Update available',
+        );
+      case OfflineStatus.notDownloaded:
+      case OfflineStatus.failed:
+        return IconButton(
+          icon: const Icon(Icons.download_rounded, color: Colors.white),
+          onPressed: _downloadPdf,
+          tooltip: 'Save for offline use',
+        );
+    }
   }
 
   // ── Web layout: full-width PDF, AI available on demand ──────────────────
@@ -602,17 +735,47 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     );
   }
 
-  // ── Mobile layout: WebView + floating AI + study tools ───────────────────
+  // ── Mobile layout: WebView (online) or local renderer (offline) ──────────
   Widget _buildMobileLayout() {
     return Stack(
       children: [
-        if (!_hasError)
+        if (_localFilePath != null)
+          Positioned.fill(
+            bottom: MediaQuery.of(context).padding.bottom + 52,
+            // 100% local: no network, no auth, no server request — this is
+            // the "IMPORTANT RULE" from the Offline Materials spec.
+            child: PdfRendererService.instance.open(
+              filePath: _localFilePath!,
+              callbacks: PdfViewerCallbacks(
+                initialPage: _localInitialPage,
+                onDocumentLoaded: (count) => _localPageCount = count,
+                onPageChanged: (page) {
+                  if (widget.materialId != null) {
+                    context.read<OfflineProvider>().recordProgress(
+                          widget.materialId!,
+                          page: page,
+                          pageCount: _localPageCount,
+                        );
+                  }
+                },
+                onLoadFailed: () {
+                  // Local render failed (corrupt/unsupported file) — fall
+                  // back to the online viewer rather than a dead end.
+                  if (mounted) {
+                    setState(() { _localFilePath = null; _isLoading = true; });
+                    _initWebView();
+                  }
+                },
+              ),
+            ),
+          )
+        else if (!_hasError)
           Positioned.fill(
             bottom: MediaQuery.of(context).padding.bottom + 52,
             child: buildWebViewWidget(_webController),
           ),
-        if (_isLoading && !_hasError) _buildLoadingOverlay(),
-        if (_hasError)               _buildErrorView(),
+        if (_localFilePath == null && _isLoading && !_hasError) _buildLoadingOverlay(),
+        if (_localFilePath == null && _hasError)               _buildErrorView(),
         if (_isDownloading)          _buildDownloadOverlay(),
         Positioned(
           left: 0, right: 0, bottom: 0,

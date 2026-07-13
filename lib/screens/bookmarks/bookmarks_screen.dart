@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
 import '../../widgets/loading_view.dart';
+import '../../widgets/requires_internet_view.dart';
 import '../browse/materials_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -50,37 +51,49 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
               ]),
             ))
           : a.loading ? const LoadingView()
-          : a.bookmarks.isEmpty
-              ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.bookmark_outline_rounded, size: 64, color: Colors.grey[300]),
-                  const SizedBox(height: 12),
-                  const Text('No saved materials yet.'),
-                  const SizedBox(height: 4),
-                  Text('Bookmark materials while browsing.',
-                      style: TextStyle(fontSize: 13, color: Colors.grey[500])),
-                ]))
-              : ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: a.bookmarks.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (ctx, i) {
-                    final mat = a.bookmarks[i];
-                    return Card(
-                      child: ListTile(
-                        leading: Icon(Icons.picture_as_pdf_outlined, color: scheme.primary),
-                        title: Text(mat.materialTitle,
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.bookmark_remove_outlined, color: Colors.red),
-                          onPressed: () => a.toggleBookmark(mat.id),
-                        ),
-                        onTap: () => Navigator.push(ctx, MaterialPageRoute(
-                            builder: (_) => MaterialsScreen(
-                                material: mat, courseCode: mat.courseCode ?? ''))),
+          : Column(children: [
+              if (a.bookmarksAreStale)
+                const RequiresInternetInlineBanner(
+                    message: 'Showing saved bookmarks — reconnect to sync changes.'),
+              Expanded(
+                child: a.bookmarks.isEmpty
+                    ? (a.error != null && !a.bookmarksAreStale)
+                        ? RequiresInternetView(
+                            featureName: 'Saved Materials',
+                            onRetry: () => a.fetchBookmarks(),
+                          )
+                        : Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.bookmark_outline_rounded, size: 64, color: Colors.grey[300]),
+                            const SizedBox(height: 12),
+                            const Text('No saved materials yet.'),
+                            const SizedBox(height: 4),
+                            Text('Bookmark materials while browsing.',
+                                style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+                          ]))
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: a.bookmarks.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (ctx, i) {
+                          final mat = a.bookmarks[i];
+                          return Card(
+                            child: ListTile(
+                              leading: Icon(Icons.picture_as_pdf_outlined, color: scheme.primary),
+                              title: Text(mat.materialTitle,
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.bookmark_remove_outlined, color: Colors.red),
+                                onPressed: () => a.toggleBookmark(mat),
+                              ),
+                              onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                                  builder: (_) => MaterialsScreen(
+                                      material: mat, courseCode: mat.courseCode ?? ''))),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+              ),
+            ]),
     );
   }
 }

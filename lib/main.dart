@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'core/storage.dart';
 import 'core/fcm_service.dart';
+import 'core/connectivity_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/academic_provider.dart';
 import 'providers/theme_provider.dart';
@@ -16,6 +17,7 @@ import 'providers/leaderboard_provider.dart';
 import 'providers/achievement_provider.dart';
 import 'providers/ai_provider.dart';
 import 'providers/study_planner_provider.dart';
+import 'widgets/offline_mode_banner.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'core/fcm_service.dart' show navigatorKey;
@@ -23,6 +25,10 @@ import 'providers/lecturer_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Must be ready before anything else checks connectivity (offline
+  // banner, requireInternet() gates, provider cache fallbacks).
+  await ConnectivityService.instance.initialize();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -73,6 +79,7 @@ class CsSimplifiedApp extends StatelessWidget {
           // It wraps SplashScreen and adds startup/resume badge refresh.
           home: const _AppBootstrap(),
           navigatorKey: navigatorKey,
+          builder: (context, child) => OfflineModeBanner(child: child!),
         ),
       ),
     );

@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/course_model.dart';
 import '../../models/material_model.dart';
+import '../../models/offline_material.dart';
 import '../../providers/academic_provider.dart';
+import '../../providers/offline_provider.dart';
 import '../../widgets/loading_view.dart';
+import '../../widgets/error_view.dart';
 import '../../widgets/file_type_badge.dart';
 import 'materials_screen.dart';
 
@@ -19,17 +22,51 @@ class _CoursesScreenState extends State<CoursesScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final p = context.read<AcademicProvider>();
       p.fetchCategories();
-      p.fetchMaterials(widget.course.id);
+      await p.fetchMaterials(widget.course.id);
+      _maybeSuggestOfflineDownload();
     });
+  }
+
+  /// "When user opens a course repeatedly: Suggest 'Download this course
+  /// for offline study?' — only suggest once, never spam."
+  Future<void> _maybeSuggestOfflineDownload() async {
+    if (!mounted) return;
+    final offline = context.read<OfflineProvider>();
+    final academic = context.read<AcademicProvider>();
+    final suggest = await offline.shouldSuggestCourseDownload(widget.course.id);
+    if (!suggest || !mounted || academic.materials.isEmpty) return;
+    final download = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Study offline?'),
+        content: Text(
+          'Download all materials in ${widget.course.courseCode} so you can '
+          'study them without an internet connection.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Not now')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Download')),
+        ],
+      ),
+    );
+    if (download == true && mounted) {
+      final pdfs = academic.materials.where((m) => m.isPdf).toList();
+      await context.read<OfflineProvider>().downloadCourse(pdfs);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final a      = context.watch<AcademicProvider>();
-    final scheme = Theme.of(context).colorScheme;
+    final a       = context.watch<AcademicProvider>();
+    final offline = context.watch<OfflineProvider>();
+    final scheme  = Theme.of(context).colorScheme;
+
+    final pdfMaterials = a.materials.where((m) => m.isPdf).toList();
+    final downloadedCount = offline.downloadedCountForCourse(widget.course.id);
+    final allDownloaded = pdfMaterials.isNotEmpty && downloadedCount >= pdfMaterials.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -64,9 +101,46 @@ class _CoursesScreenState extends State<CoursesScreen> {
             ]),
           ),
 
+        // Offline: bulk-download row — "12 / 15 Materials Downloaded"
+        if (pdfMaterials.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(children: [
+              Expanded(
+                child: Row(children: [
+                  Icon(
+                    allDownloaded ? Icons.offline_pin_rounded : Icons.cloud_outlined,
+                    size: 16,
+                    color: allDownloaded ? Colors.green : Colors.grey[500],
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    allDownloaded
+                        ? 'All Materials Available Offline'
+                        : '$downloadedCount / ${pdfMaterials.length} Materials Downloaded',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: allDownloaded ? Colors.green : Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ]),
+              ),
+              if (!allDownloaded)
+                TextButton.icon(
+                  onPressed: () => offline.downloadCourse(pdfMaterials),
+                  icon: const Icon(Icons.download_for_offline_outlined, size: 16),
+                  label: const Text('Download Entire Course', style: TextStyle(fontSize: 12)),
+                ),
+            ]),
+          ),
+
         // Materials
         Expanded(
           child: a.loading ? const LoadingView()
+              : (a.materials.isEmpty && a.error != null)
+                  ? ErrorView(message: a.error!,
+                      onRetry: () => a.fetchMaterials(widget.course.id, categoryId: _selectedCategoryId))
               : a.materials.isEmpty
                   ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.folder_open_outlined, size: 64, color: Colors.grey[300]),
@@ -181,9 +255,56 @@ class _MaterialCard extends StatelessWidget {
               FileTypeBadge(fileType: mat.fileType),
             ],
           )),
+          if (mat.isPdf) _CourseMaterialOfflineBadge(mat: mat),
           Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey[400]),
         ]),
       ),
     );
+  }
+}
+
+/// Compact offline-status icon for a row in the course materials list —
+/// same four states as MaterialCard's badge (not downloaded / downloading
+/// / downloaded / update available).
+class _CourseMaterialOfflineBadge extends StatelessWidget {
+  final MaterialModel mat;
+  const _CourseMaterialOfflineBadge({required this.mat});
+
+  @override
+  Widget build(BuildContext context) {
+    final offline = context.watch<OfflineProvider>();
+    final status = offline.statusOf(mat.id);
+    switch (status) {
+      case OfflineStatus.downloaded:
+        return const Padding(
+          padding: EdgeInsets.only(right: 8),
+          child: Icon(Icons.offline_pin_rounded, size: 18, color: Colors.green),
+        );
+      case OfflineStatus.downloading:
+      case OfflineStatus.queued:
+      case OfflineStatus.paused:
+        return const Padding(
+          padding: EdgeInsets.only(right: 8),
+          child: SizedBox(
+            width: 16, height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      case OfflineStatus.updateAvailable:
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Icon(Icons.update_rounded, size: 18, color: Colors.amber[700]),
+        );
+      case OfflineStatus.notDownloaded:
+      case OfflineStatus.failed:
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => offline.download(mat),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Icon(Icons.cloud_download_outlined, size: 18, color: Colors.grey[400]),
+          ),
+        );
+    }
   }
 }

@@ -29,9 +29,13 @@
 //      it when the next fetch of the same kind succeeds.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_client.dart';
+import '../core/connectivity_service.dart';
 import '../models/level_model.dart';
 import '../models/semester_model.dart';
 import '../models/course_model.dart';
@@ -50,6 +54,22 @@ class AcademicProvider extends ChangeNotifier {
 
   bool    _loading = false;
   String? _error;
+
+  StreamSubscription<bool>? _connectivitySub;
+
+  AcademicProvider() {
+    // The moment we're back online, replay any bookmark toggles the user
+    // made while offline — see toggleBookmark()/flushPendingBookmarkActions().
+    _connectivitySub = ConnectivityService.instance.onStatusChange.listen((online) {
+      if (online) unawaited(flushPendingBookmarkActions());
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectivitySub?.cancel();
+    super.dispose();
+  }
 
   List<LevelModel>     get levels        => _levels;
   List<SemesterModel>  get semesters     => _semesters;
@@ -162,6 +182,17 @@ class AcademicProvider extends ChangeNotifier {
   //
   // We detect shape A by checking for the presence of a "material" key.
   // Shape B is parsed directly.  One bad item won't abort the whole list.
+  //
+  // Offline support: the last successful list is cached locally, and any
+  // add/remove made while offline is applied to the UI immediately and
+  // queued to replay against the server the next time connectivity comes
+  // back (see [_flushPendingBookmarkActions]).
+
+  static const _kBookmarksCacheKey = 'bookmarks_cache_v1';
+  static const _kPendingBookmarkActionsKey = 'pending_bookmark_actions_v1';
+
+  bool _bookmarksAreStale = false;
+  bool get bookmarksAreStale => _bookmarksAreStale;
 
   Future<void> fetchBookmarks() async {
     _set(true);
@@ -191,10 +222,127 @@ class AcademicProvider extends ChangeNotifier {
       }
       _bookmarks = parsed;
       _error = null;
+      _bookmarksAreStale = false;
+      unawaited(_cacheBookmarks());
     } on ApiException catch (e) {
-      _error = e.message;
+      if (e.isConnectivityError) {
+        // Offline — fall back to whatever we last cached rather than
+        // showing an error or an empty list.
+        final loaded = await _loadCachedBookmarks();
+        if (loaded) {
+          _bookmarksAreStale = true;
+          _error = null;
+        } else {
+          _error = e.message;
+        }
+      } else {
+        _error = e.message;
+      }
     } finally {
       _set(false);
+    }
+  }
+
+  Future<void> _cacheBookmarks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kBookmarksCacheKey,
+          jsonEncode(_bookmarks.map((m) => m.toJson()).toList()));
+    } catch (e) {
+      dev.log('[Bookmarks] cache write error: $e', name: 'AcademicProvider');
+    }
+  }
+
+  /// Returns true if a cached list was found and loaded into [_bookmarks].
+  Future<bool> _loadCachedBookmarks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kBookmarksCacheKey);
+      if (raw == null) return false;
+      final list = (jsonDecode(raw) as List)
+          .map((j) => MaterialModel.fromJson(j as Map<String, dynamic>))
+          .toList();
+      _bookmarks = _applyPendingActions(list, await _loadPendingActions());
+      return true;
+    } catch (e) {
+      dev.log('[Bookmarks] cache read error: $e', name: 'AcademicProvider');
+      return false;
+    }
+  }
+
+  List<MaterialModel> _applyPendingActions(
+      List<MaterialModel> base, List<_PendingBookmarkAction> pending) {
+    final list = [...base];
+    for (final action in pending) {
+      if (action.isAdd) {
+        if (!list.any((m) => m.id == action.materialId) && action.material != null) {
+          list.add(action.material!);
+        }
+      } else {
+        list.removeWhere((m) => m.id == action.materialId);
+      }
+    }
+    return list;
+  }
+
+  Future<List<_PendingBookmarkAction>> _loadPendingActions() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kPendingBookmarkActionsKey);
+      if (raw == null) return [];
+      return (jsonDecode(raw) as List)
+          .map((j) => _PendingBookmarkAction.fromJson(j as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      dev.log('[Bookmarks] pending-actions read error: $e', name: 'AcademicProvider');
+      return [];
+    }
+  }
+
+  Future<void> _savePendingActions(List<_PendingBookmarkAction> actions) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kPendingBookmarkActionsKey,
+          jsonEncode(actions.map((a) => a.toJson()).toList()));
+    } catch (e) {
+      dev.log('[Bookmarks] pending-actions write error: $e', name: 'AcademicProvider');
+    }
+  }
+
+  Future<void> _queueBookmarkAction(_PendingBookmarkAction action) async {
+    final pending = await _loadPendingActions();
+    // A new action for the same material supersedes any earlier queued
+    // one (e.g. add-then-remove while still offline collapses to remove).
+    pending.removeWhere((a) => a.materialId == action.materialId);
+    pending.add(action);
+    await _savePendingActions(pending);
+  }
+
+  /// Replays queued offline bookmark actions against the server. Call this
+  /// when connectivity comes back (see main.dart's ConnectivityService
+  /// listener). Safe to call opportunistically — no-ops if there's nothing
+  /// queued or if a replay attempt itself fails (stays queued for next time).
+  Future<void> flushPendingBookmarkActions() async {
+    final pending = await _loadPendingActions();
+    if (pending.isEmpty) return;
+    final stillPending = <_PendingBookmarkAction>[];
+    for (final action in pending) {
+      try {
+        if (action.isAdd) {
+          await ApiClient.addBookmark(action.materialId);
+        } else {
+          await ApiClient.removeBookmark(action.materialId);
+        }
+      } catch (e) {
+        dev.log('[Bookmarks] replay failed for ${action.materialId}: $e',
+            name: 'AcademicProvider');
+        stillPending.add(action); // try again next time
+      }
+    }
+    await _savePendingActions(stillPending);
+    if (stillPending.length != pending.length) {
+      // At least one action synced — refresh from server for a clean state.
+      await fetchBookmarks();
     }
   }
 
@@ -219,29 +367,63 @@ class AcademicProvider extends ChangeNotifier {
   Future<void> fetchAnalytics() async {
     try {
       _analytics = await ApiClient.getAnalytics();
-      notifyListeners();
+      _error = null;
     } on ApiException catch (e) {
       _error = e.message;
+    } finally {
+      notifyListeners();
     }
   }
 
   // ── Bookmark toggle ───────────────────────────────────────────────────────
 
-  Future<void> toggleBookmark(int materialId) async {
-    final exists = _bookmarks.any((m) => m.id == materialId);
+  Future<void> toggleBookmark(MaterialModel material) async {
+    final exists = _bookmarks.any((m) => m.id == material.id);
+
+    if (ConnectivityService.instance.isOffline) {
+      // Apply immediately so the star/icon flips without waiting, then
+      // queue the real API call for when connectivity returns.
+      if (exists) {
+        _bookmarks.removeWhere((m) => m.id == material.id);
+        await _queueBookmarkAction(_PendingBookmarkAction.remove(material.id));
+      } else {
+        _bookmarks.add(material);
+        await _queueBookmarkAction(_PendingBookmarkAction.add(material));
+      }
+      await _cacheBookmarks();
+      _bookmarksAreStale = true;
+      notifyListeners();
+      return;
+    }
+
     try {
       if (exists) {
-        await ApiClient.removeBookmark(materialId);
-        _bookmarks.removeWhere((m) => m.id == materialId);
+        await ApiClient.removeBookmark(material.id);
+        _bookmarks.removeWhere((m) => m.id == material.id);
       } else {
-        await ApiClient.addBookmark(materialId);
+        await ApiClient.addBookmark(material.id);
         // Re-fetch to get the full material object with all fields.
         await fetchBookmarks();
         return; // fetchBookmarks already calls notifyListeners via _set.
       }
+      unawaited(_cacheBookmarks());
       notifyListeners();
     } on ApiException catch (e) {
-      _error = e.message;
+      if (e.isConnectivityError) {
+        // Connectivity dropped mid-request — fall back to the same
+        // optimistic-and-queue path instead of surfacing an error.
+        if (exists) {
+          _bookmarks.removeWhere((m) => m.id == material.id);
+          await _queueBookmarkAction(_PendingBookmarkAction.remove(material.id));
+        } else {
+          _bookmarks.add(material);
+          await _queueBookmarkAction(_PendingBookmarkAction.add(material));
+        }
+        await _cacheBookmarks();
+        _bookmarksAreStale = true;
+      } else {
+        _error = e.message;
+      }
       notifyListeners();
     }
   }
@@ -252,4 +434,33 @@ class AcademicProvider extends ChangeNotifier {
     _searchResults = [];
     notifyListeners();
   }
+}
+
+/// A queued bookmark add/remove made while offline, replayed against the
+/// server once connectivity returns (see
+/// [AcademicProvider.flushPendingBookmarkActions]).
+class _PendingBookmarkAction {
+  final int materialId;
+  final bool isAdd;
+  final MaterialModel? material; // only needed for 'add', to cache optimistically
+
+  _PendingBookmarkAction._(this.materialId, this.isAdd, this.material);
+
+  factory _PendingBookmarkAction.add(MaterialModel material) =>
+      _PendingBookmarkAction._(material.id, true, material);
+
+  factory _PendingBookmarkAction.remove(int materialId) =>
+      _PendingBookmarkAction._(materialId, false, null);
+
+  Map<String, dynamic> toJson() => {
+        'material_id': materialId,
+        'is_add': isAdd,
+        'material': material?.toJson(),
+      };
+
+  factory _PendingBookmarkAction.fromJson(Map<String, dynamic> j) => _PendingBookmarkAction._(
+        j['material_id'] as int,
+        j['is_add'] as bool,
+        j['material'] != null ? MaterialModel.fromJson(j['material'] as Map<String, dynamic>) : null,
+      );
 }

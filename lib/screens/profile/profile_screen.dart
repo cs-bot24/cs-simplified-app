@@ -19,6 +19,7 @@ import '../../core/api_client.dart';
 import '../../core/storage.dart';
 import '../../core/version_check.dart';
 import '../../core/constants.dart';
+import '../../widgets/requires_internet_view.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -185,24 +186,30 @@ class ProfileScreen extends StatelessWidget {
                 title: 'AI Tutor',
                 subtitle: 'Ask academic questions, get instant explanations',
                 color: const Color(0xFF1A3C6E),
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const AiTutorScreen())),
+                onTap: () => requireInternet(context,
+                    featureName: 'AI Tutor',
+                    onProceed: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const AiTutorScreen()))),
               ),
               _MenuItem(
                 icon: Icons.emoji_events_rounded,
                 title: 'Study Champions',
                 subtitle: 'View leaderboard and your rank',
                 color: Colors.amber,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const StudyChampionsScreen())),
+                onTap: () => requireInternet(context,
+                    featureName: 'Study Champions',
+                    onProceed: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const StudyChampionsScreen()))),
               ),
               _MenuItem(
                 icon: Icons.military_tech_rounded,
                 title: 'Achievements',
                 subtitle: 'View your badges and milestones',
                 color: Colors.purple,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const AchievementsScreen())),
+                onTap: () => requireInternet(context,
+                    featureName: 'Achievements',
+                    onProceed: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const AchievementsScreen()))),
               ),
               _MenuItem(
                 icon: Icons.share_rounded,
@@ -227,9 +234,11 @@ class ProfileScreen extends StatelessWidget {
                 icon: Icons.add_comment_outlined,
                 title: 'Request a Material',
                 subtitle: 'Ask for a specific past question or note',
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(
-                        builder: (_) => const RequestMaterialScreen())),
+                onTap: () => requireInternet(context,
+                    featureName: 'Request a Material',
+                    onProceed: () => Navigator.push(context,
+                        MaterialPageRoute(
+                            builder: (_) => const RequestMaterialScreen()))),
               ),
               const SizedBox(height: 8),
               _MenuItem(

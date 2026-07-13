@@ -25,6 +25,7 @@ class HomeProvider extends ChangeNotifier {
   HomeData? _data;
   bool _loading = false;
   String? _error;
+  bool _showingStaleData = false;
 
   // Cache settings
   static const _cacheKey      = 'home_cache_v1';
@@ -42,17 +43,26 @@ class HomeProvider extends ChangeNotifier {
   bool      get loading => _loading;
   String?   get error   => _error;
 
+  /// True when what's on screen is cache older than [_cacheMaxAge] shown
+  /// as a last resort because a fresh fetch just failed (e.g. no
+  /// internet) — screens can use this to show a small "showing saved
+  /// data" hint instead of treating it as a fully up-to-date load.
+  bool get isShowingStaleData => _showingStaleData;
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// Fetch the aggregated home payload.
   ///
   /// Flow:
   ///  1. If no in-memory data yet, try loading from SharedPreferences cache.
-  ///     If valid cache exists, show it immediately (instant first paint).
+  ///     If valid (non-expired) cache exists, show it immediately (instant
+  ///     first paint).
   ///  2. Fetch fresh data from the backend in the background.
   ///  3. On success, replace data and save new cache.
-  ///  4. On error, keep showing cached/stale data if available;
-  ///     only surface an error when there is absolutely nothing to show.
+  ///  4. On error, keep showing cached/stale data if available; if we have
+  ///     nothing in memory, fall back to the cache even if it's expired —
+  ///     stale numbers beat a blank screen when there's truly no internet —
+  ///     and only surface a hard error when there is nothing to show at all.
   Future<void> fetchHome({bool forceRefresh = false}) async {
     if (_loading) return;
 
@@ -69,14 +79,29 @@ class HomeProvider extends ChangeNotifier {
       final raw  = await ApiClient.getHome();
       _data  = HomeData.fromJson(raw as Map<String, dynamic>);
       _error = null;
+      _showingStaleData = false;
       _saveToCache(raw as Map<String, dynamic>); // fire-and-forget
     } on ApiException catch (e) {
       dev.log('[Home] Fetch error: ${e.message}', name: 'HomeProvider');
-      // Only expose the error if we have nothing to show
-      if (_data == null) _error = e.message;
+      if (_data == null) {
+        // Nothing to show yet — last resort: any cache at all, even stale.
+        await _loadFromCache(ignoreAge: true);
+        if (_data != null) {
+          _showingStaleData = true;
+        } else {
+          _error = e.message;
+        }
+      }
     } catch (e) {
       dev.log('[Home] Unexpected error: $e', name: 'HomeProvider');
-      if (_data == null) _error = 'Could not load home data.';
+      if (_data == null) {
+        await _loadFromCache(ignoreAge: true);
+        if (_data != null) {
+          _showingStaleData = true;
+        } else {
+          _error = 'Could not load home data.';
+        }
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -110,7 +135,7 @@ class HomeProvider extends ChangeNotifier {
 
   // ── Cache helpers ──────────────────────────────────────────────────────────
 
-  Future<void> _loadFromCache() async {
+  Future<void> _loadFromCache({bool ignoreAge = false}) async {
     try {
       final prefs      = await SharedPreferences.getInstance();
       final cached     = prefs.getString(_cacheKey);
@@ -119,7 +144,7 @@ class HomeProvider extends ChangeNotifier {
       if (cached == null) return;
 
       final age = DateTime.now().millisecondsSinceEpoch - cachedTime;
-      if (age > _cacheMaxAge.inMilliseconds) return; // cache expired
+      if (!ignoreAge && age > _cacheMaxAge.inMilliseconds) return; // cache expired
 
       _data = HomeData.fromJson(
         jsonDecode(cached) as Map<String, dynamic>,

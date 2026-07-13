@@ -256,4 +256,92 @@ class FcmService {
       ),
     );
   }
+
+  // ── Offline download complete (local only) ─────────────────────────────────
+
+  static Future<void> showDownloadComplete({
+    required int id,
+    required String materialTitle,
+  }) async {
+    if (kIsWeb) return;
+    await _localNotifications.show(
+      id, 'Download complete', '"$materialTitle" is now available offline.',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: _channelDesc,
+          icon: '@mipmap/ic_launcher',
+          importance: Importance.low,
+          priority: Priority.low,
+          color: const Color(0xFF6C63FF),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: false,
+          presentSound: false,
+        ),
+      ),
+    );
+  }
+
+  static Future<void> showDownloadFailed({required String materialTitle}) async {
+    if (kIsWeb) return;
+    await _localNotifications.show(
+      materialTitle.hashCode & 0x7fffffff,
+      'Download failed',
+      '"$materialTitle" could not be downloaded. Tap to retry.',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId, _channelName,
+          channelDescription: _channelDesc,
+          icon: '@mipmap/ic_launcher',
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+          color: const Color(0xFF6C63FF),
+        ),
+        iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: false),
+      ),
+    );
+  }
+
+  static Future<void> showStorageFull() async {
+    if (kIsWeb) return;
+    await _localNotifications.show(
+      999001,
+      'Storage full',
+      'Your device is out of space. Free up storage to continue downloading.',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId, _channelName,
+          channelDescription: _channelDesc,
+          icon: '@mipmap/ic_launcher',
+          importance: Importance.high,
+          priority: Priority.high,
+          color: const Color(0xFF6C63FF),
+        ),
+        iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true),
+      ),
+    );
+  }
+
+  static Future<void> showUpdateAvailable({required int count}) async {
+    if (kIsWeb) return;
+    await _localNotifications.show(
+      999002,
+      'Updates available',
+      '$count downloaded material${count == 1 ? '' : 's'} ${count == 1 ? 'has' : 'have'} a newer version.',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId, _channelName,
+          channelDescription: _channelDesc,
+          icon: '@mipmap/ic_launcher',
+          importance: Importance.low,
+          priority: Priority.low,
+          color: const Color(0xFF6C63FF),
+        ),
+        iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: false),
+      ),
+    );
+  }
 }

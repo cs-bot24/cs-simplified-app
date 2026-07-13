@@ -43,6 +43,7 @@ import '../profile/profile_screen.dart';
 import '../ai/ai_tutor_screen.dart';
 import '../study_planner/study_planner_screen.dart';
 import '../lecturer/ai_lecturer_screen.dart';
+import '../../widgets/requires_internet_view.dart';
 
 // ── Responsive breakpoint ─────────────────────────────────────────────────────
 const _kDesktopBreakpoint = 900.0;
@@ -471,8 +472,10 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     ]);
   }
 
-  void _goToExamPrep() => Navigator.push(
-      context, MaterialPageRoute(builder: (_) => const ExamPrepScreen()));
+  void _goToExamPrep() => requireInternet(context,
+      featureName: 'Exam Prep',
+      onProceed: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const ExamPrepScreen())));
 
   int _plannerIndex(BuildContext context) {
     final isAdmin = context.read<AuthProvider>().isAdmin;
@@ -501,6 +504,12 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
 
             if (home.loading && home.data == null)
               const SliverToBoxAdapter(child: HomeShimmer()),
+
+            if (home.isShowingStaleData)
+              const SliverToBoxAdapter(
+                child: RequiresInternetInlineBanner(
+                    message: 'Showing saved data — connect to the internet to refresh.'),
+              ),
 
             // ── 2. Exam prep banner ─────────────────────────────────────────
             if (home.data != null && home.data!.examPrepCount > 0)
@@ -536,9 +545,11 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                   child: _LeaderboardEntryCard(
                     streak: home.data!.streak.currentStreak,
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(
-                            builder: (_) => const StudyChampionsScreen())),
+                    onTap: () => requireInternet(context,
+                        featureName: 'Leaderboard',
+                        onProceed: () => Navigator.push(context,
+                            MaterialPageRoute(
+                                builder: (_) => const StudyChampionsScreen()))),
                   ),
                 ),
               ),
@@ -604,10 +615,12 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                         icon: Icons.add_comment_outlined,
                         label: 'Request\nMaterial',
                         color: Colors.teal,
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    const RequestMaterialScreen())),
+                        onTap: () => requireInternet(context,
+                            featureName: 'Request Material',
+                            onProceed: () => Navigator.push(context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        const RequestMaterialScreen()))),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -646,9 +659,13 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                         label: 'AI Lecturer',
                         color: const Color(0xFF1A3C6E),
                         wide: false,
-                        onTap: () => Navigator.push(
+                        onTap: () => requireInternet(
                           context,
-                          MaterialPageRoute(builder: (_) => const AiLecturerScreen()),
+                          featureName: 'AI Lecturer',
+                          onProceed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AiLecturerScreen()),
+                          ),
                         ),
                       ),
                     ),
@@ -666,9 +683,11 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                   label: 'AI Tutor',
                   color: const Color(0xFF1A3C6E),
                   wide: true,
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(
-                          builder: (_) => const AiTutorScreen())),
+                  onTap: () => requireInternet(context,
+                      featureName: 'AI Tutor',
+                      onProceed: () => Navigator.push(context,
+                          MaterialPageRoute(
+                              builder: (_) => const AiTutorScreen()))),
                 ),
               ),
             ),
@@ -715,10 +734,12 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                       final level = academic.levels[i];
                       return _LevelCard(
                         level: level,
-                        onTap: () => Navigator.push(ctx,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    LevelsScreen(level: level))),
+                        onTap: () => requireInternet(ctx,
+                            featureName: 'Browse Materials',
+                            onProceed: () => Navigator.push(ctx,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        LevelsScreen(level: level)))),
                       );
                     },
                     childCount: academic.levels.length,

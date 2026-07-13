@@ -43,4 +43,20 @@ class MaterialModel {
     categoryName:  j['category_name'],
     levelName:     j['level_name'],
   );
+
+  /// Round-trips with [fromJson] — used to persist lists (e.g. bookmarks)
+  /// to a local cache so they're still visible offline.
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'course_id': courseId,
+    'category_id': categoryId,
+    'material_title': materialTitle,
+    'file_url': fileUrl,
+    'file_type': fileType,
+    'is_visible': isVisible,
+    'uploaded_at': uploadedAt,
+    'course_code': courseCode,
+    'category_name': categoryName,
+    'level_name': levelName,
+  };
 }

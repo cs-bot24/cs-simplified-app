@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/storage.dart';
 import '../core/version_check.dart';
+import '../core/connectivity_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/ai_provider.dart';
 import 'home/home_screen.dart';
@@ -35,12 +36,19 @@ class _SplashScreenState extends State<SplashScreen>
 
     // If user is already logged in (remember me), load their entitlements now
     // so gates apply immediately without waiting for the AI Tutor screen.
+    // Fire-and-forget — this must never block getting into the app.
     if (AppStorage.isLoggedIn) {
       context.read<AiProvider>().loadPlan();
     }
 
-    await VersionCheck.check(context);
-    if (!mounted) return;
+    // Skip the network round-trip entirely when offline — the app must
+    // open immediately either way, and VersionCheck already has its own
+    // timeout, but there's no reason to wait on it at all with no
+    // connection.
+    if (ConnectivityService.instance.isOnline) {
+      await VersionCheck.check(context);
+      if (!mounted) return;
+    }
 
     Navigator.pushReplacement(context, MaterialPageRoute(
         builder: (_) => AppStorage.isLoggedIn

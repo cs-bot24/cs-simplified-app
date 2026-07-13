@@ -10,6 +10,16 @@ class ApiException implements Exception {
   final int? statusCode;
   ApiException(this.message, {this.statusCode});
   @override String toString() => message;
+
+  /// True when this failure is "no internet", not a real server error —
+  /// keyed off the exact strings `_friendlyError` produces below. Lets any
+  /// existing `catch (ApiException e)` site show a "you're offline" state
+  /// instead of a generic error, without needing to touch the 50+ call
+  /// sites that construct these exceptions.
+  bool get isConnectivityError =>
+      statusCode == null &&
+      (message.contains('Unable to connect to server') ||
+          message.contains('Connection timed out'));
 }
 
 class ApiClient {
