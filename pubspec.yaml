@@ -30,7 +30,6 @@ dependencies:
   path: ^1.9.0              # Path joining for db/file paths
   connectivity_plus: ^6.0.5 # Network state (offline banner, Wi-Fi-only downloads)
   crypto: ^3.0.3             # SHA-256 checksums for file integrity verification
-  disk_space_plus: ^0.2.3   # Device free/total storage for the Storage dashboard
 
   # ── Offline PDF rendering (see lib/services/pdf/ abstraction layer) ────────
   # NOTE: the app must never call this package directly outside of

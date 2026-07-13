@@ -14,14 +14,8 @@ import 'package:crypto/crypto.dart';
 class FileIntegrityChecker {
   /// Streams the file to avoid loading large PDFs entirely into memory.
   Future<String> computeSha256(String filePath) async {
-    final file = File(filePath);
-    final output = AccumulatorSink<Digest>();
-    final input = sha256.startChunkedConversion(output);
-    await for (final chunk in file.openRead()) {
-      input.add(chunk);
-    }
-    input.close();
-    return output.events.single.toString();
+    final digest = await sha256.bind(File(filePath).openRead()).first;
+    return digest.toString();
   }
 
   /// Returns true if [filePath] exists, is non-empty, and (when

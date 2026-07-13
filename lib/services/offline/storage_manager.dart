@@ -1,7 +1,5 @@
-import 'dart:developer' as dev;
 import 'dart:io';
 
-import 'package:disk_space_plus/disk_space_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -70,32 +68,20 @@ class StorageManager {
     return free > requiredBytes;
   }
 
-  final _diskSpace = DiskSpacePlus();
+  /// Free space on the device, in bytes.
+  ///
+  /// Always null for now: Flutter has no first-party cross-platform "bytes
+  /// free" API, and after one failed build from an unverified third-party
+  /// package API (see file_integrity_checker.dart's history), this
+  /// intentionally does NOT pull in another one on a guess. Every caller
+  /// (StorageAnalytics, the Storage Management screen, hasEnoughSpaceFor)
+  /// already treats null as "unknown" and degrades cleanly — the device
+  /// storage row just doesn't render rather than showing a wrong number.
+  /// Swap this for a real plugin call once its exact API is confirmed
+  /// against the pinned package version.
+  Future<int?> deviceFreeBytes() async => null;
 
-  /// Free space on the device, in bytes. Null if the platform plugin is
-  /// unavailable — callers should degrade gracefully (hide the stat rather
-  /// than show a wrong number).
-  Future<int?> deviceFreeBytes() async {
-    try {
-      final mb = await _diskSpace.getFreeDiskSpace;
-      if (mb == null) return null;
-      return (mb * 1024 * 1024).round();
-    } catch (e) {
-      dev.log('[StorageManager] free space unavailable: $e', name: 'StorageManager');
-      return null;
-    }
-  }
-
-  Future<int?> deviceTotalBytes() async {
-    try {
-      final mb = await _diskSpace.getTotalDiskSpace;
-      if (mb == null) return null;
-      return (mb * 1024 * 1024).round();
-    } catch (e) {
-      dev.log('[StorageManager] total space unavailable: $e', name: 'StorageManager');
-      return null;
-    }
-  }
+  Future<int?> deviceTotalBytes() async => null;
 
   // ── Settings ─────────────────────────────────────────────────────────────
 
