@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -38,12 +39,18 @@ void main() async {
   await AppStorage.loadTokenToCache();
   await AppStorage.loadUserToCache();
 
-  await FcmService.init();
-
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
 
   runApp(CsSimplifiedApp(themeProvider: themeProvider));
+
+  // Push-notification setup (FCM token fetch + backend registration) makes
+  // real network calls that can hang for a long time — up to a minute or
+  // more — with no connectivity. This must NEVER block the first frame;
+  // the app has to be usable immediately regardless of network state.
+  // Fire-and-forget: if it's offline, this just quietly finishes late
+  // (or fails) once connectivity returns.
+  unawaited(FcmService.init());
 }
 
 class CsSimplifiedApp extends StatelessWidget {
