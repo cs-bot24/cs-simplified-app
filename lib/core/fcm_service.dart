@@ -149,7 +149,13 @@ class FcmService {
 
   static Future<void> _registerToken() async {
     try {
-      final token = await _messaging.getToken();
+      final token = await _messaging.getToken().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          debugPrint('[FCM] getToken() timed out — likely no connectivity');
+          return null;
+        },
+      );
       debugPrint('[FCM] token: $token');
       if (token != null) {
         await AppStorage.saveFcmToken(token);
