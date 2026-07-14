@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'i_pdf_renderer.dart';
-import 'syncfusion_pdf_renderer.dart';
+import 'pdfx_renderer.dart';
 
 /// The only class the rest of the app should call to render a local PDF.
 ///
@@ -17,14 +17,14 @@ import 'syncfusion_pdf_renderer.dart';
 /// ```
 ///
 /// No screen, provider, or widget outside `lib/services/pdf/` should ever
-/// import `syncfusion_flutter_pdfviewer` (or any future replacement)
-/// directly — that keeps a library swap to a single new [IPdfRenderer]
-/// implementation plus a one-line change below.
+/// import `pdfx` (or any future replacement) directly — that keeps a
+/// library swap to a single new [IPdfRenderer] implementation plus a
+/// one-line change below.
 class PdfRendererService {
   PdfRendererService._();
   static final PdfRendererService instance = PdfRendererService._();
 
-  final IPdfRenderer _renderer = SyncfusionPdfRenderer();
+  final IPdfRenderer _renderer = PdfxRenderer();
 
   /// Renders [filePath] fully offline. Never performs network, auth, or
   /// backend calls — the caller is responsible for having already resolved

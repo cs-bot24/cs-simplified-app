@@ -33,8 +33,14 @@ dependencies:
 
   # ── Offline PDF rendering (see lib/services/pdf/ abstraction layer) ────────
   # NOTE: the app must never call this package directly outside of
-  # SyncfusionPdfRenderer — always go through PdfRendererService.
-  syncfusion_flutter_pdfviewer: ^26.2.14
+  # PdfxRenderer — always go through PdfRendererService.
+  # (Was syncfusion_flutter_pdfviewer — dropped after its Android plugin
+  # failed to compile against this project's Flutter SDK: legacy v1-embedding
+  # code referencing the removed PluginRegistry.Registrar class. pdfx is a
+  # much leaner, MIT-licensed, actively-maintained package with no such
+  # legacy baggage. Swapping renderers only touches this one file plus
+  # lib/services/pdf/ thanks to the IPdfRenderer abstraction.)
+  pdfx: ^2.6.0
 
   # ── Other app features ────────────────────────────────────────────────────
   cached_network_image: ^3.3.0

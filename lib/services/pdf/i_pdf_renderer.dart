@@ -27,13 +27,13 @@ class PdfViewerCallbacks {
 
 /// Contract every offline PDF renderer implementation must satisfy.
 ///
-/// The rest of the app never imports a concrete renderer (e.g. Syncfusion)
+/// The rest of the app never imports a concrete renderer (e.g. pdfx)
 /// directly — only [PdfRendererService], which owns the single instance of
 /// whichever [IPdfRenderer] is active. Swapping libraries in the future
 /// means writing one new class here; no other file changes.
 ///
 /// Deliberately minimal for Phase 1 (offline materials foundation). Capable
-/// renderers (like Syncfusion) support far more than this exposes — search,
+/// some renderers support far more than this exposes — search,
 /// text selection, annotations — but those are wired in as this interface
 /// grows in later phases (highlights sync, AI-linked highlights, reading
 /// analytics, etc.), not by breaking this contract.

@@ -438,7 +438,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   Future<void> _downloadPdf() async {
     if (kIsWeb) {
       // Web keeps the original "save via browser download" flow — the
-      // Offline Materials System (local DB + Syncfusion renderer) targets
+      // Offline Materials System (local DB + local PDF renderer) targets
       // mobile for this phase; see pdf_viewer_web.dart.
       setState(() { _webIsDownloading = true; _webDownloadProgress = 0; });
       try {
