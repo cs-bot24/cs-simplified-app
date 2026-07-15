@@ -325,11 +325,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _kSurface(ctx),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Continue reading?', style: TextStyle(color: Colors.white)),
-        content: Text('Continue from page $page?',
-            style: const TextStyle(color: Colors.white70)),
+        title: const Text('Continue reading?'),
+        content: Text('Continue from page $page?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -538,10 +536,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     return AppBar(
       backgroundColor: _kSurface(context),
       elevation: 0,
-      iconTheme: const IconThemeData(color: Colors.white),
+      iconTheme: IconThemeData(color: _kTextPrimary(context)),
       title: Text(
         widget.title,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _kTextPrimary(context)),
         overflow: TextOverflow.ellipsis,
       ),
       actions: [
@@ -564,7 +562,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             ),
           ),
         IconButton(
-          icon: const Icon(Icons.open_in_new_rounded, color: Colors.white),
+          icon: Icon(Icons.open_in_new_rounded, color: _kTextPrimary(context)),
           onPressed: _openExternally,
           tooltip: 'Open in Browser',
         ),
@@ -576,7 +574,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   Widget _buildDownloadAction() {
     if (kIsWeb || widget.materialId == null) {
       return IconButton(
-        icon: const Icon(Icons.download_rounded, color: Colors.white),
+        icon: Icon(Icons.download_rounded, color: _kTextPrimary(context)),
         onPressed: _isDownloading ? null : _downloadPdf,
         tooltip: 'Download PDF',
       );
@@ -591,11 +589,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       case OfflineStatus.downloading:
       case OfflineStatus.queued:
       case OfflineStatus.paused:
-        return const Padding(
-          padding: EdgeInsets.all(16),
+        return Padding(
+          padding: const EdgeInsets.all(16),
           child: SizedBox(
             width: 18, height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+            child: CircularProgressIndicator(strokeWidth: 2, color: _kTextSecondary(context)),
           ),
         );
       case OfflineStatus.updateAvailable:
@@ -607,7 +605,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       case OfflineStatus.notDownloaded:
       case OfflineStatus.failed:
         return IconButton(
-          icon: const Icon(Icons.download_rounded, color: Colors.white),
+          icon: Icon(Icons.download_rounded, color: _kTextPrimary(context)),
           onPressed: _downloadPdf,
           tooltip: 'Save for offline use',
         );
@@ -806,13 +804,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
   Widget _buildLoadingOverlay() => Container(
     color: _kBackground(context),
-    child: const Center(
+    child: Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5),
+          CircularProgressIndicator(color: _kTextSecondary(context), strokeWidth: 2.5),
           SizedBox(height: 16),
-          Text('Loading PDF…', style: TextStyle(color: Colors.white54, fontSize: 13)),
+          Text('Loading PDF…', style: TextStyle(color: _kTextSecondary(context), fontSize: 13)),
         ],
       ),
     ),
@@ -825,16 +823,16 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.picture_as_pdf_outlined, size: 72, color: Colors.white24),
+          Icon(Icons.picture_as_pdf_outlined, size: 72, color: _kTextSecondary(context).withOpacity(0.4)),
           const SizedBox(height: 20),
-          const Text('Could not load PDF',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+          Text('Could not load PDF',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kTextPrimary(context))),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'The Google Drive viewer could not render this file.\n'
             'You can retry, open it in your browser, or download it.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
+            style: TextStyle(color: _kTextSecondary(context), fontSize: 13, height: 1.5),
           ),
           const SizedBox(height: 28),
           Row(
@@ -845,8 +843,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 icon: const Icon(Icons.refresh_rounded, size: 17),
                 label: const Text('Retry'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white30),
+                  foregroundColor: _kTextPrimary(context),
+                  side: BorderSide(color: _kTextSecondary(context).withOpacity(0.3)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -860,8 +858,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           const SizedBox(height: 14),
           TextButton.icon(
             onPressed: _isDownloading ? null : _downloadPdf,
-            icon: const Icon(Icons.download_rounded, color: Colors.white60, size: 18),
-            label: const Text('Download Instead', style: TextStyle(color: Colors.white60)),
+            icon: Icon(Icons.download_rounded, color: _kTextSecondary(context), size: 18),
+            label: Text('Download Instead', style: TextStyle(color: _kTextSecondary(context))),
           ),
         ],
       ),
@@ -881,14 +879,14 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             children: [
               CircularProgressIndicator(
                 value: _downloadProgress > 0 ? _downloadProgress : null,
-                color: Colors.white, strokeWidth: 2.5,
+                color: _kTextPrimary(context), strokeWidth: 2.5,
               ),
               const SizedBox(height: 16),
               Text(
                 _downloadProgress > 0
                     ? 'Downloading ${(_downloadProgress * 100).toInt()}%…'
                     : 'Preparing download…',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: TextStyle(color: _kTextPrimary(context), fontSize: 14),
               ),
             ],
           ),
@@ -1077,7 +1075,7 @@ class _StudyToolsPanelState extends State<_StudyToolsPanel>
             decoration: BoxDecoration(
               color: _kSurface(context),
               border: Border(
-                top: BorderSide(color: Colors.white.withOpacity(0.10)),
+                top: BorderSide(color: _kTextSecondary(context).withOpacity(0.15)),
               ),
             ),
             child: Center(
@@ -1415,7 +1413,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     width: 40, height: 4,
     margin: const EdgeInsets.only(top: 12, bottom: 4),
     decoration: BoxDecoration(
-      color: Colors.white24,
+      color: _kTextSecondary(context).withOpacity(0.3),
       borderRadius: BorderRadius.circular(2),
     ),
   );
@@ -1554,7 +1552,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
     padding: const EdgeInsets.only(left: 12, right: 8, top: 8, bottom: 10),
     decoration: BoxDecoration(
       color: _kSurface(context),
-      border: Border(top: BorderSide(color: Colors.white.withOpacity(0.07))),
+      border: Border(top: BorderSide(color: _kTextSecondary(context).withOpacity(0.12))),
     ),
     child: Row(
       children: [
