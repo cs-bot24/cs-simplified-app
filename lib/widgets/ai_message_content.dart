@@ -283,6 +283,115 @@ Widget _diagramFallback(bool isDark) {
 
 // ── Math error fallback ───────────────────────────────────────────────────────
 
+/// Best-effort LaTeX → plain readable text, used ONLY when KaTeX itself
+/// couldn't render an expression (Phase 2, Part 5: "Expressions that fail
+/// rendering should gracefully fall back to readable mathematical text
+/// instead of displaying 'Expression could not be displayed.'"). Not a full
+/// LaTeX interpreter — just enough of the common vocabulary (fractions,
+/// roots, common symbols, super/subscripts) to give the student something
+/// they can actually read instead of a dead-end error notice or, worse, the
+/// raw broken markup.
+const Map<String, String> _latexSymbolWords = {
+  r'\times': '×', r'\div': '÷', r'\pm': '±', r'\mp': '∓',
+  r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'\approx': '≈', r'\equiv': '≡',
+  r'\infty': '∞', r'\partial': '∂', r'\nabla': '∇',
+  r'\rightarrow': '→', r'\to': '→', r'\leftarrow': '←', r'\Rightarrow': '⇒',
+  r'\cdot': '·', r'\cdots': '⋯', r'\ldots': '…',
+  r'\alpha': 'α', r'\beta': 'β', r'\gamma': 'γ', r'\delta': 'δ',
+  r'\epsilon': 'ε', r'\theta': 'θ', r'\lambda': 'λ', r'\mu': 'μ',
+  r'\pi': 'π', r'\rho': 'ρ', r'\sigma': 'σ', r'\tau': 'τ', r'\phi': 'φ',
+  r'\omega': 'ω', r'\Delta': 'Δ', r'\Sigma': 'Σ', r'\Omega': 'Ω',
+  r'\in': '∈', r'\notin': '∉', r'\subset': '⊂', r'\cup': '∪', r'\cap': '∩',
+  r'\forall': '∀', r'\exists': '∃',
+  r'\left': '', r'\right': '', r'\,': ' ', r'\;': ' ', r'\!': '',
+};
+
+const Map<String, String> _superscriptDigits = {
+  '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+  '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+  '+': '⁺', '-': '⁻', 'n': 'ⁿ', 'i': 'ⁱ',
+};
+
+String _readableMathFallbackText(String latex) {
+  var t = latex;
+
+  // \frac{a}{b} -> (a)/(b) — do this before symbol replacement since it
+  // needs the braces intact.
+  final fracRe = RegExp(r'\\d?frac\{([^{}]*)\}\{([^{}]*)\}');
+  while (fracRe.hasMatch(t)) {
+    t = t.replaceAllMapped(fracRe, (m) => '(${m.group(1)})/(${m.group(2)})');
+  }
+
+  // \sqrt{x} -> √(x), \sqrt[n]{x} -> ⁿ√(x)
+  t = t.replaceAllMapped(
+    RegExp(r'\\sqrt\[([^\[\]]*)\]\{([^{}]*)\}'),
+    (m) => '${m.group(1)}√(${m.group(2)})',
+  );
+  t = t.replaceAllMapped(
+    RegExp(r'\\sqrt\{([^{}]*)\}'),
+    (m) => '√(${m.group(1)})',
+  );
+
+  // Superscripts: x^{ab} -> x^(ab); x^2 -> x² when every char has a
+  // unicode superscript, else leave as x^(2).
+  t = t.replaceAllMapped(RegExp(r'\^\{([^{}]*)\}'), (m) {
+    final inner = m.group(1)!;
+    if (inner.split('').every((c) => _superscriptDigits.containsKey(c))) {
+      return inner.split('').map((c) => _superscriptDigits[c]).join();
+    }
+    return '^($inner)';
+  });
+  t = t.replaceAllMapped(RegExp(r'\^([A-Za-z0-9])'), (m) {
+    final c = m.group(1)!;
+    return _superscriptDigits[c] ?? '^$c';
+  });
+
+  // Subscripts: just parenthesise — there's no compact unicode fallback
+  // for most subscripted variables.
+  t = t.replaceAllMapped(RegExp(r'_\{([^{}]*)\}'), (m) => '_(${m.group(1)})');
+
+  // \sum_{a}^{b} / \int_{a}^{b} -> "sum from a to b of" / "integral from a to b of"
+  t = t.replaceAllMapped(
+    RegExp(r'\\sum_\{([^{}]*)\}\^\{([^{}]*)\}'),
+    (m) => 'sum from ${m.group(1)} to ${m.group(2)} of ',
+  );
+  t = t.replaceAll(r'\sum', 'Σ');
+  t = t.replaceAllMapped(
+    RegExp(r'\\int_\{([^{}]*)\}\^\{([^{}]*)\}'),
+    (m) => 'integral from ${m.group(1)} to ${m.group(2)} of ',
+  );
+  t = t.replaceAll(r'\int', '∫');
+
+  // Known symbol/greek-letter vocabulary.
+  _latexSymbolWords.forEach((k, v) => t = t.replaceAll(k, v));
+
+  // Matrices: give the student a readable label rather than raw
+  // \begin{bmatrix}...\end{bmatrix} source.
+  t = t.replaceAllMapped(
+    RegExp(r'\\begin\{[a-zA-Z]*matrix\}([\s\S]*?)\\end\{[a-zA-Z]*matrix\}'),
+    (m) {
+      final rows = m.group(1)!
+          .split(r'\\')
+          .map((r) => r.trim().replaceAll('&', ', '))
+          .where((r) => r.isNotEmpty)
+          .map((r) => '[$r]')
+          .join(' ');
+      return rows.isEmpty ? 'matrix' : rows;
+    },
+  );
+
+  // Any remaining unrecognised \command{...} — drop the backslash/braces
+  // rather than showing broken markup, keeping the argument text readable.
+  t = t.replaceAllMapped(
+    RegExp(r'\\[a-zA-Z]+\{([^{}]*)\}'),
+    (m) => m.group(1)!,
+  );
+  t = t.replaceAll(RegExp(r'\\[a-zA-Z]+'), '');
+  t = t.replaceAll(RegExp(r'[{}]'), '');
+
+  return t.trim();
+}
+
 class _MathFallback extends StatelessWidget {
   final String content;
   final bool isDark;
@@ -290,10 +399,27 @@ class _MathFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Never surface the raw, unparsed LaTeX source to the user — if KaTeX
-    // couldn't render it, showing the broken markup itself is exactly the
-    // "raw LaTeX leak" this widget exists to prevent. A short, honest,
-    // professional notice instead.
+    // Phase 2, Part 5 — KaTeX failed to render this expression, but the
+    // student should still see something they can read, not a dead-end
+    // error notice. _readableMathFallbackText() converts the common LaTeX
+    // vocabulary to plain readable text (fractions, roots, super/
+    // subscripts, greek letters, matrices); if that conversion still
+    // produces something clearly broken (empty, or still full of raw
+    // backslashes it couldn't resolve), fall back to the short notice
+    // rather than showing broken markup.
+    final readable = _readableMathFallbackText(content);
+    final looksClean = readable.isNotEmpty && !readable.contains(r'\');
+
+    if (looksClean) {
+      return Text(
+        readable,
+        style: TextStyle(
+          fontSize: 14,
+          color: isDark ? Colors.white.withOpacity(0.85) : Colors.black87,
+        ),
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -409,7 +535,51 @@ String _wrapBareLatexRuns(String text) {
   return buffer.toString();
 }
 
+/// Wraps bare caret-exponent expressions that contain NO backslash at all —
+/// e.g. "3x^2", "(x+1)^2", "e^{-x}", "x^n" typed with no `$` anywhere.
+///
+/// Root cause (Phase 2, Part 5): [_wrapBareLatexRuns] above only fires when
+/// a LaTeX command (a backslash) is present. A caret exponent has no
+/// backslash, so "3x^2" never entered the math pipeline at all and rendered
+/// as literal text with a visible "^" instead of a superscript — exactly
+/// the "3x^2 / (x+1)^2 instead of proper mathematical notation" symptom.
+/// Deliberately conservative: only matches an actual `base^exponent` shape
+/// (a caret is essentially never meaningful in ordinary prose), so this
+/// never touches other text.
+final RegExp _caretExprRe = RegExp(
+  r'(?:[A-Za-z0-9]|\([^()\n]{1,40}\))+\^(?:\{[^{}\n]{1,40}\}|[+\-]?[A-Za-z0-9]+)',
+);
+
+String _wrapBareCaretExpressions(String text) {
+  if (!text.contains('^')) return text;   // fast path
+
+  final protected = <List<int>>[];
+  for (final m in RegExp(r'\$\$[\s\S]*?\$\$|\$(?:[^\$\n]|\\.)+?\$').allMatches(text)) {
+    protected.add([m.start, m.end]);
+  }
+  bool isProtected(int pos) => protected.any((p) => pos >= p[0] && pos < p[1]);
+
+  final buffer = StringBuffer();
+  int lastEnd = 0;
+  for (final m in _caretExprRe.allMatches(text)) {
+    if (isProtected(m.start)) continue;
+    buffer.write(text.substring(lastEnd, m.start));
+    buffer.write(r'$');
+    buffer.write(m.group(0));
+    buffer.write(r'$');
+    lastEnd = m.end;
+  }
+  buffer.write(text.substring(lastEnd));
+  return buffer.toString();
+}
+
 String _preprocess(String text) {
+  // Step -1: wrap bare caret-exponent expressions with NO backslash at all
+  // (e.g. "3x^2", "(x+1)^2") — see _wrapBareCaretExpressions() docstring.
+  // Runs before Step 0 so its inserted $ pairs are correctly treated as
+  // already-protected by the backslash-run wrapper below.
+  text = _wrapBareCaretExpressions(text);
+
   // Step 0: wrap bare LaTeX command runs with no $ at all (arrows, greek
   // letters, operators typed standalone — e.g. row-operation instructions
   // like "R1 \rightarrow R1 - 2R2") so they never leak as raw text.
