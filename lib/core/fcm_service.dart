@@ -169,43 +169,32 @@ class FcmService {
 
   // ── Windows desktop: local notifications only, no Firebase ─────────────────
 
-  /// Initializes flutter_local_notifications for Windows without touching
-  /// anything Firebase-related. This is what lets `DownloadManager`'s
-  /// existing `FcmService.showDownloadComplete()` / `showDownloadFailed()` /
+  /// Called instead of the Firebase init path on Windows. Firebase itself
+  /// has no official Windows support, and (see the note below) neither
+  /// does the flutter_local_notifications version this project depends
+  /// on, so this is currently a no-op beyond logging. `DownloadManager`'s
+  /// `FcmService.showDownloadComplete()` / `showDownloadFailed()` /
   /// `showStorageFull()` calls (see lib/services/offline/download_manager.dart)
-  /// keep working on Windows even though push notifications don't exist
-  /// there — those calls are already wrapped in `.catchError((_) {})` at
-  /// every call site, so even if this were somehow never called, downloads
+  /// no-op on Windows too (see `_isWindowsDesktop` guard on each), and are
+  /// already wrapped in `.catchError((_) {})` at every call site, so downloads
   /// themselves are unaffected either way.
   ///
-  /// NOTE ON THE GUID BELOW: Windows toast notifications require a stable
-  /// GUID identifying this app to the OS notification system. The value
-  /// here is a placeholder generated for this change — it is NOT tied to
-  /// any existing app registration. Before a real Windows release, replace
-  /// it with a GUID the team generates and treats as a permanent, versioned
-  /// app identifier (changing it later can orphan previously-shown
-  /// notifications' callback wiring). This could not be verified against a
-  /// real Windows build in this environment — flagged explicitly rather
-  /// than presented as confirmed-working.
+  /// NOTE: flutter_local_notifications (the version resolved in
+  /// pubspec.lock, 17.2.4) has no Windows platform implementation —
+  /// there is no `WindowsInitializationSettings`/`WindowsNotificationDetails`
+  /// in this package, and `InitializationSettings`/`NotificationDetails`
+  /// have no `windows` parameter. An earlier pass assumed Windows support
+  /// that doesn't exist in this dependency, which is what broke
+  /// `flutter analyze`. Until a Windows-capable notifications package is
+  /// added, local notifications are a no-op on Windows — every
+  /// `FcmService.show*()` call site already treats notification failures
+  /// as non-fatal (see download_manager.dart's `.catchError((_) {})`), so
+  /// this preserves the same "downloads work either way" behavior without
+  /// calling into a plugin that has nothing registered for this platform.
   static Future<void> _initWindowsLocalNotificationsOnly() async {
-    const windowsSettings = WindowsInitializationSettings(
-      appName: 'CS Simplified',
-      appUserModelId: 'CSSimplified.DesktopApp',
-      guid: '5de6eb88-3e14-4c77-9ef9-6e5a1b2c7a10', // placeholder — replace before release, see note above
-    );
-    try {
-      await _localNotifications.initialize(
-        const InitializationSettings(windows: windowsSettings),
-        onDidReceiveNotificationResponse: _onNotificationTapped,
-      );
-      debugPrint('[FCM] Windows desktop — local notifications initialised '
-          '(Firebase Messaging skipped: no official Windows support).');
-    } catch (e) {
-      // Never let a notification-plugin failure block app startup — same
-      // defensive posture DownloadManager already uses around every
-      // FcmService.show*() call.
-      debugPrint('[FCM] Windows local-notifications init failed: $e');
-    }
+    debugPrint('[FCM] Windows desktop — local notifications skipped '
+        '(flutter_local_notifications has no Windows implementation; '
+        'Firebase Messaging also skipped: no official Windows support).');
   }
 
   // ── Token registration ─────────────────────────────────────────────────────
@@ -302,7 +291,7 @@ class FcmService {
     required String title,
     required String body,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb || _isWindowsDesktop) return;
     await _localNotifications.show(
       id, title, body,
       NotificationDetails(
@@ -322,7 +311,6 @@ class FcmService {
           presentBadge: false,
           presentSound: true,
         ),
-        windows: const WindowsNotificationDetails(),
       ),
     );
   }
@@ -333,7 +321,7 @@ class FcmService {
     required int id,
     required String materialTitle,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb || _isWindowsDesktop) return;
     await _localNotifications.show(
       id, 'Download complete', '"$materialTitle" is now available offline.',
       NotificationDetails(
@@ -351,13 +339,12 @@ class FcmService {
           presentBadge: false,
           presentSound: false,
         ),
-        windows: const WindowsNotificationDetails(),
       ),
     );
   }
 
   static Future<void> showDownloadFailed({required String materialTitle}) async {
-    if (kIsWeb) return;
+    if (kIsWeb || _isWindowsDesktop) return;
     await _localNotifications.show(
       materialTitle.hashCode & 0x7fffffff,
       'Download failed',
@@ -372,13 +359,12 @@ class FcmService {
           color: const Color(0xFF6C63FF),
         ),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: false),
-        windows: const WindowsNotificationDetails(),
       ),
     );
   }
 
   static Future<void> showStorageFull() async {
-    if (kIsWeb) return;
+    if (kIsWeb || _isWindowsDesktop) return;
     await _localNotifications.show(
       999001,
       'Storage full',
@@ -393,13 +379,12 @@ class FcmService {
           color: const Color(0xFF6C63FF),
         ),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true),
-        windows: const WindowsNotificationDetails(),
       ),
     );
   }
 
   static Future<void> showUpdateAvailable({required int count}) async {
-    if (kIsWeb) return;
+    if (kIsWeb || _isWindowsDesktop) return;
     await _localNotifications.show(
       999002,
       'Updates available',
@@ -414,7 +399,6 @@ class FcmService {
           color: const Color(0xFF6C63FF),
         ),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: false),
-        windows: const WindowsNotificationDetails(),
       ),
     );
   }

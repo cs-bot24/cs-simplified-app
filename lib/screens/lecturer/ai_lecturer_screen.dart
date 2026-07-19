@@ -4,6 +4,10 @@
 // "I don't know" handling, optional custom topics, and a final exam.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/services.dart'
+    show LogicalKeyboardKey, KeyDownEvent, HardwareKeyboard;
 import 'package:provider/provider.dart';
 
 import '../../models/lecturer_model.dart';

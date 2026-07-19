@@ -87,7 +87,6 @@ class _WebPdfPanelState extends State<WebPdfPanel> {
   @override
   void initState() {
     super.initState();
-    _scrollCtrl.addListener(_onScroll);
     // Use a stable key so hot-reload doesn't re-register the same factory.
     _viewType = 'pdf-viewer-${widget.url.hashCode}';
     registerPdfViewFactory(_viewType, widget.url);

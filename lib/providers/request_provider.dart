@@ -19,10 +19,9 @@ class RequestProvider extends ChangeNotifier {
 
     try {
       debugPrint('[RequestProvider] calling POST /material-requests');
-      await ApiClient.submitMaterialRequest(
-        courseName: courseName,
-        topic: topic,
-        message: message,
+      await ApiClient.createMaterialRequest(
+        title: '$courseName: $topic',
+        message: message ?? '',
       );
       debugPrint('[RequestProvider] success');
       return true;
