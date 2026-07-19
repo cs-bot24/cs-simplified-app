@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/breakpoints.dart';
 import '../../models/offline_material.dart';
 import '../../providers/offline_provider.dart';
 import '../../services/offline/download_queue_manager.dart';
@@ -53,7 +54,9 @@ class _DownloadQueueScreenState extends State<DownloadQueueScreen> {
       appBar: AppBar(title: const Text('Download Queue')),
       body: RefreshIndicator(
         onRefresh: _refresh,
-        child: ListView(
+        child: Breakpoints.centered(
+          context,
+          ListView(
           padding: const EdgeInsets.all(16),
           children: [
             if (nothingPending && s.completed.isEmpty && s.failed.isEmpty)
@@ -132,6 +135,7 @@ class _DownloadQueueScreenState extends State<DownloadQueueScreen> {
               ...s.completed.map((e) => _HistoryTile(entry: e, trailing: null)),
             ],
           ],
+          ),
         ),
       ),
     );

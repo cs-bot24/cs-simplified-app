@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/breakpoints.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/academic_provider.dart';
 import '../../providers/notification_provider.dart';
@@ -46,7 +47,10 @@ import '../lecturer/ai_lecturer_screen.dart';
 import '../../widgets/requires_internet_view.dart';
 
 // ── Responsive breakpoint ─────────────────────────────────────────────────────
-const _kDesktopBreakpoint = 900.0;
+// See lib/core/breakpoints.dart (Phase 2, Task 15) — kept as a local alias
+// so the rest of this file (and its many existing call sites) didn't need
+// to change beyond this one line.
+const _kDesktopBreakpoint = Breakpoints.desktop;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -491,7 +495,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     final name     = auth.user?.fullName.split(' ').first ?? 'Student';
     final isDesktop = MediaQuery.of(context).size.width >= _kDesktopBreakpoint;
 
-    return Scaffold(
+    final content = Scaffold(
       body: RefreshIndicator(
         onRefresh: _onRefresh,
         child: CustomScrollView(
@@ -762,6 +766,20 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ],
         ),
+      ),
+    );
+
+    // Desktop (Phase 2, Task 4): a sliver list designed for mobile-width
+    // content stretches edge-to-edge on a maximized 1920px window if left
+    // unconstrained. Centering it within a comfortable reading/scanning
+    // width is the standard, low-risk fix — every card/section inside
+    // (_buildHeader, trending materials, etc.) is completely unchanged,
+    // only the width available to them is bounded. Mobile is untouched.
+    if (!isDesktop) return content;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1100),
+        child: content,
       ),
     );
   }

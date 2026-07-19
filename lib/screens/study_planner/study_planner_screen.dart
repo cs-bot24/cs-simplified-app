@@ -7,6 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/api_client.dart';
+import '../../core/breakpoints.dart';
 import '../../core/fcm_service.dart';
 import '../../providers/study_planner_provider.dart';
 
@@ -210,19 +211,27 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // Phase 2A: on desktop, show "My Plans" and "Today" side by side instead
+    // of behind tabs — both are already self-contained, stateless widgets
+    // fed by the same `_plans` list, so this reuses them completely
+    // unchanged; no new state or data was introduced. Below the desktop
+    // breakpoint, behavior is byte-for-byte what it was before this change.
+    final isDesktop = Breakpoints.isDesktop(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Study Planner', style: TextStyle(fontWeight: FontWeight.w700)),
-        bottom: TabBar(
-          controller: _tabs,
-          labelColor: _kAccentLt,
-          unselectedLabelColor: _textSec(context),
-          indicatorColor: _kAccent,
-          tabs: const [
-            Tab(text: 'My Plans'),
-            Tab(text: 'Today'),
-          ],
-        ),
+        bottom: isDesktop
+            ? null
+            : TabBar(
+                controller: _tabs,
+                labelColor: _kAccentLt,
+                unselectedLabelColor: _textSec(context),
+                indicatorColor: _kAccent,
+                tabs: const [
+                  Tab(text: 'My Plans'),
+                  Tab(text: 'Today'),
+                ],
+              ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openCreateSheet,
@@ -235,14 +244,28 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _buildError()
-              : TabBarView(
-                  controller: _tabs,
-                  children: [
-                    _PlansTab(plans: _plans, onRefresh: _load,
-                        onDelete: _deletePlan),
-                    _TodayTab(plans: _plans, onComplete: _completeSession),
-                  ],
-                ),
+              : isDesktop
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _PlansTab(plans: _plans, onRefresh: _load,
+                              onDelete: _deletePlan),
+                        ),
+                        Container(width: 1, color: scheme.outlineVariant.withOpacity(0.3)),
+                        Expanded(
+                          child: _TodayTab(plans: _plans, onComplete: _completeSession),
+                        ),
+                      ],
+                    )
+                  : TabBarView(
+                      controller: _tabs,
+                      children: [
+                        _PlansTab(plans: _plans, onRefresh: _load,
+                            onDelete: _deletePlan),
+                        _TodayTab(plans: _plans, onComplete: _completeSession),
+                      ],
+                    ),
     );
   }
 

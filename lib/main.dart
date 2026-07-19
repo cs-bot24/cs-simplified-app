@@ -6,6 +6,12 @@ import 'firebase_options.dart';
 import 'core/storage.dart';
 import 'core/fcm_service.dart';
 import 'core/connectivity_service.dart';
+// Platform bootstrap (desktop audit Part 6/12, implementation Phase 1/2).
+// Selects platform_init_io.dart everywhere except web, mirroring the
+// existing ai_provider_io.dart/_web.dart conditional-import pattern.
+// Exposes: isWindowsDesktop, initDesktopSqliteIfNeeded().
+import 'core/platform_init_io.dart'
+    if (dart.library.html) 'core/platform_init_web.dart';
 import 'providers/auth_provider.dart';
 import 'providers/academic_provider.dart';
 import 'providers/theme_provider.dart';
@@ -27,13 +33,32 @@ import 'providers/lecturer_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Windows desktop (Phase 1, desktop audit Part 6): swap sqflite's
+  // database factory to the FFI-backed implementation before anything
+  // touches AppDatabase.instance.database. No-op on every other platform.
+  // Must run before ConnectivityService/AppStorage/provider init below,
+  // since OfflineProvider.loadFromStorage() (called from splash/home) can
+  // reach AppDatabase very early in the app's lifecycle.
+  await initDesktopSqliteIfNeeded();
+
   // Must be ready before anything else checks connectivity (offline
   // banner, requireInternet() gates, provider cache fallbacks).
   await ConnectivityService.instance.initialize();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Firebase (desktop audit Part 12): firebase_options.dart has no
+  // Windows configuration block — DefaultFirebaseOptions.currentPlatform
+  // throws UnsupportedError for TargetPlatform.windows. Firebase Core /
+  // Messaging also have no official Windows support upstream (confirmed
+  // in the audit against FlutterFire's own tracking issue). Skipping this
+  // call entirely on Windows is what prevents that throw from crashing
+  // the app before it can even render its first frame.
+  //
+  // Android and Web behavior is completely unchanged.
+  if (!isWindowsDesktop) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
 
   await AppStorage.init();
   await AppStorage.loadTokenToCache();

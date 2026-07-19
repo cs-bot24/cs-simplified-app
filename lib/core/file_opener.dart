@@ -23,6 +23,7 @@ import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/home_provider.dart';
 import 'api_client.dart';
@@ -115,9 +116,9 @@ class FileOpener {
       }
 
       // 4. Open with device app
-      final result = await OpenFilex.open(filePath);
+      final opened = await _openWithSystemApp(filePath);
 
-      if (result.type != ResultType.done && context.mounted) {
+      if (!opened && context.mounted) {
         _showError(context, fileType);
         // Clear session since file didn't open
         clearSession();
@@ -137,6 +138,26 @@ class FileOpener {
       }
       clearSession();
     }
+  }
+
+  /// Opens [filePath] in the OS's default app for its file type.
+  ///
+  /// `open_filex` has no Windows implementation (desktop audit Part 3B) —
+  /// on Windows this hands off to `url_launcher`'s `launchUrl(Uri.file(...))`
+  /// instead, which already ships as a project dependency and does have
+  /// Windows support. Android/iOS/macOS/Linux behavior is completely
+  /// unchanged — they still go through `open_filex` exactly as before.
+  static Future<bool> _openWithSystemApp(String filePath) async {
+    if (Platform.isWindows) {
+      try {
+        return await launchUrl(Uri.file(filePath));
+      } catch (e) {
+        dev.log('[FileOpener] Windows launchUrl error: $e');
+        return false;
+      }
+    }
+    final result = await OpenFilex.open(filePath);
+    return result.type == ResultType.done;
   }
 
   static void _showError(BuildContext context, String fileType, {String? detail}) {

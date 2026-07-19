@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
@@ -94,8 +96,14 @@ class _ShareProgressScreenState extends State<ShareProgressScreen>
     }
     final ok = await SharingService.saveToGallery(bytes, cardType: _currentCardType);
     if (mounted) {
-      _snack(ok ? 'Saved to gallery!' : 'Could not save. Check storage permission.',
-          success: ok);
+      // Windows saves via a Save File dialog (see sharing_service_io.dart),
+      // not a photo gallery — "Saved to gallery!" would be inaccurate there.
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+      final successMsg = isWindows ? 'Image saved!' : 'Saved to gallery!';
+      final failureMsg = isWindows
+          ? 'Could not save image.'
+          : 'Could not save. Check storage permission.';
+      _snack(ok ? successMsg : failureMsg, success: ok);
     }
   }
 

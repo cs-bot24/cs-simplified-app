@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/breakpoints.dart';
 import '../../models/offline_material.dart';
 import '../../providers/academic_provider.dart';
 import '../../providers/offline_provider.dart';
@@ -70,6 +71,21 @@ class _OfflineScreenState extends State<OfflineScreen> {
     if (confirmed && mounted) {
       await provider.removeMany(_selected.toList());
       setState(() { _selected.clear(); _selecting = false; });
+    }
+  }
+
+  // Windows desktop right-click context menu (Phase 2A, Task 9): reuses the
+  // exact same OfflineProvider.removeMany() call the multi-select bulk
+  // delete above already uses — just with a single-element list — and the
+  // same _confirm() dialog, so there is no new backend or provider
+  // operation here, only a new entry point into an existing one.
+  Future<void> _removeOne(OfflineMaterial m, OfflineProvider provider) async {
+    final confirmed = await _confirm(
+      title: 'Remove "${m.title}"?',
+      message: 'It\u2019ll be removed from this device. You can re-download it anytime.',
+    );
+    if (confirmed && mounted) {
+      await provider.removeMany([m.materialId]);
     }
   }
 
@@ -223,21 +239,26 @@ class _OfflineScreenState extends State<OfflineScreen> {
                   child: Text('No materials match this view.',
                       style: TextStyle(color: Colors.grey[500])),
                 )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (ctx, i) {
-                    final m = visible[i];
-                    return _LibraryCard(
-                      material: m,
-                      selecting: _selecting,
-                      selected: _selected.contains(m.materialId),
-                      onTap: () => _selecting ? _toggleSelect(m.materialId) : _openMaterial(m),
-                      onLongPress: () => setState(() { _selecting = true; _toggleSelect(m.materialId); }),
-                      onFavorite: () => provider.toggleFavorite(m.materialId),
-                    );
-                  },
+              : Breakpoints.centered(
+                  context,
+                  ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    itemCount: visible.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (ctx, i) {
+                      final m = visible[i];
+                      return _LibraryCard(
+                        material: m,
+                        selecting: _selecting,
+                        selected: _selected.contains(m.materialId),
+                        onTap: () => _selecting ? _toggleSelect(m.materialId) : _openMaterial(m),
+                        onLongPress: () => setState(() { _selecting = true; _toggleSelect(m.materialId); }),
+                        onFavorite: () => provider.toggleFavorite(m.materialId),
+                        onOpen: () => _openMaterial(m),
+                        onRemove: () => _removeOne(m, provider),
+                      );
+                    },
+                  ),
                 ),
         ),
       ]),
@@ -436,6 +457,11 @@ class _LibraryCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final VoidCallback onFavorite;
+  // Phase 2A: same actions as onTap/onFavorite above, exposed separately so
+  // the Windows right-click context menu can call them directly without
+  // going through the mobile tap/long-press gesture semantics.
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
 
   const _LibraryCard({
     required this.material,
@@ -444,6 +470,8 @@ class _LibraryCard extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     required this.onFavorite,
+    required this.onOpen,
+    required this.onRemove,
   });
 
   Color _accentFor(String? courseCode) {
@@ -457,10 +485,27 @@ class _LibraryCard extends StatelessWidget {
     final accent = _accentFor(material.courseCode);
     final progressPct = (material.readingProgress * 100).round();
 
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Container(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        // Windows desktop only (Phase 2A, Task 9): right-click opens a
+        // context menu with Open / Favorite / Remove — all three call the
+        // exact same callbacks the existing tap/star-icon UI already uses,
+        // so this is a new entry point, not new logic. Inert everywhere
+        // else (`onSecondaryTapDown` only fires from a right mouse button,
+        // which Android/iOS touch and typical web interaction don't send),
+        // but explicitly gated anyway for clarity and consistency with the
+        // rest of this codebase's platform-gating pattern.
+        onSecondaryTapDown: (details) {
+          final isDesktop =
+              !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+          if (!isDesktop || selecting) return;
+          _showContextMenu(context, details.globalPosition);
+        },
+        child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
@@ -545,8 +590,37 @@ class _LibraryCard extends StatelessWidget {
             ]),
           ),
         ]),
+        ),
       ),
     );
+  }
+
+  void _showContextMenu(BuildContext context, Offset position) {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        const PopupMenuItem(value: 'open', child: Text('Open')),
+        PopupMenuItem(
+          value: 'favorite',
+          child: Text(material.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'remove', child: Text('Remove from device')),
+      ],
+    ).then((choice) {
+      if (choice == 'open') {
+        onOpen();
+      } else if (choice == 'favorite') {
+        onFavorite();
+      } else if (choice == 'remove') {
+        onRemove();
+      }
+    });
   }
 
   static String _relative(DateTime dt) {

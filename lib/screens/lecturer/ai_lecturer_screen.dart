@@ -1231,26 +1231,57 @@ class _TextInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    void trySubmit() {
+      if (busy) return;
+      final t = ctrl.text.trim();
+      if (t.isNotEmpty) onSubmit(t);
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: ctrl,
-              maxLines: null,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: hint,
-                filled:   true,
-                fillColor: isDark
-                    ? Colors.white.withOpacity(0.07)
-                    : Colors.grey.shade100,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
+            // Windows desktop only (Phase 2A): Enter sends, Shift+Enter
+            // inserts a newline — same pattern as AI Tutor's _InputBar
+            // (ai_tutor_screen.dart). Gated to
+            // `!kIsWeb && defaultTargetPlatform == TargetPlatform.windows`,
+            // so Android's on-screen keyboard and existing Web behavior are
+            // completely unchanged. NOT TESTED on a real Windows machine —
+            // see the Phase 2A report.
+            child: Focus(
+              onKeyEvent: (node, event) {
+                final isDesktop = !kIsWeb &&
+                    defaultTargetPlatform == TargetPlatform.windows;
+                if (!isDesktop) return KeyEventResult.ignored;
+                final isEnter =
+                    event.logicalKey == LogicalKeyboardKey.enter ||
+                        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+                if (event is KeyDownEvent &&
+                    isEnter &&
+                    !HardwareKeyboard.instance.isShiftPressed) {
+                  trySubmit();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: TextField(
+                controller: ctrl,
+                maxLines: null,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  filled:   true,
+                  fillColor: isDark
+                      ? Colors.white.withOpacity(0.07)
+                      : Colors.grey.shade100,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                ),
               ),
             ),
           ),
@@ -1260,12 +1291,7 @@ class _TextInput extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: busy
-                  ? null
-                  : () {
-                      final t = ctrl.text.trim();
-                      if (t.isNotEmpty) onSubmit(t);
-                    },
+              onTap: busy ? null : trySubmit,
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: busy

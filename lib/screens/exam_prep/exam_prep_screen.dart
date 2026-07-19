@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
+import '../../core/breakpoints.dart';
 import '../../models/material_model.dart';
 import '../../models/exam_prep_model.dart';
 import '../../screens/pdf/pdf_viewer_screen.dart';
@@ -144,13 +145,16 @@ class _ExamPrepScreenState extends State<ExamPrepScreen> {
                         ? _buildEmpty()
                         : RefreshIndicator(
                             onRefresh: _fetchCourses,
-                            child: ListView.separated(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: _courses.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 10),
-                              itemBuilder: (ctx, i) =>
-                                  _CourseCard(course: _courses[i]),
+                            child: Breakpoints.centered(
+                              context,
+                              ListView.separated(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _courses.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 10),
+                                itemBuilder: (ctx, i) =>
+                                    _CourseCard(course: _courses[i]),
+                              ),
                             ),
                           ),
           ),

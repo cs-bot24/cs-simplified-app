@@ -27,6 +27,12 @@ dependencies:
 
   # ── Offline Materials System ──────────────────────────────────────────────
   sqflite: ^2.3.3          # Local database: offline_materials, downloads, bookmarks
+  # Windows desktop backend for sqflite (Phase 1, desktop audit Part 6).
+  # The native sqflite plugin only ships Android/iOS/macOS implementations;
+  # sqflite_common_ffi provides an FFI-based SQLite backend for Windows/Linux.
+  # Wired in via lib/core/platform_init.dart — does NOT touch AppDatabase's
+  # schema, queries, or migrations. See that file for the platform gate.
+  sqflite_common_ffi: ^2.3.3
   path: ^1.9.0              # Path joining for db/file paths
   connectivity_plus: ^6.0.5 # Network state (offline banner, Wi-Fi-only downloads)
   crypto: ^3.0.3             # SHA-256 checksums for file integrity verification

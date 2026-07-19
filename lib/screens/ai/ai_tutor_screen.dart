@@ -913,22 +913,46 @@ class _InputBar extends StatelessWidget {
           tooltip: 'Image upload — coming soon',
         ),
         Expanded(
-          child: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            enabled: !loading,
-            maxLength: 2000,
-            maxLines: null,
-            keyboardType: TextInputType.multiline,
-            textInputAction: TextInputAction.newline,
-            style: const TextStyle(fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Ask a question...',
-              counterText: '',
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
-              filled: true,
-              fillColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF0F4FF),
+          // Windows desktop (Phase 2, Task 7/13): Enter sends the message,
+          // Shift+Enter inserts a newline. Wrapped in a Focus so the
+          // physical-keyboard case can be intercepted before the TextField's
+          // own newline handling runs; gated to desktop only (`kIsWeb` false
+          // and defaultTargetPlatform == windows) so Android's on-screen
+          // keyboard 'return' key and web's existing behavior are completely
+          // unchanged — this could not be tested on a real Windows machine
+          // in this environment, see the Phase 2 report.
+          child: Focus(
+            onKeyEvent: (node, event) {
+              final isDesktop =
+                  !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+              if (!isDesktop) return KeyEventResult.ignored;
+              final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+                  event.logicalKey == LogicalKeyboardKey.numpadEnter;
+              if (event is KeyDownEvent &&
+                  isEnter &&
+                  !HardwareKeyboard.instance.isShiftPressed) {
+                if (!loading) onSend();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              enabled: !loading,
+              maxLength: 2000,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Ask a question...',
+                counterText: '',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                filled: true,
+                fillColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF0F4FF),
+              ),
             ),
           ),
         ),

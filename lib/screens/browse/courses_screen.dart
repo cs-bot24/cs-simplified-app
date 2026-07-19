@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/breakpoints.dart';
 import '../../models/course_model.dart';
 import '../../models/material_model.dart';
 import '../../models/offline_material.dart';
@@ -9,6 +10,22 @@ import '../../widgets/loading_view.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/file_type_badge.dart';
 import 'materials_screen.dart';
+
+/// Centers [child] within a comfortable reading width on desktop, so a
+/// single-column materials list doesn't stretch into a very wide, sparse
+/// row on a maximized window. No-op below the desktop breakpoint — mobile
+/// is completely unaffected. (Phase 2, Task 5 — see also home_screen.dart,
+/// which uses the same pattern for the dashboard tab.)
+Widget _desktopCentered(BuildContext context, Widget child,
+    {double maxWidth = 900}) {
+  if (!Breakpoints.isDesktop(context)) return child;
+  return Center(
+    child: ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: child,
+    ),
+  );
+}
 
 class CoursesScreen extends StatefulWidget {
   final CourseModel course;
@@ -78,7 +95,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
                 style: const TextStyle(fontSize: 12, color: Colors.white70)),
         ]),
       ),
-      body: Column(children: [
+      body: _desktopCentered(context, Column(children: [
         // Category chips
         if (a.categories.isNotEmpty)
           SingleChildScrollView(
@@ -162,6 +179,7 @@ class _CoursesScreenState extends State<CoursesScreen> {
                     ),
         ),
       ]),
+      ),
     );
   }
 }
@@ -226,38 +244,42 @@ class _MaterialCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final color  = _color(scheme);
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => MaterialsScreen(material: mat, courseCode: courseCode))),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: scheme.primary.withOpacity(0.08)),
-        ),
-        child: Row(children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(_icon, color: color, size: 22),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => MaterialsScreen(material: mat, courseCode: courseCode))),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.primary.withOpacity(0.08)),
           ),
-          const SizedBox(width: 14),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(mat.materialTitle,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 4),
-              FileTypeBadge(fileType: mat.fileType),
-            ],
-          )),
-          if (mat.isPdf) _CourseMaterialOfflineBadge(mat: mat),
-          Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey[400]),
-        ]),
+          child: Row(children: [
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(_icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(mat.materialTitle,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 4),
+                FileTypeBadge(fileType: mat.fileType),
+              ],
+            )),
+            if (mat.isPdf) _CourseMaterialOfflineBadge(mat: mat),
+            Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey[400]),
+          ]),
+        ),
       ),
     );
   }

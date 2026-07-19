@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/breakpoints.dart';
 import '../../providers/academic_provider.dart';
 import '../../providers/offline_provider.dart';
 import '../../core/connectivity_service.dart';
@@ -118,20 +119,23 @@ class _SearchScreenState extends State<SearchScreen> {
 
         // Results
         Expanded(
-          child: offlineMode
-              ? _buildOfflineResults()
-              : a.loading
-                  ? const LoadingView()
-                  : !_searched
-                      ? _buildPrompt()
-                      : (a.searchResults.isEmpty && a.error != null)
-                          ? RequiresInternetView(
-                              featureName: 'Search',
-                              onRetry: () => _search(_ctrl.text),
-                            )
-                          : a.searchResults.isEmpty
-                              ? _buildNoResults()
-                              : _buildServerResults(a.searchResults, scheme),
+          child: Breakpoints.centered(
+            context,
+            offlineMode
+                ? _buildOfflineResults()
+                : a.loading
+                    ? const LoadingView()
+                    : !_searched
+                        ? _buildPrompt()
+                        : (a.searchResults.isEmpty && a.error != null)
+                            ? RequiresInternetView(
+                                featureName: 'Search',
+                                onRetry: () => _search(_ctrl.text),
+                              )
+                            : a.searchResults.isEmpty
+                                ? _buildNoResults()
+                                : _buildServerResults(a.searchResults, scheme),
+          ),
         ),
       ])),
     );

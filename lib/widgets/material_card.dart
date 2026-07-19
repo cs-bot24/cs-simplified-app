@@ -80,48 +80,52 @@ class MaterialCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color  = _iconColor(scheme);
 
-    return GestureDetector(
-      onTap: () => _open(context),
-      child: Container(
-        width: 160,
-        margin: const EdgeInsets.only(right: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: scheme.primary.withOpacity(0.12)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(
-                    color:        color.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _open(context),
+        child: Container(
+          width: 160,
+          margin: const EdgeInsets.only(right: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: scheme.primary.withOpacity(0.12)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color:        color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(_icon, size: 20, color: color),
                   ),
-                  child: Icon(_icon, size: 20, color: color),
-                ),
-                if (material.isPdf) _OfflineBadge(material: material, compact: true),
-              ],
-            ),
-            const SizedBox(height: 8),
-            FileTypeBadge(fileType: material.fileType),
-            const SizedBox(height: 6),
-            Text(material.materialTitle,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600, height: 1.35)),
-            const Spacer(),
-            if (material.courseCode != null)
-              Text(material.courseCode!,
-                  style: TextStyle(fontSize: 10, color: scheme.primary,
-                      fontWeight: FontWeight.w500)),
-          ],
+                  if (material.isPdf) _OfflineBadge(material: material, compact: true),
+                ],
+              ),
+              const SizedBox(height: 8),
+              FileTypeBadge(fileType: material.fileType),
+              const SizedBox(height: 6),
+              Text(material.materialTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, height: 1.35)),
+              const Spacer(),
+              if (material.courseCode != null)
+                Text(material.courseCode!,
+                    style: TextStyle(fontSize: 10, color: scheme.primary,
+                        fontWeight: FontWeight.w500)),
+            ],
+          ),
         ),
       ),
     );
@@ -131,58 +135,62 @@ class MaterialCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color  = _iconColor(scheme);
 
-    return GestureDetector(
-      onTap: () => _open(context),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: scheme.primary.withOpacity(0.10)),
-        ),
-        child: Row(children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              color:        color.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(_icon, size: 20, color: color),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _open(context),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.primary.withOpacity(0.10)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  FileTypeBadge(fileType: material.fileType),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(material.materialTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600)),
-                  ),
-                ]),
-                if (material.courseCode != null || material.categoryName != null) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    [material.courseCode, material.categoryName]
-                        .whereType<String>().join(' · '),
-                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                  ),
+          child: Row(children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color:        color.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(_icon, size: 20, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    FileTypeBadge(fileType: material.fileType),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(material.materialTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                  if (material.courseCode != null || material.categoryName != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      [material.courseCode, material.categoryName]
+                          .whereType<String>().join(' · '),
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          if (material.isPdf)
-            _OfflineBadge(material: material, compact: false)
-          else
-            Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Colors.grey[400]),
-        ]),
+            const SizedBox(width: 8),
+            if (material.isPdf)
+              _OfflineBadge(material: material, compact: false)
+            else
+              Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Colors.grey[400]),
+          ]),
+        ),
       ),
     );
   }

@@ -9,7 +9,8 @@
 //         The in-app notification feed (NotificationProvider) works on web
 //         without any FCM involvement.
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -58,11 +59,32 @@ class FcmService {
     enableVibration: true,
   );
 
+  // Windows desktop check via defaultTargetPlatform (not dart:io Platform)
+  // deliberately — this file is compiled into the web bundle too (guarded
+  // by the kIsWeb check below, not by conditional import), and dart:io
+  // isn't available there. firebase_options.dart already uses this same
+  // API for exactly this reason.
+  static bool get _isWindowsDesktop =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
   // ── Public entry point ─────────────────────────────────────────────────────
 
   static Future<void> init() async {
     if (kIsWeb) {
       debugPrint('[FCM] Web platform — FCM initialisation skipped for MVP.');
+      return;
+    }
+
+    // Windows desktop (desktop audit Part 12): Firebase Core/Messaging have
+    // no official Windows support, and main.dart already skips
+    // Firebase.initializeApp() entirely on Windows — so nothing below this
+    // point (which all assumes an initialized Firebase app) is safe to run
+    // here. Local (non-Firebase) notifications are still fully available
+    // on Windows via flutter_local_notifications — see
+    // _initWindowsLocalNotificationsOnly() and showDownloadComplete() etc.
+    // below, which the offline DownloadManager already calls today.
+    if (_isWindowsDesktop) {
+      await _initWindowsLocalNotificationsOnly();
       return;
     }
 
@@ -143,6 +165,47 @@ class FcmService {
     // App was launched by tapping a notification (terminated state).
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) _handleNotificationOpen(initialMessage);
+  }
+
+  // ── Windows desktop: local notifications only, no Firebase ─────────────────
+
+  /// Initializes flutter_local_notifications for Windows without touching
+  /// anything Firebase-related. This is what lets `DownloadManager`'s
+  /// existing `FcmService.showDownloadComplete()` / `showDownloadFailed()` /
+  /// `showStorageFull()` calls (see lib/services/offline/download_manager.dart)
+  /// keep working on Windows even though push notifications don't exist
+  /// there — those calls are already wrapped in `.catchError((_) {})` at
+  /// every call site, so even if this were somehow never called, downloads
+  /// themselves are unaffected either way.
+  ///
+  /// NOTE ON THE GUID BELOW: Windows toast notifications require a stable
+  /// GUID identifying this app to the OS notification system. The value
+  /// here is a placeholder generated for this change — it is NOT tied to
+  /// any existing app registration. Before a real Windows release, replace
+  /// it with a GUID the team generates and treats as a permanent, versioned
+  /// app identifier (changing it later can orphan previously-shown
+  /// notifications' callback wiring). This could not be verified against a
+  /// real Windows build in this environment — flagged explicitly rather
+  /// than presented as confirmed-working.
+  static Future<void> _initWindowsLocalNotificationsOnly() async {
+    const windowsSettings = WindowsInitializationSettings(
+      appName: 'CS Simplified',
+      appUserModelId: 'CSSimplified.DesktopApp',
+      guid: '5de6eb88-3e14-4c77-9ef9-6e5a1b2c7a10', // placeholder — replace before release, see note above
+    );
+    try {
+      await _localNotifications.initialize(
+        const InitializationSettings(windows: windowsSettings),
+        onDidReceiveNotificationResponse: _onNotificationTapped,
+      );
+      debugPrint('[FCM] Windows desktop — local notifications initialised '
+          '(Firebase Messaging skipped: no official Windows support).');
+    } catch (e) {
+      // Never let a notification-plugin failure block app startup — same
+      // defensive posture DownloadManager already uses around every
+      // FcmService.show*() call.
+      debugPrint('[FCM] Windows local-notifications init failed: $e');
+    }
   }
 
   // ── Token registration ─────────────────────────────────────────────────────
@@ -259,6 +322,7 @@ class FcmService {
           presentBadge: false,
           presentSound: true,
         ),
+        windows: const WindowsNotificationDetails(),
       ),
     );
   }
@@ -287,6 +351,7 @@ class FcmService {
           presentBadge: false,
           presentSound: false,
         ),
+        windows: const WindowsNotificationDetails(),
       ),
     );
   }
@@ -307,6 +372,7 @@ class FcmService {
           color: const Color(0xFF6C63FF),
         ),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: false),
+        windows: const WindowsNotificationDetails(),
       ),
     );
   }
@@ -327,6 +393,7 @@ class FcmService {
           color: const Color(0xFF6C63FF),
         ),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true),
+        windows: const WindowsNotificationDetails(),
       ),
     );
   }
@@ -347,6 +414,7 @@ class FcmService {
           color: const Color(0xFF6C63FF),
         ),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: false),
+        windows: const WindowsNotificationDetails(),
       ),
     );
   }

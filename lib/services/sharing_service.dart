@@ -4,18 +4,24 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-// Mobile-only imports — guarded at runtime via kIsWeb checks.
-// These will not compile on web unless imported conditionally.
+// Non-web imports — guarded at runtime.
+// sharing_service_io.dart covers Android/iOS AND Windows desktop (it
+// branches internally on Platform.isWindows — see that file's header
+// comment, desktop audit Part 3 / implementation Phase 3A). This shim
+// will not compile on web unless imported conditionally.
 import 'sharing_service_io.dart'
     if (dart.library.html) 'sharing_service_web.dart' as _platform;
 
 /// Captures a widget (via its RepaintBoundary GlobalKey) as PNG bytes,
 /// then shares or saves based on the action requested.
 ///
-/// Web support:
+/// Platform behavior:
 ///   - captureWidget: works on all platforms.
-///   - shareImage: triggers a browser download on web.
-///   - saveToGallery: triggers a browser download on web.
+///   - shareImage: system share sheet on Android/iOS; browser download on
+///     web; falls back to the save flow on Windows (no share-sheet wired
+///     up there yet).
+///   - saveToGallery: photo gallery on Android/iOS; browser download on
+///     web; native Save File dialog on Windows.
 class SharingService {
   /// Renders the widget behind [key] to a PNG at [pixelRatio] density.
   static Future<Uint8List?> captureWidget(
