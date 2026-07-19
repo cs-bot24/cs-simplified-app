@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/services.dart'
+    show LogicalKeyboardKey, KeyDownEvent, HardwareKeyboard;
 import 'package:provider/provider.dart';
 
 import '../../providers/ai_provider.dart';
