@@ -18,7 +18,7 @@ Future<bool> saveImage(
 }) async {
   final blob   = html.Blob([bytes], 'image/png');
   final url    = html.Url.createObjectUrlFromBlob(blob);
-  final anchor = html.AnchorElement(href: url)
+  html.AnchorElement(href: url)
     ..setAttribute('download', 'cs_simplified_$cardType.png')
     ..click();
   html.Url.revokeObjectUrl(url);

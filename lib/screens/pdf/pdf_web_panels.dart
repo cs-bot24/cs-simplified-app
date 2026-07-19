@@ -609,7 +609,7 @@ class _WebMessage {
 
 class _WebMessageBubble extends StatelessWidget {
   final _WebMessage message;
-  const _WebMessageBubble({super.key, required this.message});
+  const _WebMessageBubble({required this.message});
 
   @override
   Widget build(BuildContext context) {

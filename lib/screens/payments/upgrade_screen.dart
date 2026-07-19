@@ -17,7 +17,6 @@
 //   Expiry:  01/99
 //   OTP:     123456
 
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -149,7 +148,6 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark  = Theme.of(context).brightness == Brightness.dark;
-    final scheme  = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: CustomScrollView(

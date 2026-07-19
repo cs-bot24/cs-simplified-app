@@ -52,7 +52,6 @@ import '../../providers/offline_provider.dart';
 import '../../providers/leaderboard_provider.dart';
 import '../../providers/achievement_provider.dart';
 import '../../widgets/rating_dialog.dart';
-import '../../widgets/ai_message_content.dart';   // shared math+markdown renderer
 import '../../widgets/ai_content_renderer.dart';  // Phase 10: unified renderer
 
 // ── Colour constants (matches app dark theme) ─────────────────────────────────
@@ -191,7 +190,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     try {
       final raw = await ApiClient.getMaterialRating(widget.materialId!);
       if (mounted) {
-        setState(() => _rating = RatingModel.fromJson(raw as Map<String, dynamic>));
+        setState(() => _rating = RatingModel.fromJson(raw));
       }
     } catch (_) {}
   }
@@ -1688,7 +1687,7 @@ class _LocalMessage {
 
 class _MessageBubble extends StatelessWidget {
   final _LocalMessage message;
-  const _MessageBubble({super.key, required this.message});
+  const _MessageBubble({required this.message});
 
   @override
   Widget build(BuildContext context) {

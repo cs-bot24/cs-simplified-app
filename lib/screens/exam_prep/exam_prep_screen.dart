@@ -3,7 +3,6 @@ import '../../core/api_client.dart';
 import '../../core/breakpoints.dart';
 import '../../models/material_model.dart';
 import '../../models/exam_prep_model.dart';
-import '../../screens/pdf/pdf_viewer_screen.dart';
 import 'course_exam_hub_screen.dart';
 
 /// Exam Preparation Hub — Phase 4
@@ -27,8 +26,6 @@ class _ExamPrepScreenState extends State<ExamPrepScreen> {
   List<ExamCourse> _courses   = [];
   bool             _loading   = true;
   String?          _error;
-
-  static const _kAmber = Color(0xFFD97706);
 
   @override
   void initState() {
@@ -79,7 +76,6 @@ class _ExamPrepScreenState extends State<ExamPrepScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       body: Column(
@@ -207,7 +203,6 @@ class _CourseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Material(
       color: Theme.of(context).cardColor,

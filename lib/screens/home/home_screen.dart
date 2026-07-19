@@ -481,11 +481,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       onProceed: () => Navigator.push(
           context, MaterialPageRoute(builder: (_) => const ExamPrepScreen())));
 
-  int _plannerIndex(BuildContext context) {
-    final isAdmin = context.read<AuthProvider>().isAdmin;
-    return kIsWeb ? (isAdmin ? 5 : 3) : (isAdmin ? 6 : 4);
-  }
-
   @override
   Widget build(BuildContext context) {
     final auth     = context.watch<AuthProvider>();

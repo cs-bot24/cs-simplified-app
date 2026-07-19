@@ -17,7 +17,6 @@ const _kAccentLt = Color(0xFF8B85FF);
 const _kGreen    = Color(0xFF4CAF50);
 
 // ── Theme helpers (call inside build) ────────────────────────────────────────
-Color _bg(BuildContext ctx)  => Theme.of(ctx).scaffoldBackgroundColor;
 Color _surface(BuildContext ctx) => Theme.of(ctx).cardColor;
 Color _surface2(BuildContext ctx) {
   final isDark = Theme.of(ctx).brightness == Brightness.dark;
@@ -174,7 +173,7 @@ class _StudyPlannerScreenState extends State<StudyPlannerScreen>
     try {
       final data = await ApiClient.getStudyPlans();
       setState(() {
-        _plans   = (data as List)
+        _plans   = data
             .map((j) => StudyPlan.fromJson(j as Map<String, dynamic>))
             .toList();
         _loading = false;
@@ -1075,7 +1074,7 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
         endDate:          _endDate,
         studyHoursPerDay: _hoursPerDay,
       );
-      final plan = StudyPlan.fromJson(data as Map<String, dynamic>);
+      final plan = StudyPlan.fromJson(data);
       if (mounted) Navigator.pop(context, plan);
     } catch (e) {
       setState(() {
@@ -1088,7 +1087,6 @@ class _CreatePlanSheetState extends State<_CreatePlanSheet> {
   @override
   Widget build(BuildContext context) {
     final fmt    = DateFormat('MMM d, yyyy');
-    final scheme = Theme.of(context).colorScheme;
 
     return Container(
       decoration: BoxDecoration(

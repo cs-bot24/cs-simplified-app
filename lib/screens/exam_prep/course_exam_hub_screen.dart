@@ -84,8 +84,6 @@ class CourseExamHubScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark  = Theme.of(context).brightness == Brightness.dark;
-    final scheme  = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: CustomScrollView(
@@ -365,7 +363,7 @@ class _MaterialTile extends StatelessWidget {
           ApiClient.trackExamActivity(
             courseCode: courseCode,
             activity:   'material_read',
-          ).catchError((_) {});
+          ).catchError((_) => <String, dynamic>{});
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -982,7 +980,7 @@ class _QuizResultScreenState extends State<_QuizResultScreen> {
       courseCode: widget.course.courseCode,
       activity:   'quiz',
       quizScore:  widget.quiz.scorePercent,
-    ).catchError((_) {});
+    ).catchError((_) => <String, dynamic>{});
   }
 
   @override
@@ -1305,7 +1303,6 @@ class _FocusAreasScreenState extends State<_FocusAreasScreen> {
 
   Widget _buildContent(bool isDark) {
     final data   = _data!;
-    final scheme = Theme.of(context).colorScheme;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -1378,7 +1375,6 @@ class _FocusAreaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
 
     return Material(
       color: Colors.transparent,
@@ -1530,7 +1526,6 @@ class _CourseBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -1841,7 +1836,6 @@ class _ActivityChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final color  = item.done ? _kGreen : Colors.grey;
 
     return Container(

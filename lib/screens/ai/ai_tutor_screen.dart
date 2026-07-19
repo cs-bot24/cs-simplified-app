@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import '../../providers/ai_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/ai_model.dart';
-import '../../widgets/ai_message_content.dart';
 import '../../widgets/ai_content_renderer.dart';
 import '../../widgets/ai_streaming_renderer.dart';
 

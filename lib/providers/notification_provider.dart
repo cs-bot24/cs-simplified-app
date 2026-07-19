@@ -135,7 +135,7 @@ class NotificationProvider extends ChangeNotifier {
   Future<List<NotificationModel>> _fetchInAppNotifications() async {
     try {
       final data = await ApiClient.getNotifications();
-      return (data as List)
+      return data
           .map((j) => NotificationModel.fromJson(j as Map<String, dynamic>))
           .toList();
     } catch (e) {
@@ -150,7 +150,7 @@ class NotificationProvider extends ChangeNotifier {
   Future<List<NotificationModel>> _fetchAnnouncements() async {
     try {
       final data = await ApiClient.getAnnouncements();
-      return (data as List).map((j) {
+      return data.map((j) {
         final ann = AnnouncementModel.fromJson(j as Map<String, dynamic>);
         return NotificationModel(
           id:        -ann.id,

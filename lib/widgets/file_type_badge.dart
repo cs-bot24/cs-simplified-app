@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../models/material_model.dart';
 
 /// Compact badge showing file type with icon and label.
 /// Fully dark-mode compatible — uses theme-aware colors only.
@@ -81,7 +80,6 @@ class FileTypeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     IconData icon;
     Color    color;
 

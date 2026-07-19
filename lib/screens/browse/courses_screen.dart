@@ -79,7 +79,6 @@ class _CoursesScreenState extends State<CoursesScreen> {
   Widget build(BuildContext context) {
     final a       = context.watch<AcademicProvider>();
     final offline = context.watch<OfflineProvider>();
-    final scheme  = Theme.of(context).colorScheme;
 
     final pdfMaterials = a.materials.where((m) => m.isPdf).toList();
     final downloadedCount = offline.downloadedCountForCourse(widget.course.id);

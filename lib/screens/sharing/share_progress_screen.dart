@@ -3,9 +3,7 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:provider/provider.dart';
 import '../../core/api_client.dart';
-import '../../providers/achievement_provider.dart';
 import '../../services/sharing_service.dart';
 import 'cards/streak_card.dart';
 

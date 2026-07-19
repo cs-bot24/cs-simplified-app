@@ -14,9 +14,7 @@ import '../../models/lecturer_model.dart';
 import '../../providers/lecturer_provider.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/premium_gate.dart';
-import '../../widgets/ai_message_content.dart';
 import '../../widgets/ai_content_renderer.dart';
-import '../../widgets/ai_streaming_renderer.dart';
 
 // ── Brand colour ─────────────────────────────────────────────────────────────
 const _kAccent  = Color(0xFF6C63FF);
@@ -2110,7 +2108,6 @@ class _CurriculumGeneratingDialogState
   @override
   Widget build(BuildContext context) {
     final isDark  = Theme.of(context).brightness == Brightness.dark;
-    final scheme  = Theme.of(context).colorScheme;
 
     // Adaptive colours
     final bgColor      = isDark ? const Color(0xFF1A1A2E) : Colors.white;

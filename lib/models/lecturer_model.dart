@@ -188,25 +188,8 @@ enum CourseStage {
   completed,       // course finished (exam declined or exam done)
 }
 
-CourseStage _stageFromString(String? s) {
-  switch (s) {
-    case 'exam_offer':      return CourseStage.examOffer;
-    case 'exam_in_progress': return CourseStage.examInProgress;
-    case 'exam_result':     return CourseStage.examResult;
-    case 'completed':       return CourseStage.completed;
-    default:                return CourseStage.teaching;
-  }
-}
-
-String _stageToString(CourseStage s) {
-  switch (s) {
-    case CourseStage.examOffer:      return 'exam_offer';
-    case CourseStage.examInProgress: return 'exam_in_progress';
-    case CourseStage.examResult:     return 'exam_result';
-    case CourseStage.completed:      return 'completed';
-    case CourseStage.teaching:       return 'teaching';
-  }
-}
+// _stageFromString / _stageToString were unreferenced helpers (dead code)
+// removed here since nothing in the app calls them.
 
 // ── Exam ─────────────────────────────────────────────────────────────────────
 

@@ -77,10 +77,10 @@ class HomeProvider extends ChangeNotifier {
 
     try {
       final raw  = await ApiClient.getHome();
-      _data  = HomeData.fromJson(raw as Map<String, dynamic>);
+      _data  = HomeData.fromJson(raw);
       _error = null;
       _showingStaleData = false;
-      _saveToCache(raw as Map<String, dynamic>); // fire-and-forget
+      _saveToCache(raw); // fire-and-forget
     } on ApiException catch (e) {
       dev.log('[Home] Fetch error: ${e.message}', name: 'HomeProvider');
       if (_data == null) {
@@ -124,7 +124,7 @@ class HomeProvider extends ChangeNotifier {
       final updated = await ApiClient.pingStreak();
       if (_data != null) {
         _data = _data!.copyWithStreak(
-          StreakModel.fromJson(updated as Map<String, dynamic>),
+          StreakModel.fromJson(updated),
         );
         notifyListeners();
       }

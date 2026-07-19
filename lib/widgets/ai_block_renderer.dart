@@ -107,9 +107,6 @@ class AiBlockRenderer extends StatelessWidget {
 Color _textColor(bool dark) =>
     dark ? Colors.white.withOpacity(0.92) : const Color(0xFF1E293B);
 
-Color _subTextColor(bool dark) =>
-    dark ? Colors.white.withOpacity(0.6) : const Color(0xFF64748B);
-
 Color _cardBg(bool dark, Color accent) => accent.withOpacity(dark ? 0.12 : 0.07);
 
 TextStyle _bodyStyle(bool dark, {double size = 14.5}) => TextStyle(
@@ -357,7 +354,6 @@ class _HeadingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sizes  = {1: 22.0, 2: 18.0, 3: 15.5, 4: 14.0};
     final size   = sizes[block.level] ?? 16.0;
-    final weight = block.level <= 2 ? FontWeight.w800 : FontWeight.w700;
 
     return Padding(
       padding: EdgeInsets.only(
