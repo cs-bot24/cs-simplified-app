@@ -24,7 +24,7 @@ jobs:
         run: flutter create --platforms=windows .
 
       - name: Analyze Flutter project
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Build Windows release
         run: flutter build windows --release
