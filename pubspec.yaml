@@ -70,9 +70,19 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  msix: ^3.16.7
 
 flutter:
   uses-material-design: true
 
   # Flutter Web renderer — auto selects HTML for mobile, CanvasKit for desktop
   # Override with: flutter build web --web-renderer canvaskit
+
+msix_config:
+  display_name: CS Simplified
+  publisher_display_name: CS Simplified
+  identity_name: com.cssimplified.app
+  msix_version: 1.0.7.0
+  logo_path: web/icons/Icon-512.png
+  capabilities: internetClient
+  languages: en-us
