@@ -81,15 +81,21 @@ flutter:
 msix_config:
   display_name: CS Simplified
   publisher_display_name: CS Simplified
+  # Must exactly match the Subject of the certificate generated in the
+  # "Generate self-signed certificate for MSIX signing" workflow step —
+  # MSIX requires the package's Publisher identity to match the signing
+  # certificate's Subject exactly.
+  publisher: CN=CS Simplified, O=CS Simplified, C=US
   identity_name: com.cssimplified.app
   msix_version: 1.0.7.0
   logo_path: web/icons/Icon-512.png
   capabilities: internetClient
   languages: en-us
-  # No real signing cert configured, so msix auto-generates a self-signed
-  # test_certificate.pfx and (by default) interactively asks whether to
-  # install it into the local trust store. GitHub Actions has no terminal
-  # to answer that prompt, which is what crashed this step. We only need
-  # the .msix artifact out of CI, not a locally-trusted cert on a runner
-  # that gets destroyed right after the job — so skip that step entirely.
-  install_certificate: false
+  # Self-signed test certificate generated fresh each CI run at a known,
+  # fixed path (see workflow) — this avoids relying on msix:create's own
+  # auto-generation, which doesn't persist a .pfx to disk when
+  # install_certificate is false, and avoids the interactive
+  # "install this certificate?" prompt entirely since we're supplying our
+  # own cert up front.
+  certificate_path: test_certificate.pfx
+  certificate_password: CsSimplified123!
