@@ -46,6 +46,20 @@ jobs:
       - name: Build Windows release
         run: flutter build windows --release
 
+      - name: Generate self-signed certificate for MSIX signing
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Type Custom `
+            -Subject "CN=CS Simplified, O=CS Simplified, C=US" `
+            -KeyUsage DigitalSignature `
+            -FriendlyName "CS Simplified Test Certificate" `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $password = ConvertTo-SecureString -String "CsSimplified123!" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath "test_certificate.pfx" -Password $password
+          Write-Host "Certificate written to $(Resolve-Path test_certificate.pfx)"
+
       - name: Package as MSIX installer
         run: dart run msix:create
 
@@ -77,6 +91,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cs-simplified-windows-test-certificate
-          path: |
-            **/*.pfx
+          path: test_certificate.pfx
           if-no-files-found: error
