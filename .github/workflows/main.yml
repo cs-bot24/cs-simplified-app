@@ -49,12 +49,15 @@ jobs:
       - name: Package as MSIX installer
         run: dart run msix:create
 
-      - name: Locate generated MSIX (diagnostic)
+      - name: Locate generated MSIX + certificate (diagnostic)
         shell: pwsh
         run: |
           Write-Host "Searching entire repo for .msix files..."
           Get-ChildItem -Path . -Recurse -Filter *.msix -ErrorAction SilentlyContinue |
-            ForEach-Object { Write-Host "FOUND: $($_.FullName)" }
+            ForEach-Object { Write-Host "FOUND MSIX: $($_.FullName)" }
+          Write-Host "Searching entire repo for .pfx files..."
+          Get-ChildItem -Path . -Recurse -Filter *.pfx -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "FOUND PFX: $($_.FullName)" }
 
       - name: Upload Windows build (raw folder)
         uses: actions/upload-artifact@v4
@@ -68,4 +71,12 @@ jobs:
           name: cs-simplified-windows-installer
           path: |
             **/*.msix
+          if-no-files-found: error
+
+      - name: Upload signing certificate
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs-simplified-windows-test-certificate
+          path: |
+            **/*.pfx
           if-no-files-found: error
