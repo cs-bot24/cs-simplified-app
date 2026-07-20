@@ -86,3 +86,10 @@ msix_config:
   logo_path: web/icons/Icon-512.png
   capabilities: internetClient
   languages: en-us
+  # No real signing cert configured, so msix auto-generates a self-signed
+  # test_certificate.pfx and (by default) interactively asks whether to
+  # install it into the local trust store. GitHub Actions has no terminal
+  # to answer that prompt, which is what crashed this step. We only need
+  # the .msix artifact out of CI, not a locally-trusted cert on a runner
+  # that gets destroyed right after the job — so skip that step entirely.
+  install_certificate: false
