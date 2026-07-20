@@ -6,6 +6,23 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      # Job-level so every step's flutter/cmake invocation inherits these —
+      # in particular, `dart run msix:create` runs its own internal
+      # `flutter build windows`, separate from the explicit build step below,
+      # so scoping these to just one step isn't enough.
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+      # gal and permission_handler_windows use cppwinrt-generated code that
+      # still includes <experimental/coroutine>. Newer MSVC STL versions
+      # (see error C2338 / STL1011 in CI logs) hard-error on that header
+      # unless this exact macro is defined. There's no windows/CMakeLists.txt
+      # committed to this repo (it's regenerated every run by the
+      # "Generate Windows platform" step from whatever Flutter 3.41.9
+      # templates), so this can't be scoped to just those two plugin
+      # targets via CMake — CL is read by cl.exe for every invocation in
+      # this job, and this macro only affects the coroutine-deprecation
+      # check, not other warnings/errors.
+      CL: "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
 
     steps:
       - name: Checkout repository
@@ -27,19 +44,6 @@ jobs:
         run: flutter analyze --no-fatal-infos
 
       - name: Build Windows release
-        env:
-          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
-          # gal and permission_handler_windows use cppwinrt-generated code that
-          # still includes <experimental/coroutine>. Newer MSVC STL versions
-          # (see error C2338 / STL1011 in CI logs) hard-error on that header
-          # unless this exact macro is defined. There's no windows/CMakeLists.txt
-          # committed to this repo (it's regenerated every run by the
-          # "Generate Windows platform" step from whatever Flutter 3.41.9
-          # templates), so this can't be scoped to just those two plugin
-          # targets via CMake — CL is read by cl.exe for every invocation in
-          # this step, and this macro only affects the coroutine-deprecation
-          # check, not other warnings/errors.
-          CL: "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
         run: flutter build windows --release
 
       - name: Package as MSIX installer
