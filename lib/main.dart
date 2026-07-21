@@ -33,6 +33,35 @@ import 'providers/lecturer_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  final themeProvider = ThemeProvider();
+
+  try {
+    await _initializeApp(themeProvider).timeout(const Duration(seconds: 15));
+  } on TimeoutException {
+    // Startup must never hang indefinitely and leave the process alive
+    // with no window ever created — a native plugin call stalling on a
+    // particular machine must not be able to block the app from showing
+    // anything at all. Whatever finished before the timeout has already
+    // taken effect (each step below awaits in sequence); anything after
+    // the stalled step is simply skipped this run.
+  }
+
+  runApp(CsSimplifiedApp(themeProvider: themeProvider));
+
+  // Push-notification setup (FCM token fetch + backend registration) makes
+  // real network calls that can hang for a long time — up to a minute or
+  // more — with no connectivity. This must NEVER block the first frame;
+  // the app has to be usable immediately regardless of network state.
+  // Fire-and-forget: if it's offline, this just quietly finishes late
+  // (or fails) once connectivity returns.
+  unawaited(FcmService.init());
+}
+
+/// The original sequential startup steps, unchanged in behavior — just
+/// extracted out of main() so the whole sequence can be wrapped in one
+/// overall timeout (see main() above). Each step here still awaits the
+/// previous one in the same order as before.
+Future<void> _initializeApp(ThemeProvider themeProvider) async {
   // Windows desktop (Phase 1, desktop audit Part 6): swap sqflite's
   // database factory to the FFI-backed implementation before anything
   // touches AppDatabase.instance.database. No-op on every other platform.
@@ -64,18 +93,7 @@ void main() async {
   await AppStorage.loadTokenToCache();
   await AppStorage.loadUserToCache();
 
-  final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
-
-  runApp(CsSimplifiedApp(themeProvider: themeProvider));
-
-  // Push-notification setup (FCM token fetch + backend registration) makes
-  // real network calls that can hang for a long time — up to a minute or
-  // more — with no connectivity. This must NEVER block the first frame;
-  // the app has to be usable immediately regardless of network state.
-  // Fire-and-forget: if it's offline, this just quietly finishes late
-  // (or fails) once connectivity returns.
-  unawaited(FcmService.init());
 }
 
 class CsSimplifiedApp extends StatelessWidget {

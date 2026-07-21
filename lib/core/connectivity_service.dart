@@ -35,8 +35,24 @@ class ConnectivityService {
       // still resolves fine via the plugin, so no special-casing needed
       // beyond what's already guarded elsewhere by kIsWeb.
     }
-    await _refresh(await Connectivity().checkConnectivity());
-    _sub = Connectivity().onConnectivityChanged.listen(_refresh);
+    try {
+      await _refresh(await Connectivity().checkConnectivity())
+          .timeout(const Duration(seconds: 5));
+    } on TimeoutException {
+      // The native connectivity_plus platform-channel call can hang
+      // indefinitely on some Windows machines/network configurations —
+      // with nothing after this await in main() able to run (including
+      // runApp()), a hang here means the whole app never shows a window,
+      // even though the process stays alive. Fall back to the same
+      // optimistic default _isOnline already starts as, rather than
+      // blocking startup forever.
+    }
+    try {
+      _sub = Connectivity().onConnectivityChanged.listen(_refresh);
+    } catch (_) {
+      // Same defensive posture as above — don't let a broken connectivity
+      // stream subscription block or crash startup.
+    }
   }
 
   Future<void> _refresh(List<ConnectivityResult> results) async {
@@ -50,7 +66,12 @@ class ConnectivityService {
   /// Forces an immediate re-check rather than waiting for the next event —
   /// used by "Retry" buttons on offline states.
   Future<bool> checkNow() async {
-    await _refresh(await Connectivity().checkConnectivity());
+    try {
+      await _refresh(await Connectivity().checkConnectivity())
+          .timeout(const Duration(seconds: 5));
+    } on TimeoutException {
+      // See the same note in initialize() above.
+    }
     return _isOnline;
   }
 
