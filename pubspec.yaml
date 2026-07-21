@@ -94,8 +94,10 @@ msix_config:
   # Self-signed test certificate generated fresh each CI run at a known,
   # fixed path (see workflow) — this avoids relying on msix:create's own
   # auto-generation, which doesn't persist a .pfx to disk when
-  # install_certificate is false, and avoids the interactive
-  # "install this certificate?" prompt entirely since we're supplying our
-  # own cert up front.
+  # install_certificate is false.
   certificate_path: test_certificate.pfx
   certificate_password: CsSimplified123!
+  # msix:create prompts interactively to install ANY certificate — supplied
+  # or auto-generated — unless this is explicitly disabled. GitHub Actions
+  # has no terminal to answer that prompt, so this must stay false.
+  install_certificate: false
