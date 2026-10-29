@@ -42,8 +42,14 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     _scrollCtrl.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ai = context.read<AiProvider>();
+      // Tie the on-screen chat to the signed-in account. If a different
+      // account was using this provider, its chat and unsent message are
+      // wiped here — they can never show up for this user.
+      ai.bindUser(context.read<AuthProvider>().user?.id);
       ai.loadPlan();
       ai.loadUsage();
+      // Reopen this user's last chat (no-op for Exam Lessons / already open).
+      ai.restoreSession();
       // No-op unless Exam Prep pre-seeded this screen via prepareExamLesson().
       ai.beginExamLessonIfNeeded();
     });
@@ -201,6 +207,14 @@ class _AiTutorScreenState extends State<AiTutorScreen>
         children: [
           _ModeBar(scheme: scheme),
           if (_showSettings) _SettingsPanel(scheme: scheme),
+          Consumer<AiProvider>(
+            builder: (_, ai, __) => ai.opening
+                ? const LinearProgressIndicator(minHeight: 2)
+                : const SizedBox.shrink(),
+          ),
+          Consumer<AiProvider>(
+            builder: (_, ai, __) => _ChatStatusStrip(ai: ai, scheme: scheme),
+          ),
           Expanded(child: Stack(
             children: [
               _MessageList(
@@ -284,7 +298,9 @@ class _AiTutorScreenState extends State<AiTutorScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              ai.isExamLesson ? (ai.examTopic ?? 'Exam Lesson') : 'AI Tutor',
+              ai.isExamLesson
+                  ? (ai.examTopic ?? 'Exam Lesson')
+                  : (ai.chatTitle ?? 'AI Tutor'),
               style: const TextStyle(fontSize: 17),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -299,6 +315,27 @@ class _AiTutorScreenState extends State<AiTutorScreen>
         ),
       ),
       actions: [
+        // History + New chat are for the general tutor only: an Exam Lesson
+        // is not a saved chat.
+        Consumer<AiProvider>(
+          builder: (_, ai, __) {
+            if (ai.isExamLesson) return const SizedBox.shrink();
+            return Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(
+                icon: const Icon(Icons.history_rounded),
+                tooltip: 'Chat history',
+                onPressed: () => _showHistorySheet(context),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_comment_outlined),
+                tooltip: 'New chat',
+                onPressed: (ai.loading || ai.opening)
+                    ? null
+                    : () => context.read<AiProvider>().newChat(),
+              ),
+            ]);
+          },
+        ),
         IconButton(
           icon: Icon(_showSettings ? Icons.tune : Icons.tune_outlined),
           tooltip: 'Settings',
@@ -313,7 +350,7 @@ class _AiTutorScreenState extends State<AiTutorScreen>
                 switch (val) {
                   case 'practice': _showPracticeDialog(context); break;
                   case 'notes':    _showStudyNotesDialog(context); break;
-                  case 'clear':    _confirmClear(context); break;
+                  case 'new':      context.read<AiProvider>().newChat(); break;
                 }
               },
               itemBuilder: (_) => [
@@ -321,8 +358,8 @@ class _AiTutorScreenState extends State<AiTutorScreen>
                     child: ListTile(leading: Icon(Icons.quiz_rounded), title: Text('Practice Questions'), dense: true)),
                 const PopupMenuItem(value: 'notes',
                     child: ListTile(leading: Icon(Icons.notes_rounded), title: Text('Study Notes'), dense: true)),
-                const PopupMenuItem(value: 'clear',
-                    child: ListTile(leading: Icon(Icons.delete_sweep_rounded), title: Text('Clear Chat'), dense: true)),
+                const PopupMenuItem(value: 'new',
+                    child: ListTile(leading: Icon(Icons.add_comment_outlined), title: Text('New Chat'), dense: true)),
               ],
             );
           },
@@ -331,20 +368,16 @@ class _AiTutorScreenState extends State<AiTutorScreen>
     );
   }
 
-  void _confirmClear(BuildContext context) {
-    showDialog(
+  void _showHistorySheet(BuildContext context) {
+    context.read<AiProvider>().loadChats();
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Clear conversation?'),
-        content: const Text('All messages in this session will be removed.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () { context.read<AiProvider>().clearConversation(); Navigator.pop(context); },
-            child: const Text('Clear'),
-          ),
-        ],
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (_) => const _ChatHistorySheet(),
     );
   }
 }
@@ -683,7 +716,8 @@ class _MessageListState extends State<_MessageList> {
         }
         return RepaintBoundary(
           child: _MessageBubble(
-            key: ValueKey(ai.messages[i].timestamp.millisecondsSinceEpoch),
+            key: ValueKey(
+                '${ai.messages[i].timestamp.microsecondsSinceEpoch}_${ai.messages[i].isUser}'),
             message: ai.messages[i],
             scheme: widget.scheme,
           ),
@@ -754,6 +788,10 @@ class _MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
+          // A message the server has NOT saved is outlined, never shown as saved.
+          border: (isUser && message.failed)
+              ? Border.all(color: Colors.redAccent, width: 1.5)
+              : null,
           color: isUser
               ? scheme.primary
               : (isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF0F4FF)),
@@ -823,6 +861,28 @@ class _MessageBubble extends StatelessWidget {
                     content: message.text,
                     isDark:  isDark,
                   ),
+            if (isUser && message.failed) ...[
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline_rounded, size: 14, color: Colors.white),
+                  const SizedBox(width: 4),
+                  const Text('Not sent',
+                      style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 10),
+                  _BubbleAction(
+                    label: 'Retry',
+                    onTap: () => context.read<AiProvider>().retryPending(),
+                  ),
+                  const SizedBox(width: 10),
+                  _BubbleAction(
+                    label: 'Dismiss',
+                    onTap: () => context.read<AiProvider>().dismissPending(),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -1266,6 +1326,394 @@ class _NotLoggedInView extends StatelessWidget {
             ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('Go Back')),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+
+// ── Persistent chats: status strip, failed-bubble action, history sheet ─────
+
+String _relativeTime(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 1)  return 'Just now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+  if (d.inHours < 24)   return '${d.inHours}h ago';
+  if (d.inDays < 7)     return '${d.inDays}d ago';
+  return '${t.day}/${t.month}/${t.year}';
+}
+
+/// Notices above the message list: "not being saved" and "show earlier".
+class _ChatStatusStrip extends StatelessWidget {
+  final AiProvider ai;
+  final ColorScheme scheme;
+  const _ChatStatusStrip({required this.ai, required this.scheme});
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[];
+    if (ai.savingUnavailable && ai.messages.isNotEmpty && !ai.isExamLesson) {
+      children.add(Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        color: Colors.amber.withOpacity(0.15),
+        child: const Row(children: [
+          Icon(Icons.cloud_off_rounded, size: 14, color: Colors.amber),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Chat history is unavailable right now — this conversation is not being saved.',
+              style: TextStyle(fontSize: 11),
+            ),
+          ),
+        ]),
+      ));
+    }
+    if (ai.hasEarlierMessages && !ai.isExamLesson) {
+      children.add(Align(
+        alignment: Alignment.center,
+        child: TextButton.icon(
+          onPressed: ai.loadingEarlier ? null : () => ai.loadEarlierMessages(),
+          icon: ai.loadingEarlier
+              ? const SizedBox(width: 14, height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.expand_less_rounded, size: 18),
+          label: const Text('Show earlier messages'),
+        ),
+      ));
+    }
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Column(children: children);
+  }
+}
+
+class _BubbleAction extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _BubbleAction({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              decoration: TextDecoration.underline,
+              decorationColor: Colors.white,
+            ),
+          ),
+        ),
+      );
+}
+
+class _ChatHistorySheet extends StatelessWidget {
+  const _ChatHistorySheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.8,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (ctx, scrollCtrl) => Consumer<AiProvider>(
+        builder: (ctx, ai, _) => Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: scheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
+              child: Row(children: [
+                const Expanded(
+                  child: Text('Chat history',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: (ai.loading || ai.opening)
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          context.read<AiProvider>().newChat();
+                        },
+                  icon: const Icon(Icons.add_comment_outlined, size: 18),
+                  label: const Text('New chat'),
+                ),
+              ]),
+            ),
+            const Divider(height: 1),
+            Expanded(child: _list(ctx, ai, scrollCtrl, scheme)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _list(BuildContext context, AiProvider ai, ScrollController ctrl, ColorScheme scheme) {
+    if (!ai.chatsAvailable) {
+      return ListView(controller: ctrl, children: [
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(children: [
+            Icon(Icons.cloud_off_rounded, size: 36, color: scheme.outline),
+            const SizedBox(height: 12),
+            Text(ai.chatsError ?? 'Chat history is unavailable right now.',
+                textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () => ai.loadChats(),
+              child: const Text('Try again'),
+            ),
+          ]),
+        ),
+      ]);
+    }
+
+    final items = <Widget>[];
+    if (ai.chatsLoading && ai.chats.isEmpty) {
+      items.add(const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(child: CircularProgressIndicator()),
+      ));
+    } else if (ai.chats.isEmpty) {
+      items.add(Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          ai.chatsError ??
+              'No saved chats yet.\nAsk the AI Tutor something and it will appear here automatically.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: scheme.outline),
+        ),
+      ));
+    }
+    for (final c in ai.chats) {
+      items.add(_ChatTile(
+        chat: c,
+        selected: c.id == ai.chatId,
+        disabled: ai.loading || ai.opening,
+      ));
+    }
+    if (ai.chatsHasMore) {
+      items.add(Center(
+        child: TextButton(
+          onPressed: ai.chatsLoading ? null : () => ai.loadMoreChats(),
+          child: Text(ai.chatsLoading ? 'Loading…' : 'Load more'),
+        ),
+      ));
+    }
+    items.add(const Divider());
+    items.add(const _EarlierQuestionsSection());
+    return ListView(controller: ctrl, children: items);
+  }
+}
+
+class _ChatTile extends StatelessWidget {
+  final AiChatSummary chat;
+  final bool selected;
+  final bool disabled;
+  const _ChatTile({required this.chat, required this.selected, required this.disabled});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final preview = (chat.lastPreview ?? '').trim();
+    return ListTile(
+      selected: selected,
+      selectedTileColor: scheme.primary.withOpacity(0.08),
+      leading: const Icon(Icons.chat_bubble_outline_rounded),
+      title: Text(chat.title,
+          maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: preview.isEmpty
+          ? null
+          : Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(_relativeTime(chat.updatedAt),
+            style: TextStyle(fontSize: 11, color: scheme.outline)),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert_rounded, size: 20),
+          tooltip: 'Chat options',
+          onSelected: (v) {
+            if (v == 'rename') _rename(context);
+            if (v == 'delete') _confirmDelete(context);
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'rename',
+                child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Rename'), dense: true)),
+            PopupMenuItem(value: 'delete',
+                child: ListTile(leading: Icon(Icons.delete_outline_rounded, color: Colors.red),
+                    title: Text('Delete', style: TextStyle(color: Colors.red)), dense: true)),
+          ],
+        ),
+      ]),
+      onTap: disabled
+          ? null
+          : () {
+              final ai = context.read<AiProvider>();
+              Navigator.pop(context);
+              ai.openChat(chat.id);
+            },
+    );
+  }
+
+  Future<void> _rename(BuildContext context) async {
+    final ai = context.read<AiProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final title = await showDialog<String>(
+      context: context,
+      builder: (_) => _RenameChatDialog(initial: chat.title),
+    );
+    if (title == null) return;
+    final err = await ai.renameChat(chat.id, title);
+    if (err != null) messenger.showSnackBar(SnackBar(content: Text(err)));
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final ai = context.read<AiProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this chat?'),
+        content: Text(
+          '"${chat.title}" and all of its messages will be permanently deleted. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final err = await ai.deleteChat(chat.id);
+    if (err != null) messenger.showSnackBar(SnackBar(content: Text(err)));
+  }
+}
+
+class _RenameChatDialog extends StatefulWidget {
+  final String initial;
+  const _RenameChatDialog({required this.initial});
+  @override
+  State<_RenameChatDialog> createState() => _RenameChatDialogState();
+}
+
+class _RenameChatDialogState extends State<_RenameChatDialog> {
+  late final TextEditingController _c = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final t = _c.text.trim();
+    if (t.isEmpty) return;
+    Navigator.pop(context, t);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Rename chat'),
+        content: TextField(
+          controller: _c,
+          autofocus: true,
+          maxLength: 100,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _submit(),
+          decoration: const InputDecoration(hintText: 'Chat title'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: _submit, child: const Text('Save')),
+        ],
+      );
+}
+
+/// Pre-chat Q&A rows: read-only, clearly NOT conversations.
+class _EarlierQuestionsSection extends StatelessWidget {
+  const _EarlierQuestionsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Consumer<AiProvider>(
+      builder: (ctx, ai, _) => ExpansionTile(
+        leading: const Icon(Icons.inbox_outlined),
+        title: const Text('Earlier questions'),
+        subtitle: const Text('Saved before chats existed · read-only',
+            style: TextStyle(fontSize: 11)),
+        onExpansionChanged: (open) {
+          if (open && !ai.earlierLoaded) ai.loadEarlierQuestions();
+        },
+        children: [
+          if (ai.earlierLoading && ai.earlierQuestions.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (ai.earlierQuestions.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(ai.earlierError ?? 'Nothing here.',
+                  style: TextStyle(color: scheme.outline)),
+            ),
+          for (final q in ai.earlierQuestions)
+            ListTile(
+              dense: true,
+              title: Text(q.question, maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text(_relativeTime(q.createdAt),
+                  style: TextStyle(fontSize: 11, color: scheme.outline)),
+              onTap: () => showDialog(
+                context: ctx,
+                builder: (_) => AlertDialog(
+                  title: const Text('Earlier question'),
+                  content: SizedBox(
+                    width: double.maxFinite,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('You asked', style: TextStyle(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 4),
+                          SelectableText(q.question),
+                          const SizedBox(height: 14),
+                          const Text('AI answered', style: TextStyle(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 4),
+                          SelectableText(q.response),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                  ],
+                ),
+              ),
+            ),
+          if (ai.earlierHasMore)
+            Center(
+              child: TextButton(
+                onPressed: ai.earlierLoading ? null : () => ai.loadEarlierQuestions(more: true),
+                child: Text(ai.earlierLoading ? 'Loading…' : 'Load more'),
+              ),
+            ),
+        ],
       ),
     );
   }

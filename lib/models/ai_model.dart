@@ -13,6 +13,18 @@ class AiMessage {
   final bool isImage;           // true if this question used an image
   final AiMode mode;
 
+  /// Server id of the saved exchange this message belongs to. Null until the
+  /// server has confirmed it saved the exchange.
+  final int? exchangeId;
+
+  /// Set only on a user message that is still being sent or was NOT saved.
+  /// Removed once the server confirms the exchange.
+  final String? clientMessageId;
+
+  /// True when the server has NOT saved this message (failed / unreachable).
+  /// The UI shows "Not sent" with Retry — never "saved".
+  final bool failed;
+
   const AiMessage({
     required this.text,
     required this.isUser,
@@ -20,7 +32,208 @@ class AiMessage {
     this.subject,
     this.isImage = false,
     this.mode = AiMode.normal,
+    this.exchangeId,
+    this.clientMessageId,
+    this.failed = false,
   });
+
+  AiMessage copyWith({
+    bool? failed,
+    int? exchangeId,
+    String? clientMessageId,
+    bool clearClientMessageId = false,
+  }) =>
+      AiMessage(
+        text: text,
+        isUser: isUser,
+        timestamp: timestamp,
+        subject: subject,
+        isImage: isImage,
+        mode: mode,
+        exchangeId: exchangeId ?? this.exchangeId,
+        clientMessageId:
+            clearClientMessageId ? null : (clientMessageId ?? this.clientMessageId),
+        failed: failed ?? this.failed,
+      );
+}
+
+// ── Persistent chats ────────────────────────────────────────────────────────
+
+DateTime _parseServerTime(dynamic v) =>
+    DateTime.parse(v as String).toLocal();
+
+AiMode aiModeFromName(String? name) => switch (name) {
+      'exam_prep'   => AiMode.examPrep,
+      'exam_lesson' => AiMode.examLesson,
+      _             => AiMode.normal,
+    };
+
+String aiModeToName(AiMode m) => switch (m) {
+      AiMode.examPrep   => 'exam_prep',
+      AiMode.examLesson => 'exam_lesson',
+      AiMode.normal     => 'normal',
+    };
+
+/// One row of the history list (GET /ai/chats).
+class AiChatSummary {
+  final int id;
+  final String title;
+  final String? lastPreview;
+  final int messageCount;
+  final DateTime updatedAt;
+
+  const AiChatSummary({
+    required this.id,
+    required this.title,
+    required this.lastPreview,
+    required this.messageCount,
+    required this.updatedAt,
+  });
+
+  AiChatSummary copyWith({String? title}) => AiChatSummary(
+        id: id,
+        title: title ?? this.title,
+        lastPreview: lastPreview,
+        messageCount: messageCount,
+        updatedAt: updatedAt,
+      );
+
+  factory AiChatSummary.fromJson(Map<String, dynamic> j) => AiChatSummary(
+        id: (j['id'] as num).toInt(),
+        title: (j['title'] as String?) ?? 'New chat',
+        lastPreview: j['last_preview'] as String?,
+        messageCount: (j['message_count'] as num?)?.toInt() ?? 0,
+        updatedAt: _parseServerTime(j['updated_at']),
+      );
+}
+
+class AiChatPage {
+  final List<AiChatSummary> items;
+  final bool hasMore;
+  const AiChatPage({required this.items, required this.hasMore});
+
+  factory AiChatPage.fromJson(Map<String, dynamic> j) => AiChatPage(
+        items: ((j['items'] as List?) ?? const [])
+            .map((e) => AiChatSummary.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+        hasMore: j['has_more'] == true,
+      );
+}
+
+/// One saved question + answer pair from the server.
+class AiSavedExchange {
+  final int id;
+  final String question;
+  final String response;
+  final String? subject;
+  final String? mode;
+  final bool imageUsed;
+  final DateTime createdAt;
+
+  const AiSavedExchange({
+    required this.id,
+    required this.question,
+    required this.response,
+    required this.subject,
+    required this.mode,
+    required this.imageUsed,
+    required this.createdAt,
+  });
+
+  factory AiSavedExchange.fromJson(Map<String, dynamic> j) => AiSavedExchange(
+        id: (j['id'] as num).toInt(),
+        question: j['question'] as String,
+        response: j['response'] as String,
+        subject: j['subject'] as String?,
+        mode: j['mode'] as String?,
+        imageUsed: j['image_used'] == true,
+        createdAt: _parseServerTime(j['created_at']),
+      );
+
+  /// The two chat bubbles this exchange is shown as (question, then answer).
+  List<AiMessage> toMessages() {
+    final m = aiModeFromName(mode);
+    final qText = imageUsed
+        ? (question == '[image question]' ? '📷 Image question' : '📷 $question')
+        : question;
+    return [
+      AiMessage(
+        text: qText,
+        isUser: true,
+        // 1 ms earlier than the answer so the two bubbles never share a key.
+        timestamp: createdAt.subtract(const Duration(milliseconds: 1)),
+        isImage: imageUsed,
+        mode: m,
+        exchangeId: id,
+      ),
+      AiMessage(
+        text: response,
+        isUser: false,
+        timestamp: createdAt,
+        subject: subject,
+        mode: m,
+        exchangeId: id,
+      ),
+    ];
+  }
+}
+
+class AiChatDetail {
+  final int id;
+  final String title;
+  final bool hasMoreBefore;
+  final List<AiSavedExchange> messages; // oldest -> newest
+
+  const AiChatDetail({
+    required this.id,
+    required this.title,
+    required this.hasMoreBefore,
+    required this.messages,
+  });
+
+  factory AiChatDetail.fromJson(Map<String, dynamic> j) => AiChatDetail(
+        id: (j['id'] as num).toInt(),
+        title: (j['title'] as String?) ?? 'New chat',
+        hasMoreBefore: j['has_more_before'] == true,
+        messages: ((j['messages'] as List?) ?? const [])
+            .map((e) => AiSavedExchange.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+      );
+}
+
+/// A pre-chat Q&A row ("Earlier Questions"): read-only, never a conversation.
+class AiEarlierQuestion {
+  final int id;
+  final String question;
+  final String response;
+  final DateTime createdAt;
+
+  const AiEarlierQuestion({
+    required this.id,
+    required this.question,
+    required this.response,
+    required this.createdAt,
+  });
+
+  factory AiEarlierQuestion.fromJson(Map<String, dynamic> j) => AiEarlierQuestion(
+        id: (j['id'] as num).toInt(),
+        question: j['question'] as String,
+        response: j['response'] as String,
+        createdAt: _parseServerTime(j['created_at']),
+      );
+}
+
+class AiEarlierPage {
+  final List<AiEarlierQuestion> items;
+  final bool hasMore;
+  const AiEarlierPage({required this.items, required this.hasMore});
+
+  factory AiEarlierPage.fromJson(Map<String, dynamic> j) => AiEarlierPage(
+        items: ((j['items'] as List?) ?? const [])
+            .map((e) => AiEarlierQuestion.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+        hasMore: j['has_more'] == true,
+      );
 }
 
 class AiConversationModel {

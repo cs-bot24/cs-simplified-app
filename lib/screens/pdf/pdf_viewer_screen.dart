@@ -1312,6 +1312,8 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
         pdfCourseCode:   widget.courseCode,
         pdfLevelName:    widget.levelName,
         pdfCategoryName: widget.categoryName,
+        // PDF questions never inherit history from saved AI Tutor chats.
+        contextType:     'pdf',
       );
       if (mounted) {
         setState(() {
