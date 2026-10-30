@@ -1,7 +1,7 @@
 name: cs_simplified
 description: CS Simplified - Academic Learning Platform
 publish_to: 'none'
-version: 1.0.7+1
+version: 1.0.8+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -87,7 +87,7 @@ msix_config:
   # certificate's Subject exactly.
   publisher: CN=CS Simplified, O=CS Simplified, C=US
   identity_name: com.cssimplified.app
-  msix_version: 1.0.7.0
+  msix_version: 1.0.8.0
   logo_path: web/icons/Icon-512.png
   capabilities: internetClient
   languages: en-us
