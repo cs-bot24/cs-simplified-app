@@ -1111,9 +1111,23 @@ class ApiClient {
     // Sending this gives the AI full session context so follow-up questions
     // ("explain again", "write the code", "why?", "continue") work correctly.
     List<Map<String, String>>? conversationHistory,
+    // ── Persistent chats ──────────────────────────────────────────────────
+    // chatId     continue a saved chat (server builds the history itself)
+    // newChat    start a new saved chat (created when the first answer is saved)
+    // clientMessageId  UUID, re-sent UNCHANGED on every retry of the same send
+    // contextType      'pdf' | 'exam_lesson' → never inherits other chats' history
+    int?    chatId,
+    bool    newChat           = false,
+    String? clientMessageId,
+    String? contextType,
+    Duration? timeout,
   }) async {
     try {
       final body = <String, dynamic>{
+        if (chatId          != null) 'chat_id':           chatId,
+        if (newChat)                 'new_chat':          true,
+        if (clientMessageId != null) 'client_message_id': clientMessageId,
+        if (contextType     != null) 'context_type':      contextType,
         'question':          question,
         'mode':              mode,
         'explanation_level': level,
@@ -1132,12 +1146,99 @@ class ApiClient {
         // Always send history — empty list means no prior context (first message)
         'conversation_history': conversationHistory ?? [],
       };
-      final res = await http.post(
+      final req = http.post(
         Uri.parse('$_base/ai/ask'),
         headers: _headers(auth: true),
         body: jsonEncode(body),
       );
+      final res = timeout == null ? await req : await req.timeout(timeout);
       return _handle(res);
+    } on ApiException {
+      rethrow; // keep statusCode (409 / 404 matter for chat retries)
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  // ── Persistent AI chats ───────────────────────────────────────────────────
+  // These keep the HTTP status code on ApiException so callers can tell
+  // "feature unavailable" (404/503) from "chat deleted" (404 on one chat).
+
+  static Future<Map<String, dynamic>> getAiChats({int skip = 0, int limit = 20}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/ai/chats?skip=$skip&limit=$limit'),
+        headers: _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(_handle(res) as Map);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getAiChat(int chatId, {int? beforeId, int limit = 100}) async {
+    try {
+      final q = 'limit=$limit${beforeId != null ? '&before_id=$beforeId' : ''}';
+      final res = await http.get(
+        Uri.parse('$_base/ai/chats/$chatId?$q'),
+        headers: _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(_handle(res) as Map);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> renameAiChat(int chatId, String title) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$_base/ai/chats/$chatId'),
+        headers: _headers(auth: true),
+        body: jsonEncode({'title': title}),
+      );
+      _handle(res);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> deleteAiChat(int chatId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/ai/chats/$chatId'),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<Map<String, dynamic>> getAiEarlierQuestions({int skip = 0, int limit = 20}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/ai/earlier-questions?skip=$skip&limit=$limit'),
+        headers: _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(_handle(res) as Map);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  /// Outcome of an earlier send, WITHOUT asking the AI again.
+  /// Returns null when the server never recorded this id (404) — it is then
+  /// safe to say the message was not sent. Network failures throw.
+  static Future<Map<String, dynamic>?> getAiRequestStatus(String clientMessageId) async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$_base/ai/requests/$clientMessageId'),
+            headers: _headers(auth: true),
+          )
+          .timeout(const Duration(seconds: 20));
+      return Map<String, dynamic>.from(_handle(res) as Map);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 

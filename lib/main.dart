@@ -176,6 +176,9 @@ class _AppBootstrapState extends State<_AppBootstrap>
     final planner = context.read<StudyPlannerProvider>();
 
     auth.onLoginSuccess = () async {
+      // Bind AI Tutor state (open chat, unsent message) to THIS account; a
+      // different previous account's state is wiped from memory.
+      ai.bindUser(auth.user?.id);
       // Reload plan entitlements for the newly logged-in user
       await ai.loadPlan();
       // Reload today's study sessions for the new user
@@ -183,6 +186,8 @@ class _AppBootstrapState extends State<_AppBootstrap>
     };
 
     auth.onLogoutSuccess = () async {
+      // Drop the previous user's open chat, pending sends and session state
+      ai.bindUser(null);
       // Clear cached entitlements — next user starts fresh with defaultPermissive
       // until their /ai/plan call resolves
       ai.clearPlan();

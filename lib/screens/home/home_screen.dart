@@ -26,7 +26,6 @@ import '../../models/level_model.dart';
 import '../../widgets/skeleton_loader.dart';
 import '../../widgets/streak_badge.dart';
 import '../../widgets/material_card.dart';
-import '../../widgets/quote_card.dart';
 import '../../widgets/exam_prep_banner.dart';
 import '../../widgets/section_header.dart';
 import '../../widgets/home_shimmer.dart';
@@ -523,20 +522,6 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             // ── 2b. Study Reminders card ─────────────────────────────────────
             const SliverToBoxAdapter(child: _StudyRemindersCard()),
 
-            // ── 2c. Daily quote ──────────────────────────────────────────────
-            // Placed right after the occasional Exam Prep / Study Plan
-            // banners but before Study Champions, so it's always visible on
-            // launch (those two banners only render occasionally, so this
-            // used to require scrolling past Trending + Continue Reading to
-            // find it most of the time).
-            if (home.data?.dailyQuote != null)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: QuoteCard(quote: home.data!.dailyQuote!),
-                ),
-              ),
-
             // ── 3. Leaderboard entry card ────────────────────────────────────
             if (home.data != null)
               SliverToBoxAdapter(
@@ -846,30 +831,44 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
             ],
           ),
 
-          if (home.data != null && home.data!.streak.currentStreak > 0) ...[
-            const SizedBox(height: 10),
-            Text(home.data!.streak.motivationalMessage,
-                style: const TextStyle(
-                    color: Colors.white60,
-                    fontSize: 12,
-                    fontStyle: FontStyle.italic)),
-          ],
-
-          const SizedBox(height: 16),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white12,
-              borderRadius: BorderRadius.circular(12),
+          if (home.data?.dailyQuote != null) ...[
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.only(left: 12),
+              decoration: const BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: Colors.white38, width: 2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '"${home.data!.dailyQuote!.quoteText}"',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13.5,
+                      fontStyle: FontStyle.italic,
+                      height: 1.5,
+                    ),
+                  ),
+                  if (home.data!.dailyQuote!.author != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '— ${home.data!.dailyQuote!.author}',
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            child: const Row(children: [
-              Icon(Icons.lightbulb_outline, color: Colors.white70, size: 17),
-              SizedBox(width: 10),
-              Text('Browse materials by level',
-                  style: TextStyle(color: Colors.white70, fontSize: 13)),
-            ]),
-          ),
+          ],
         ],
       ),
     );
