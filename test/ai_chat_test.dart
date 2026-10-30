@@ -150,4 +150,30 @@ void main() {
       expect(ai.isExamLesson, isTrue);
     });
   });
+
+  group('aiPreviewText', () {
+    test('plain text is returned as is', () {
+      expect(aiPreviewText('  Hello there '), 'Hello there');
+      expect(aiPreviewText(null), '');
+    });
+
+    test('complete JSON blocks give readable text', () {
+      const raw = '{"blocks": [{"type": "heading", "text": "What is a Stack?", "level": 2}, '
+          '{"type": "text", "content": "A stack is LIFO."}, '
+          '{"type": "diagram", "format": "mermaid", "source": "graph TD"}]}';
+      expect(aiPreviewText(raw), 'What is a Stack? - A stack is LIFO.');
+    });
+
+    test('JSON cut off mid-way still gives readable text', () {
+      const raw = '{"blocks": [{"type": "heading", "text": "About Y\\u2026", "level": 2}, '
+          '{"type": "text", "content": "I am an AI tutor built for acad';
+      final out = aiPreviewText(raw);
+      expect(out.contains('{'), isFalse);
+      expect(out.contains('I am an AI tutor'), isTrue);
+    });
+
+    test('JSON with no readable text gives an empty preview', () {
+      expect(aiPreviewText('{"blocks": [{"type": "diagram", "source": "x"}]}'), '');
+    });
+  });
 }

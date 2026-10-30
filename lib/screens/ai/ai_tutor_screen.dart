@@ -1527,7 +1527,7 @@ class _ChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final preview = (chat.lastPreview ?? '').trim();
+    final preview = aiPreviewText(chat.lastPreview);
     return ListTile(
       selected: selected,
       selectedTileColor: scheme.primary.withOpacity(0.08),
@@ -1695,7 +1695,10 @@ class _EarlierQuestionsSection extends StatelessWidget {
                           const SizedBox(height: 14),
                           const Text('AI answered', style: TextStyle(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 4),
-                          SelectableText(q.response),
+                          AiContentRenderer(
+                            content: q.response,
+                            isDark: Theme.of(ctx).brightness == Brightness.dark,
+                          ),
                         ],
                       ),
                     ),

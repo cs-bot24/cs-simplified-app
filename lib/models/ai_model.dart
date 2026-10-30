@@ -1,5 +1,6 @@
 // lib/models/ai_model.dart — Phase 2 + Monetization Readiness
 import 'package:flutter/foundation.dart';
+import 'ai_block.dart';
 
 enum ExplanationLevel { beginner, intermediate, advanced }
 
@@ -375,3 +376,34 @@ class AiPlanInfo {
   }
 }
 
+/// Plain-text preview for the history list. Saved answers are JSON "blocks";
+/// showing them raw looks broken, so pull out the readable text. Also copes
+/// with a preview that was cut off mid-JSON by the server's length limit.
+String aiPreviewText(String? raw) {
+  final r = (raw ?? '').trim();
+  if (r.isEmpty) return '';
+  final looksJson = r.startsWith('{') || r.startsWith('```');
+  if (!looksJson) return r;
+
+  final parts = <String>[];
+  final parsed = AiJsonResponse.tryParse(r);
+  if (parsed != null && !parsed.isEmpty) {
+    for (final b in parsed.blocks) {
+      if (b.type == AiBlockType.heading || b.type == AiBlockType.text) {
+        final t = b.text.trim();
+        if (t.isNotEmpty) parts.add(t);
+      }
+    }
+  } else {
+    final re = RegExp(r'"(?:text|content)"\s*:\s*"((?:[^"\\]|\\.)*)');
+    for (final m in re.allMatches(r)) {
+      final t = (m.group(1) ?? '')
+          .replaceAll(r'\n', ' ')
+          .replaceAll(r'\"', '"')
+          .replaceAll(r'\\', r'\')
+          .trim();
+      if (t.isNotEmpty) parts.add(t);
+    }
+  }
+  return parts.join(' - ').replaceAll(RegExp(r'\s+'), ' ').trim();
+}
