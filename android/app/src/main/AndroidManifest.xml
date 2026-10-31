@@ -22,6 +22,9 @@
     <!-- Camera for AI question scanner -->
     <uses-permission android:name="android.permission.CAMERA"/>
 
+    <!-- In-app update: lets the app open Android's installer for the new APK -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+
     <application
         android:label="CS Simplified"
         android:name="${applicationName}"
