@@ -114,18 +114,20 @@ class VersionCheck {
           ),
           ElevatedButton.icon(
             onPressed: () async {
-              Navigator.pop(ctx);
               // Android: download the new APK inside the app and open the
-              // installer. Everything else (and any failure) falls back to
-              // opening the release page, exactly like before.
-              if (_canInstallInApp && context.mounted) {
+              // installer. The download dialog opens ON TOP of this one
+              // (using ctx), so the caller keeps waiting and the screen
+              // underneath cannot be replaced meanwhile.
+              if (_canInstallInApp) {
                 await showDialog<void>(
-                  context: context,
+                  context: ctx,
                   barrierDismissible: false,
                   builder: (_) => _ApkUpdateDialog(fallbackUrl: url),
                 );
+                if (ctx.mounted) Navigator.pop(ctx);
                 return;
               }
+              Navigator.pop(ctx);
               if (url.isNotEmpty) {
                 await launchUrl(
                   Uri.parse(url),
