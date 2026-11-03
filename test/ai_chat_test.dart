@@ -176,4 +176,53 @@ void main() {
       expect(aiPreviewText('{"blocks": [{"type": "diagram", "source": "x"}]}'), '');
     });
   });
+
+  group('aiMessagesFromLessonTurns (Exam Lesson resume)', () {
+    Map<String, dynamic> turn(int id, String q, String a,
+            {bool opening = false, bool image = false}) =>
+        {
+          'id': id,
+          'question': q,
+          'response': a,
+          'subject': 'DSA',
+          'is_opening': opening,
+          'had_image': image,
+          'created_at': '2026-11-03T05:00:00Z',
+        };
+
+    test('the auto-sent opening turn shows only the lesson text', () {
+      final out = aiMessagesFromLessonTurns([
+        turn(1, "Begin today's exam lesson on Recursion.", 'Lesson part 1', opening: true),
+      ]);
+      expect(out.length, 1);
+      expect(out.single.isUser, isFalse);
+      expect(out.single.text, 'Lesson part 1');
+      expect(out.single.mode, AiMode.examLesson);
+      expect(out.single.exchangeId, 1);
+    });
+
+    test('follow-ups come back as student then tutor, in order', () {
+      final out = aiMessagesFromLessonTurns([
+        turn(1, "Begin today's exam lesson on Recursion.", 'Part 1', opening: true),
+        turn(2, 'Why does it stop?', 'Base case'),
+      ]);
+      expect(out.map((m) => m.isUser).toList(), [false, true, false]);
+      expect(out.map((m) => m.text).toList(), ['Part 1', 'Why does it stop?', 'Base case']);
+    });
+
+    test('image turns keep their camera marker', () {
+      final out = aiMessagesFromLessonTurns([
+        turn(3, '[image question]', 'It shows a stack', image: true),
+        turn(4, 'what is this', 'A queue', image: true),
+      ]);
+      expect(out[0].isImage, isTrue);
+      expect(out[0].text.endsWith('Image question'), isTrue);
+      expect(out[2].text.endsWith('what is this'), isTrue);
+    });
+
+    test('empty, junk and answer-less items are skipped', () {
+      expect(aiMessagesFromLessonTurns([]), isEmpty);
+      expect(aiMessagesFromLessonTurns(['x', 5, null, {'question': 'q', 'response': ''}]), isEmpty);
+    });
+  });
 }
