@@ -407,3 +407,44 @@ String aiPreviewText(String? raw) {
   }
   return parts.join(' - ').replaceAll(RegExp(r'\s+'), ' ').trim();
 }
+
+/// Rebuilds the on-screen messages of a saved Exam Lesson from the server's
+/// saved turns (oldest first). The auto-sent opening request is never shown as
+/// a student bubble - exactly like a freshly started lesson.
+List<AiMessage> aiMessagesFromLessonTurns(List<dynamic> items) {
+  final out = <AiMessage>[];
+  for (final raw in items) {
+    if (raw is! Map) continue;
+    final response = (raw['response'] as String?) ?? '';
+    if (response.isEmpty) continue;
+    final question = ((raw['question'] as String?) ?? '').trim();
+    final id       = (raw['id'] as num?)?.toInt();
+    final at = DateTime.tryParse((raw['created_at'] as String?) ?? '')?.toLocal() ??
+        DateTime.now();
+    final hadImage  = raw['had_image'] == true;
+    final isOpening = raw['is_opening'] == true;
+
+    if (!isOpening) {
+      final cleaned = question == '[image question]' ? '' : question;
+      out.add(AiMessage(
+        text: hadImage
+            ? (cleaned.isEmpty ? '\u{1F4F7} Image question' : '\u{1F4F7} $cleaned')
+            : question,
+        isUser: true,
+        timestamp: at,
+        isImage: hadImage,
+        mode: AiMode.examLesson,
+        exchangeId: id,
+      ));
+    }
+    out.add(AiMessage(
+      text: response,
+      isUser: false,
+      timestamp: at,
+      subject: raw['subject'] as String?,
+      mode: AiMode.examLesson,
+      exchangeId: id,
+    ));
+  }
+  return out;
+}

@@ -1212,6 +1212,41 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  // ── Exam Lesson resume ────────────────────────────────────────────────────
+  // Saved turns of one lesson (empty list = none saved) and "Start over".
+
+  static Future<Map<String, dynamic>> getExamLesson({
+    required String courseCode,
+    required String topic,
+  }) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/ai/exam-lesson')
+            .replace(queryParameters: {'course_code': courseCode, 'topic': topic}),
+        headers: _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(_handle(res) as Map);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> deleteExamLesson({
+    required String courseCode,
+    required String topic,
+  }) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/ai/exam-lesson')
+            .replace(queryParameters: {'course_code': courseCode, 'topic': topic}),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   static Future<Map<String, dynamic>> getAiEarlierQuestions({int skip = 0, int limit = 20}) async {
     try {
       final res = await http.get(

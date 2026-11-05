@@ -215,6 +215,11 @@ class _AiTutorScreenState extends State<AiTutorScreen>
           Consumer<AiProvider>(
             builder: (_, ai, __) => _ChatStatusStrip(ai: ai, scheme: scheme),
           ),
+          Consumer<AiProvider>(
+            builder: (_, ai, __) => ai.lessonResumed
+                ? _LessonResumedBanner(scheme: scheme)
+                : const SizedBox.shrink(),
+          ),
           Expanded(child: Stack(
             children: [
               _MessageList(
@@ -482,6 +487,73 @@ class _ModeBar extends StatelessWidget {
 // with explicit ✓ Mark Complete / Review Again actions. Marking complete
 // sends an explicit callback to Exam Prep (never inferred from chat text)
 // and pops back so the Daily Topics card can refresh live.
+
+/// Shown above a lesson that was restored from the server: the student simply
+/// carries on, or starts the topic over.
+class _LessonResumedBanner extends StatelessWidget {
+  final ColorScheme scheme;
+  const _LessonResumedBanner({required this.scheme});
+
+  Future<void> _confirmStartOver(BuildContext context) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Start this lesson over?'),
+        content: const Text(
+            'Your saved lesson for this topic will be deleted and the lesson '
+            'will begin again from the start.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep lesson'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Start over'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !context.mounted) return;
+    final ai = context.read<AiProvider>();
+    final ok = await ai.restartExamLesson();
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ai.error ?? 'Could not restart the lesson.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+      color: scheme.primary.withOpacity(0.06),
+      child: Row(
+        children: [
+          Icon(Icons.history_rounded, size: 16, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Continuing your saved lesson',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _confirmStartOver(context),
+            child: const Text('Start over'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 
 class _ExamLessonActionBar extends StatefulWidget {
   final ColorScheme scheme;

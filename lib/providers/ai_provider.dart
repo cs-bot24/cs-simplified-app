@@ -195,6 +195,8 @@ class AiProvider extends ChangeNotifier {
   bool    _examLessonStarted      = false;
   bool    _examLessonMarkedComplete = false;
   bool    _completingExamLesson   = false;
+  // True when the messages on screen were restored from a saved lesson.
+  bool    _lessonResumed          = false;
 
   // ── Public getters ────────────────────────────────────────────────────────
 
@@ -245,6 +247,7 @@ class AiProvider extends ChangeNotifier {
   bool    get examIsReview       => _examIsReview;
   bool    get examLessonMarkedComplete => _examLessonMarkedComplete;
   bool    get completingExamLesson     => _completingExamLesson;
+  bool    get lessonResumed            => _lessonResumed && isExamLesson;
   /// True once the lesson has produced its first response and is ready to
   /// show the "Mark this topic as completed?" action bar.
   bool    get examLessonAwaitingAction =>
@@ -281,6 +284,7 @@ class AiProvider extends ChangeNotifier {
     _examIsReview               = isReview;
     _examLessonStarted          = false;
     _examLessonMarkedComplete   = false;
+    _lessonResumed              = false;
     // The lesson is NOT a chat. Park the general chat that is open (if any) so
     // the lesson starts empty and the chat comes back untouched afterwards.
     _stashGeneralChat();
@@ -294,10 +298,81 @@ class AiProvider extends ChangeNotifier {
   Future<void> beginExamLessonIfNeeded() async {
     if (!isExamLesson || _examLessonStarted || _examTopic == null) return;
     _examLessonStarted = true;
+    // A saved lesson for this topic? Show it instead of generating it again
+    // (no AI call, nothing is charged).
+    if (await _restoreSavedLesson()) return;
+    if (!isExamLesson) return;
     await _sendRequest(
       question: 'Begin today\'s exam lesson on $_examTopic.',
       announceOnly: true,
     );
+  }
+
+  /// Looks up this topic's saved lesson. Returns true when it was handled
+  /// (restored, or the student already left the screen). Any failure - offline,
+  /// server feature off, nothing saved - returns false so the lesson simply
+  /// starts the way it always did.
+  Future<bool> _restoreSavedLesson() async {
+    final topic  = _examTopic;
+    final course = _examCourseCode;
+    if (topic == null || course == null) return false;
+
+    _state = AiState.loading;
+    _error = null;
+    notifyListeners();
+
+    List<AiMessage> restored = const [];
+    try {
+      final data = await ApiClient.getExamLesson(courseCode: course, topic: topic);
+      restored = aiMessagesFromLessonTurns((data['items'] as List?) ?? const []);
+    } catch (_) {
+      restored = const [];
+    }
+    if (_state == AiState.loading) _state = AiState.idle;
+
+    // The student may have left the lesson while we were asking.
+    if (!isExamLesson || _examTopic != topic) {
+      notifyListeners();
+      return true;
+    }
+    if (restored.isEmpty) {
+      notifyListeners();
+      return false;
+    }
+    _messages
+      ..clear()
+      ..addAll(restored);
+    _lessonResumed = true;
+    notifyListeners();
+    return true;
+  }
+
+  /// "Start over": deletes the saved lesson on the server, then teaches the
+  /// topic again from the beginning. Returns false (and keeps the current
+  /// lesson) if the delete fails.
+  Future<bool> restartExamLesson() async {
+    final topic  = _examTopic;
+    final course = _examCourseCode;
+    if (!isExamLesson || topic == null || course == null || loading) return false;
+    try {
+      await ApiClient.deleteExamLesson(courseCode: course, topic: topic);
+    } catch (_) {
+      _error = 'Could not restart the lesson. Please check your connection and try again.';
+      _state = AiState.error;
+      notifyListeners();
+      return false;
+    }
+    if (!isExamLesson || _examTopic != topic) return false;
+    _messages.clear();
+    _lessonResumed = false;
+    _examLessonMarkedComplete = false;
+    _examLessonStarted = true;
+    notifyListeners();
+    await _sendRequest(
+      question: 'Begin today\'s exam lesson on $topic.',
+      announceOnly: true,
+    );
+    return true;
   }
 
   /// Student tapped "Mark Complete" at the end of an Exam Lesson.
@@ -344,6 +419,7 @@ class AiProvider extends ChangeNotifier {
     _examIsReview = false;
     _examLessonStarted = false;
     _examLessonMarkedComplete = false;
+    _lessonResumed = false;
     _messages.clear();
     _restoreGeneralChat();
     notifyListeners();
@@ -807,6 +883,7 @@ class AiProvider extends ChangeNotifier {
     _examIsReview = false;
     _examLessonStarted = false;
     _examLessonMarkedComplete = false;
+    _lessonResumed = false;
     _error = null;
     _state = AiState.idle;
   }
