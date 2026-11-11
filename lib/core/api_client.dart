@@ -1247,6 +1247,35 @@ class ApiClient {
     } catch (e) { throw ApiException(_friendlyError(e)); }
   }
 
+  // ── PDF chat resume ───────────────────────────────────────────────────────
+  // Saved turns of this user's chat about one PDF material, and "Start over".
+
+  static Future<Map<String, dynamic>> getPdfChat({required int materialId}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/ai/pdf-chat')
+            .replace(queryParameters: {'material_id': '$materialId'}),
+        headers: _headers(auth: true),
+      );
+      return Map<String, dynamic>.from(_handle(res) as Map);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
+  static Future<void> deletePdfChat({required int materialId}) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_base/ai/pdf-chat')
+            .replace(queryParameters: {'material_id': '$materialId'}),
+        headers: _headers(auth: true),
+      );
+      _handle(res);
+    } on ApiException {
+      rethrow;
+    } catch (e) { throw ApiException(_friendlyError(e)); }
+  }
+
   static Future<Map<String, dynamic>> getAiEarlierQuestions({int skip = 0, int limit = 20}) async {
     try {
       final res = await http.get(
