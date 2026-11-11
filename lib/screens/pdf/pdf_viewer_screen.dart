@@ -43,6 +43,7 @@ import 'pdf_web_panels_stub.dart' if (dart.library.html) 'pdf_web_panels.dart';
     
 import '../../core/api_client.dart';
 import '../../models/material_model.dart';
+import '../../models/pdf_chat.dart';
 import '../../models/offline_material.dart';
 import '../../models/rating_model.dart';
 import '../../services/pdf/i_pdf_renderer.dart';
@@ -1197,6 +1198,12 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
   final List<_LocalMessage> _messages = [];
   bool _loading = false;
 
+  // Saved-chat resume: the chat for this PDF is loaded from the server when
+  // the sheet opens. [_restoring] blocks sending until that finished, so a
+  // question can never be added before the saved ones.
+  bool _restoring = false;
+  bool _resumed   = false;
+
   // Scroll-intent guard — never fight the user's finger.
   bool _userScrolledUp = false;
   bool _hasNewMessage  = false;
@@ -1206,11 +1213,80 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
   void initState() {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
-    // Phase 4/5/6: auto-fire quick action if one was requested
-    if (widget.initialAction != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Restore this PDF's saved chat first; then, if a quick action was
+    // requested (Phase 4/5/6), fire it on top of the restored chat.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _restoreSavedChat();
+      if (!mounted) return;
+      if (widget.initialAction != null) {
         _fireQuickAction(widget.initialAction!);
+      }
+    });
+  }
+
+  /// Loads the saved chat of this PDF. Any failure (offline, feature not
+  /// available, not signed in) just leaves an empty chat - never blocks asking.
+  Future<void> _restoreSavedChat() async {
+    final id = widget.materialId;
+    if (id == null) return;
+    if (mounted) setState(() => _restoring = true);
+    try {
+      final data  = await ApiClient.getPdfChat(materialId: id);
+      final items = (data['items'] as List?) ?? const [];
+      final saved = pdfChatFromTurns(items);
+      if (!mounted) return;
+      if (saved.isNotEmpty && _messages.isEmpty) {
+        setState(() {
+          _messages.addAll([
+            for (final m in saved)
+              _LocalMessage(text: m.text, isUser: m.isUser, sent: m.sent),
+          ]);
+          _resumed = true;
+        });
+        _scrollToBottom(force: true);
+      }
+    } catch (_) {
+      // keep an empty chat
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
+
+  Future<void> _confirmStartOver() async {
+    final id = widget.materialId;
+    if (id == null) return;
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Start this chat over?'),
+        content: const Text(
+            'Your saved chat about this material will be deleted. '
+            'Your AI usage is not affected.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep chat'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Start over'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    try {
+      await ApiClient.deletePdfChat(materialId: id);
+      if (!mounted) return;
+      setState(() {
+        _messages.clear();
+        _resumed = false;
       });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not start over. Please try again.')),
+      );
     }
   }
 
@@ -1253,7 +1329,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _loading) return;
+    if (text.isEmpty || _loading || _restoring) return;
     _controller.clear();
     _focusNode.unfocus();
     await _askAi(text);
@@ -1262,34 +1338,28 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
   // ── Quick actions (Phase 4/5/6) ───────────────────────────────────────────
 
   Future<void> _fireQuickAction(String action) async {
-    final prompt = switch (action) {
-      'explain' =>
-        'Please explain the key concepts, important definitions, and main ideas '
-        'in this course material. Also include any exam tips.',
-      'notes' =>
-        'Generate structured study notes for this course material. '
-        'Include: Key Concepts, Definitions, Important Points, and Exam Tips.',
-      'quiz' =>
-        'Generate 5 exam-style questions based on this course material. '
-        'Mix multiple-choice and short-answer. Include correct answers.',
-      _ => action,
-    };
-
-    final label = switch (action) {
-      'explain' => '📖 Explain This Material',
-      'notes'   => '📝 Generate Notes',
-      'quiz'    => '❓ Quiz Me',
-      _         => action,
-    };
+    final prompt = kPdfQuickPrompts[action] ?? action;
+    final label  = kPdfQuickLabels[action]  ?? action;
 
     await _askAi(prompt, displayText: label);
   }
 
   Future<void> _askAi(String question, {String? displayText}) async {
-    if (_loading) return;
+    if (_loading || _restoring) return;
+
+    // History = everything said so far in THIS PDF's chat (before this
+    // question), so follow-ups like "explain that again" make sense.
+    final history = pdfHistoryFor([
+      for (final m in _messages)
+        PdfChatEntry(text: m.text, sent: m.sent, isUser: m.isUser, isError: m.isError),
+    ]);
 
     setState(() {
-      _messages.add(_LocalMessage(text: displayText ?? question, isUser: true));
+      _messages.add(_LocalMessage(
+        text: displayText ?? question,
+        isUser: true,
+        sent: question,
+      ));
       _loading = true;
     });
     // The user just asked something — jump to the bottom for their own
@@ -1312,8 +1382,10 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
         pdfCourseCode:   widget.courseCode,
         pdfLevelName:    widget.levelName,
         pdfCategoryName: widget.categoryName,
-        // PDF questions never inherit history from saved AI Tutor chats.
+        // PDF questions never inherit history from saved AI Tutor chats;
+        // they carry this PDF's own chat history instead.
         contextType:     'pdf',
+        conversationHistory: history,
       );
       if (mounted) {
         setState(() {
@@ -1373,6 +1445,7 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
               _buildHandle(),
               _buildHeader(),
               const Divider(height: 1, color: Color(0xFF3A3A3A)),
+              if (_resumed) _buildResumedBanner(),
               Expanded(
                 child: Stack(
                   children: [
@@ -1409,6 +1482,28 @@ class _AiBottomSheetState extends State<_AiBottomSheet> {
       ),
     );
   }
+
+  Widget _buildResumedBanner() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(16, 2, 8, 2),
+    color: _kAccent.withOpacity(0.08),
+    child: Row(
+      children: [
+        const Icon(Icons.history_rounded, size: 16, color: _kAccent),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Continuing your saved chat',
+            style: TextStyle(color: _kTextSecondary(context), fontSize: 12),
+          ),
+        ),
+        TextButton(
+          onPressed: _loading ? null : _confirmStartOver,
+          child: const Text('Start over', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildHandle() => Container(
     width: 40, height: 4,
@@ -1672,13 +1767,15 @@ class _SheetNewMessagePill extends StatelessWidget {
 
 class _LocalMessage {
   final String text;
+  final String sent; // exact text sent to the AI (quick actions show a label)
   final bool   isUser;
   final bool   isError;
   const _LocalMessage({
     required this.text,
     required this.isUser,
+    String? sent,
     this.isError = false,
-  });
+  }) : sent = sent ?? text;
 }
 
 
