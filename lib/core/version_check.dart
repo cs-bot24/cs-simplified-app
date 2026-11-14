@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
 import 'constants.dart';
+import 'release_notes.dart';
 
 class VersionCheck {
   /// Checks for updates.
@@ -22,13 +23,14 @@ class VersionCheck {
           .timeout(const Duration(seconds: 6));
       final latest = (data['latest_version'] as String?)?.trim() ?? '';
       final url    = (data['download_url']   as String?)?.trim() ?? '';
+      final notes  = parseReleaseNotes(data['release_notes']);
 
       if (latest.isEmpty) return false;
       if (!context.mounted) return false;
 
       if (_isNewer(latest, AppConstants.appVersion)) {
         // Wait for user to dismiss — this is the key fix.
-        await _showUpdateDialog(context, latest, url);
+        await _showUpdateDialog(context, latest, url, notes);
         return true;
       } else {
         if (showNoUpdate && context.mounted) {
@@ -70,7 +72,8 @@ class VersionCheck {
 
   /// Shows update dialog and returns a Future that completes when dismissed.
   static Future<void> _showUpdateDialog(
-      BuildContext context, String version, String url) {
+      BuildContext context, String version, String url,
+      [List<String> notes = const []]) {
     return showDialog<void>(
       context:            context,
       barrierDismissible: false, // force user to make a choice
@@ -87,10 +90,45 @@ class VersionCheck {
           Text('Version $version is now available.',
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
           const SizedBox(height: 8),
-          Text(
-            'Update to get the latest materials, features, and improvements.',
-            style: TextStyle(fontSize: 13, color: Colors.grey[600], height: 1.5),
-          ),
+          if (notes.isEmpty)
+            Text(
+              'Update to get the latest materials, features, and improvements.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600], height: 1.5),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 190),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("What's new",
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    for (final n in notes)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('\u2022  ',
+                                style: TextStyle(
+                                    fontSize: 13, color: Colors.grey[600])),
+                            Expanded(
+                              child: Text(n,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[600],
+                                      height: 1.4)),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
