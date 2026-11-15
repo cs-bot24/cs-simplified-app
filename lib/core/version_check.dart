@@ -114,12 +114,19 @@ class VersionCheck {
                           children: [
                             Text('\u2022  ',
                                 style: TextStyle(
-                                    fontSize: 13, color: Colors.grey[600])),
+                                    fontSize: 13,
+                                    color: Theme.of(ctx).brightness ==
+                                            Brightness.dark
+                                        ? Colors.grey[300]
+                                        : Colors.grey[700])),
                             Expanded(
                               child: Text(n,
                                   style: TextStyle(
                                       fontSize: 13,
-                                      color: Colors.grey[600],
+                                      color: Theme.of(ctx).brightness ==
+                                              Brightness.dark
+                                          ? Colors.grey[300]
+                                          : Colors.grey[700],
                                       height: 1.4)),
                             ),
                           ],
