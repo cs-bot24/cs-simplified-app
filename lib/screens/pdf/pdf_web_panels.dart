@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
+import '../../models/pdf_chat.dart';
 import '../../providers/ai_provider.dart';
 import '../../widgets/ai_content_renderer.dart';  // Phase 10: unified renderer
 
@@ -136,9 +137,17 @@ class _WebAiPanelState extends State<WebAiPanel> {
   final List<_WebMessage> _messages = [];
   bool _loading = false;
 
+  // Saved-chat resume (same behaviour as the mobile PDF AI sheet): the chat
+  // of this PDF is loaded from the server when the panel opens. [_restoring]
+  // blocks sending until that finished, so a question can never be added
+  // before the saved ones.
+  bool _restoring = false;
+  bool _resumed   = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreSavedChat());
     // BUG FIX: this listener was previously never attached (no initState
     // override existed), so _userScrolledUp never updated and the panel
     // always behaved as if the user were pinned to the bottom — i.e. it
@@ -155,6 +164,72 @@ class _WebAiPanelState extends State<WebAiPanel> {
     _scrollCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Loads the saved chat of this PDF. Any failure (offline, feature not
+  /// available, not signed in) just leaves an empty chat - never blocks asking.
+  Future<void> _restoreSavedChat() async {
+    final id = widget.materialId;
+    if (id == null) return;
+    if (mounted) setState(() => _restoring = true);
+    try {
+      final data  = await ApiClient.getPdfChat(materialId: id);
+      final items = (data['items'] as List?) ?? const [];
+      final saved = pdfChatFromTurns(items);
+      if (!mounted) return;
+      if (saved.isNotEmpty && _messages.isEmpty) {
+        setState(() {
+          _messages.addAll([
+            for (final m in saved)
+              _WebMessage(text: m.text, isUser: m.isUser, sent: m.sent),
+          ]);
+          _resumed = true;
+        });
+        _scrollToBottom(force: true);
+      }
+    } catch (_) {
+      // keep an empty chat
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
+
+  Future<void> _confirmStartOver() async {
+    final id = widget.materialId;
+    if (id == null) return;
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Start this chat over?'),
+        content: const Text(
+            'Your saved chat about this material will be deleted. '
+            'Your AI usage is not affected.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep chat'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Start over'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    try {
+      await ApiClient.deletePdfChat(materialId: id);
+      if (!mounted) return;
+      setState(() {
+        _messages.clear();
+        _resumed = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not start over. Please try again.')),
+      );
+    }
   }
 
   void _onScroll() {
@@ -185,41 +260,36 @@ class _WebAiPanelState extends State<WebAiPanel> {
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _loading) return;
+    if (text.isEmpty || _loading || _restoring) return;
     _controller.clear();
     _focusNode.unfocus();
     await _askAi(text);
   }
 
   Future<void> _fireQuickAction(String action) async {
-    final prompt = switch (action) {
-      'explain' =>
-        'Please explain the key concepts, important definitions, and main ideas '
-        'in this course material. Also include any exam tips.',
-      'notes' =>
-        'Generate structured study notes for this course material. '
-        'Include: Key Concepts, Definitions, Important Points, and Exam Tips.',
-      'quiz' =>
-        'Generate 5 exam-style questions based on this course material. '
-        'Mix multiple-choice and short-answer. Include correct answers.',
-      _ => action,
-    };
-
-    final label = switch (action) {
-      'explain' => '📖 Explain This Material',
-      'notes'   => '📝 Generate Notes',
-      'quiz'    => '❓ Quiz Me',
-      _         => action,
-    };
+    final prompt = kPdfQuickPrompts[action] ?? action;
+    final label  = kPdfQuickLabels[action]  ?? action;
 
     await _askAi(prompt, displayText: label);
   }
 
   Future<void> _askAi(String question, {String? displayText}) async {
-    if (_loading) return;
+    if (_loading || _restoring) return;
+
+    // History = everything said so far in THIS PDF's chat (before this
+    // question), so follow-ups like "explain that again" make sense.
+    final history = pdfHistoryFor([
+      for (final m in _messages)
+        PdfChatEntry(
+            text: m.text, sent: m.sent, isUser: m.isUser, isError: m.isError),
+    ]);
 
     setState(() {
-      _messages.add(_WebMessage(text: displayText ?? question, isUser: true));
+      _messages.add(_WebMessage(
+        text: displayText ?? question,
+        isUser: true,
+        sent: question,
+      ));
       _loading = true;
     });
     // The user just asked something — always jump to the bottom for
@@ -241,8 +311,10 @@ class _WebAiPanelState extends State<WebAiPanel> {
         pdfCourseCode:    widget.courseCode,
         pdfLevelName:     widget.levelName,
         pdfCategoryName:  widget.categoryName,
-        // PDF questions never inherit history from saved AI Tutor chats.
+        // PDF questions never inherit history from saved AI Tutor chats;
+        // they carry this PDF's own chat history instead.
         contextType:      'pdf',
+        conversationHistory: history,
       );
       if (mounted) {
         setState(() {
@@ -284,6 +356,7 @@ class _WebAiPanelState extends State<WebAiPanel> {
         children: [
           _buildHeader(),
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
+          if (_resumed) _buildResumedBanner(),
           _buildQuickActions(),
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
           Expanded(
@@ -320,6 +393,28 @@ class _WebAiPanelState extends State<WebAiPanel> {
       ),
     );
   }
+
+  Widget _buildResumedBanner() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(16, 2, 8, 2),
+    color: _kAccent.withOpacity(0.08),
+    child: Row(
+      children: [
+        const Icon(Icons.history_rounded, size: 16, color: _kAccent),
+        const SizedBox(width: 8),
+        const Expanded(
+          child: Text(
+            'Continuing your saved chat',
+            style: TextStyle(color: _kTextSecondary, fontSize: 12),
+          ),
+        ),
+        TextButton(
+          onPressed: _loading ? null : _confirmStartOver,
+          child: const Text('Start over', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildHeader() => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -600,13 +695,15 @@ class _WebNewMessagePill extends StatelessWidget {
 
 class _WebMessage {
   final String text;
+  final String sent; // exact text sent to the AI (quick actions show a label)
   final bool   isUser;
   final bool   isError;
   const _WebMessage({
     required this.text,
     required this.isUser,
+    String? sent,
     this.isError = false,
-  });
+  }) : sent = sent ?? text;
 }
 
 class _WebMessageBubble extends StatelessWidget {
