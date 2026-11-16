@@ -1,0 +1,51 @@
+# Publishes the WEB version of the app to Firebase Hosting (project cs-simplified).
+# Runs ONLY when you start it by hand (Actions > Web deploy > Run workflow).
+#
+#   target = preview  -> temporary test link (expires after 7 days). Safe.
+#   target = live     -> the real website. Only allowed from the main branch.
+name: Web deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "preview = temporary test link, live = the real website"
+        type: choice
+        options:
+          - preview
+          - live
+        default: preview
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Live deploys are only allowed from main
+        if: inputs.target == 'live' && github.ref != 'refs/heads/main'
+        run: |
+          echo "Live deploys must run from the main branch. Use target = preview for other branches."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+
+      - run: flutter pub get
+
+      - run: flutter build web --release
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: cs-simplified
+          channelId: ${{ inputs.target == 'live' && 'live' || 'preview' }}
+          expires: 7d
