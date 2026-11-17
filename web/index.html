@@ -113,6 +113,13 @@
     });
   </script>
 
+  <!-- pdf.js: draws the PDF pages inside the page (used by the web PDF viewer) -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
