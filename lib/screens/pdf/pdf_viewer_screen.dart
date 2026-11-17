@@ -637,7 +637,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         Positioned.fill(
           right: iframeRight,
           bottom: iframeBottom,
-          child: WebPdfPanel(url: widget.url, title: widget.title),
+          child: WebPdfPanel(url: _viewerUrl, title: widget.title),
         ),
         // Fill the reserved area with a plain background so there's
         // no visual gap.
