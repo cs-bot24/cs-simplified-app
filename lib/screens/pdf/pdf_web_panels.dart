@@ -15,6 +15,11 @@ import 'dart:ui_web' as ui_web;
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+// pdfx draws the PDF pages inside the page itself (pdf.js on web) - sharp,
+// works on phones, and needs no Google viewer / iframe. This is the only
+// file besides lib/services/pdf/pdfx_renderer.dart that imports pdfx.
+import 'package:pdfx/pdfx.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
@@ -68,11 +73,11 @@ class PdfWebView extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WebPdfPanel — iframe panel used by _buildWebLayout()
+// WebPdfPanel — in-page PDF viewer used by _buildWebLayout()
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Registers the iframe factory in [initState] then renders [PdfWebView].
-/// Used in pdf_viewer_screen.dart → _buildWebLayout() as the PDF surface.
+/// Downloads the PDF and draws its pages inside the page (no iframe, no
+/// Google viewer). Used in pdf_viewer_screen.dart -> _buildWebLayout().
 class WebPdfPanel extends StatefulWidget {
   final String url;
   final String title;
@@ -83,18 +88,84 @@ class WebPdfPanel extends StatefulWidget {
 }
 
 class _WebPdfPanelState extends State<WebPdfPanel> {
-  late final String _viewType;
+  PdfControllerPinch? _controller;
+  bool _failed = false;
 
   @override
   void initState() {
     super.initState();
-    // Use a stable key so hot-reload doesn't re-register the same factory.
-    _viewType = 'pdf-viewer-${widget.url.hashCode}';
-    registerPdfViewFactory(_viewType, widget.url);
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (mounted) setState(() => _failed = false);
+    try {
+      final res = await http.get(Uri.parse(widget.url.trim()));
+      if (res.statusCode != 200) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      if (!mounted) return;
+      setState(() {
+        _controller = PdfControllerPinch(
+          document: PdfDocument.openData(res.bodyBytes),
+        );
+      });
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
   }
 
   @override
-  Widget build(BuildContext context) => PdfWebView(viewType: _viewType);
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) {
+      return Container(
+        color: _kBackground,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Could not load this PDF.',
+              style: TextStyle(color: _kTextPrimary, fontSize: 15),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () {
+                _controller?.dispose();
+                _controller = null;
+                _load();
+              },
+              child: const Text('Try again'),
+            ),
+          ],
+        ),
+      );
+    }
+    final c = _controller;
+    if (c == null) {
+      return Container(
+        color: _kBackground,
+        alignment: Alignment.center,
+        child: const CircularProgressIndicator(),
+      );
+    }
+    return Container(
+      color: _kBackground,
+      child: PdfViewPinch(
+        controller: c,
+        onDocumentError: (_) {
+          if (mounted) setState(() => _failed = true);
+        },
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
