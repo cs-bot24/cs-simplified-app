@@ -120,6 +120,44 @@
       "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
   </script>
 
+  <script>
+    // Draws every page of the PDF at [url] as a sharp canvas inside [box].
+    // Used by the web PDF viewer (lib/screens/pdf/pdf_web_panels.dart).
+    window.csRenderPdf = async function (box, url) {
+      var say = function (t) { box.textContent = t; };
+      try {
+        say('Loading PDF\u2026');
+        await new Promise(function (r) { setTimeout(r, 60); });
+        if (typeof pdfjsLib === 'undefined') throw new Error('pdf.js did not load');
+        var resp = await fetch(url);
+        if (!resp.ok) throw new Error('download failed (HTTP ' + resp.status + ')');
+        var data = await resp.arrayBuffer();
+        var pdf = await pdfjsLib.getDocument({ data: data }).promise;
+        box.textContent = '';
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        for (var n = 1; n <= pdf.numPages; n++) {
+          var page = await pdf.getPage(n);
+          var avail = Math.max((box.clientWidth || window.innerWidth) - 16, 200);
+          var base = page.getViewport({ scale: 1 });
+          var cssScale = avail / base.width;
+          var viewport = page.getViewport({ scale: cssScale * dpr });
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
+          canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
+          canvas.style.display = 'block';
+          canvas.style.margin = '8px auto';
+          canvas.style.background = '#ffffff';
+          box.appendChild(canvas);
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+        }
+      } catch (e) {
+        say('Could not load this PDF: ' + (e && e.message ? e.message : e));
+      }
+    };
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
