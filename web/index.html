@@ -122,8 +122,8 @@
 
   <script>
     // Draws the PDF at [url] inside [box] (used by lib/screens/pdf/pdf_web_panels.dart).
-    // Pages are drawn at high density so small text stays sharp, but only the pages
-    // near the screen are kept drawn, so long PDFs do not run the phone out of memory.
+    // Full-width pages, drawn sharply, with pinch-to-zoom. Only pages near the
+    // screen stay drawn so long PDFs do not run the phone out of memory.
     window.csRenderPdf = async function (box, url) {
       var say = function (t) { box.textContent = t; };
       try {
@@ -138,41 +138,62 @@
 
         var dpr = window.devicePixelRatio || 1;
         var density = Math.min(Math.max(dpr, 2) * 1.5, 4);
-        var avail = Math.max(box.clientWidth || window.innerWidth, 200);
+        var baseW = Math.max(box.clientWidth || window.innerWidth, 200);
+        var zoom = 1;
+        box.style.overflowX = 'auto';
+        box.style.touchAction = 'pan-x pan-y';
+
+        var inner = document.createElement('div');
+        inner.style.width = baseW + 'px';
+        box.appendChild(inner);
 
         var slots = [];
         for (var n = 1; n <= pdf.numPages; n++) {
           var page = await pdf.getPage(n);
-          var base = page.getViewport({ scale: 1 });
-          var cssScale = avail / base.width;
+          var vp1 = page.getViewport({ scale: 1 });
           var slot = document.createElement('div');
-          slot.style.width = Math.floor(base.width * cssScale) + 'px';
-          slot.style.height = Math.floor(base.height * cssScale) + 'px';
-          slot.style.margin = '0 auto 14px';
           slot.style.background = '#ffffff';
-          box.appendChild(slot);
-          slots.push({ el: slot, page: page, cssScale: cssScale, canvas: null, task: null });
+          slot.style.marginBottom = '14px';
+          inner.appendChild(slot);
+          slots.push({ el: slot, page: page, ratio: vp1.height / vp1.width, w1: vp1.width,
+                       canvas: null, task: null });
         }
+
+        var layout = function () {
+          var w = Math.floor(baseW * zoom);
+          inner.style.width = w + 'px';
+          slots.forEach(function (s) {
+            s.el.style.width = w + 'px';
+            s.el.style.height = Math.floor(w * s.ratio) + 'px';
+          });
+        };
+        layout();
 
         var draw = async function (s) {
           if (s.canvas || s.task) return;
-          var vp = s.page.getViewport({ scale: s.cssScale * density });
+          var cssW = Math.floor(baseW * zoom);
+          var scale = (cssW / s.w1) * density;
+          var vp = s.page.getViewport({ scale: scale });
+          var k = 1;
+          if (vp.width > 4096) k = Math.min(k, 4096 / vp.width);
+          if (vp.width * vp.height * k * k > 16000000) k = Math.min(k, Math.sqrt(16000000 / (vp.width * vp.height)));
+          if (k < 1) vp = s.page.getViewport({ scale: scale * k });
           var c = document.createElement('canvas');
           c.width = Math.floor(vp.width);
           c.height = Math.floor(vp.height);
           c.style.width = '100%';
           c.style.height = '100%';
           c.style.display = 'block';
-          s.task = s.page.render({ canvasContext: c.getContext('2d'), viewport: vp });
+          var task = s.page.render({ canvasContext: c.getContext('2d'), viewport: vp });
+          s.task = task;
           try {
-            await s.task.promise;
-            s.el.appendChild(c);
-            s.canvas = c;
+            await task.promise;
+            if (s.task === task) { s.el.appendChild(c); s.canvas = c; }
           } catch (e) { /* cancelled while scrolling away */ }
-          s.task = null;
+          if (s.task === task) s.task = null;
         };
         var release = function (s) {
-          if (s.task) { try { s.task.cancel(); } catch (e) {} }
+          if (s.task) { try { s.task.cancel(); } catch (e) {} s.task = null; }
           if (s.canvas) {
             s.el.removeChild(s.canvas);
             s.canvas.width = 0; s.canvas.height = 0;
@@ -187,6 +208,48 @@
           });
         }, { root: box, rootMargin: '100% 0px' });
         slots.forEach(function (s, i) { s.el.__i = i; io.observe(s.el); });
+
+        // ── Pinch to zoom ──
+        var dist = function (t) {
+          var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+          return Math.sqrt(dx * dx + dy * dy);
+        };
+        var pinch = null;
+        box.addEventListener('touchstart', function (e) {
+          if (e.touches.length === 2) {
+            var r = box.getBoundingClientRect();
+            var fx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
+            var fy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
+            pinch = { d0: dist(e.touches), s: 1, fx: fx, fy: fy,
+                      cx: box.scrollLeft + fx, cy: box.scrollTop + fy };
+            inner.style.transformOrigin = pinch.cx + 'px ' + pinch.cy + 'px';
+          }
+        }, { passive: true });
+        box.addEventListener('touchmove', function (e) {
+          if (pinch && e.touches.length === 2) {
+            e.preventDefault();
+            var s = dist(e.touches) / pinch.d0;
+            s = Math.max(1 / zoom, Math.min(4 / zoom, s));
+            pinch.s = s;
+            inner.style.transform = 'scale(' + s + ')';
+          }
+        }, { passive: false });
+        var endPinch = function () {
+          if (!pinch) return;
+          var p = pinch; pinch = null;
+          inner.style.transform = '';
+          var nz = Math.max(1, Math.min(4, zoom * p.s));
+          var ratio = nz / zoom;
+          if (Math.abs(ratio - 1) < 0.02) return;
+          zoom = nz;
+          slots.forEach(release);
+          layout();
+          box.scrollLeft = p.cx * ratio - p.fx;
+          box.scrollTop = p.cy * ratio - p.fy;
+          slots.forEach(function (s) { io.unobserve(s.el); io.observe(s.el); });
+        };
+        box.addEventListener('touchend', function (e) { if (e.touches.length < 2) endPinch(); });
+        box.addEventListener('touchcancel', endPinch);
       } catch (e) {
         say('Could not load this PDF: ' + (e && e.message ? e.message : e));
       }
