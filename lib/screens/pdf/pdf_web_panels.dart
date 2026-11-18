@@ -13,13 +13,10 @@
 import 'dart:ui_web' as ui_web;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:js' as js;
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-// pdfx draws the PDF pages inside the page itself (pdf.js on web) - sharp,
-// works on phones, and needs no Google viewer / iframe. This is the only
-// file besides lib/services/pdf/pdfx_renderer.dart that imports pdfx.
-import 'package:pdfx/pdfx.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
@@ -76,8 +73,10 @@ class PdfWebView extends StatelessWidget {
 // WebPdfPanel — in-page PDF viewer used by _buildWebLayout()
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Downloads the PDF and draws its pages inside the page (no iframe, no
-/// Google viewer). Used in pdf_viewer_screen.dart -> _buildWebLayout().
+/// Draws every page of the PDF as a sharp canvas inside the page itself
+/// (pdf.js, loaded in web/index.html - see window.csRenderPdf there).
+/// No iframe and no Google viewer, so it works on phones and stays sharp.
+/// Used in pdf_viewer_screen.dart -> _buildWebLayout().
 class WebPdfPanel extends StatefulWidget {
   final String url;
   final String title;
@@ -87,110 +86,38 @@ class WebPdfPanel extends StatefulWidget {
   State<WebPdfPanel> createState() => _WebPdfPanelState();
 }
 
+/// Registers a view factory for [viewType] that creates a scrollable <div>
+/// and asks window.csRenderPdf (index.html) to fill it with the PDF pages.
+void registerPdfCanvasFactory(String viewType, String url) {
+  ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
+    final box = html.DivElement()
+      ..style.width = '100%'
+      ..style.height = '100%'
+      ..style.overflowY = 'auto'
+      ..style.overflowX = 'hidden'
+      ..style.background = '#1A1A1A'
+      ..style.color = '#CCCCCC'
+      ..style.fontFamily = 'sans-serif'
+      ..style.fontSize = '14px'
+      ..style.padding = '8px 0'
+      ..style.setProperty('-webkit-overflow-scrolling', 'touch');
+    js.context.callMethod('csRenderPdf', [box, url]);
+    return box;
+  });
+}
+
 class _WebPdfPanelState extends State<WebPdfPanel> {
-  PdfControllerPinch? _controller;
-  bool _failed = false;
-  String _errorText = ''; // shown under "Could not load" to help find the cause
+  late final String _viewType;
 
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  void _fail(String why) {
-    if (!mounted) return;
-    setState(() {
-      _failed = true;
-      _errorText = why.length > 300 ? why.substring(0, 300) : why;
-    });
-  }
-
-  Future<void> _load() async {
-    if (mounted) setState(() { _failed = false; _errorText = ''; });
-    var stage = 'download';
-    try {
-      final res = await http.get(Uri.parse(widget.url.trim()));
-      if (res.statusCode != 200) {
-        _fail('Download failed: HTTP ${res.statusCode}');
-        return;
-      }
-      final b = res.bodyBytes;
-      final head = b.length >= 4 ? String.fromCharCodes(b.sublist(0, 4)) : '';
-      if (head != '%PDF') {
-        _fail('Download ok (${b.length} bytes) but not a PDF (starts "$head")');
-        return;
-      }
-      stage = 'render';
-      if (!mounted) return;
-      final doc = PdfDocument.openData(b);
-      // Surface a rendering problem (for example pdf.js not loaded) as text.
-      doc.then<void>((_) {}, onError: (Object e) => _fail('Render failed: $e'));
-      setState(() {
-        _controller = PdfControllerPinch(document: doc);
-      });
-    } catch (e) {
-      _fail('${stage == 'download' ? 'Download' : 'Render'} failed: $e');
-    }
+    _viewType = 'pdf-canvas-${widget.url.hashCode}';
+    registerPdfCanvasFactory(_viewType, widget.url);
   }
 
   @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_failed) {
-      return Container(
-        color: _kBackground,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Could not load this PDF.',
-              style: TextStyle(color: _kTextPrimary, fontSize: 15),
-            ),
-            if (_errorText.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              SelectableText(
-                _errorText,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: _kTextSecondary, fontSize: 11),
-              ),
-            ],
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () {
-                _controller?.dispose();
-                _controller = null;
-                _load();
-              },
-              child: const Text('Try again'),
-            ),
-          ],
-        ),
-      );
-    }
-    final c = _controller;
-    if (c == null) {
-      return Container(
-        color: _kBackground,
-        alignment: Alignment.center,
-        child: const CircularProgressIndicator(),
-      );
-    }
-    return Container(
-      color: _kBackground,
-      child: PdfViewPinch(
-        controller: c,
-        onDocumentError: (e) => _fail('Render failed: $e'),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => PdfWebView(viewType: _viewType);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
