@@ -15,17 +15,11 @@ import 'dart:ui_web' as ui_web;
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-// pdfx draws the PDF pages inside the page itself (pdf.js on web) - sharp,
-// works on phones, and needs no Google viewer / iframe. This is the only
-// file besides lib/services/pdf/pdfx_renderer.dart that imports pdfx.
-import 'package:pdfx/pdfx.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_client.dart';
-import '../../models/pdf_chat.dart';
 import '../../providers/ai_provider.dart';
-import '../../widgets/ai_content_renderer.dart';  // Phase 10: unified renderer
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal colour constants (mirrors pdf_viewer_screen.dart)
@@ -73,11 +67,11 @@ class PdfWebView extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WebPdfPanel — in-page PDF viewer used by _buildWebLayout()
+// WebPdfPanel — iframe panel used by _buildWebLayout()
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Downloads the PDF and draws its pages inside the page (no iframe, no
-/// Google viewer). Used in pdf_viewer_screen.dart -> _buildWebLayout().
+/// Registers the iframe factory in [initState] then renders [PdfWebView].
+/// Used in pdf_viewer_screen.dart → _buildWebLayout() as the PDF surface.
 class WebPdfPanel extends StatefulWidget {
   final String url;
   final String title;
@@ -88,84 +82,18 @@ class WebPdfPanel extends StatefulWidget {
 }
 
 class _WebPdfPanelState extends State<WebPdfPanel> {
-  PdfControllerPinch? _controller;
-  bool _failed = false;
+  late final String _viewType;
 
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    if (mounted) setState(() => _failed = false);
-    try {
-      final res = await http.get(Uri.parse(widget.url.trim()));
-      if (res.statusCode != 200) {
-        throw Exception('HTTP ${res.statusCode}');
-      }
-      if (!mounted) return;
-      setState(() {
-        _controller = PdfControllerPinch(
-          document: PdfDocument.openData(res.bodyBytes),
-        );
-      });
-    } catch (_) {
-      if (mounted) setState(() => _failed = true);
-    }
+    // Use a stable key so hot-reload doesn't re-register the same factory.
+    _viewType = 'pdf-viewer-${widget.url.hashCode}';
+    registerPdfViewFactory(_viewType, widget.url);
   }
 
   @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_failed) {
-      return Container(
-        color: _kBackground,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Could not load this PDF.',
-              style: TextStyle(color: _kTextPrimary, fontSize: 15),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () {
-                _controller?.dispose();
-                _controller = null;
-                _load();
-              },
-              child: const Text('Try again'),
-            ),
-          ],
-        ),
-      );
-    }
-    final c = _controller;
-    if (c == null) {
-      return Container(
-        color: _kBackground,
-        alignment: Alignment.center,
-        child: const CircularProgressIndicator(),
-      );
-    }
-    return Container(
-      color: _kBackground,
-      child: PdfViewPinch(
-        controller: c,
-        onDocumentError: (_) {
-          if (mounted) setState(() => _failed = true);
-        },
-      ),
-    );
-  }
+  Widget build(BuildContext context) => PdfWebView(viewType: _viewType);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,176 +128,71 @@ class WebAiPanel extends StatefulWidget {
 class _WebAiPanelState extends State<WebAiPanel> {
   final _controller = TextEditingController();
   final _scrollCtrl = ScrollController();
-  bool _userScrolledUp = false;
-  bool _hasNewMessage  = false;
-  static const _kScrollThreshold = 80.0;
   final _focusNode  = FocusNode();
 
   final List<_WebMessage> _messages = [];
   bool _loading = false;
 
-  // Saved-chat resume (same behaviour as the mobile PDF AI sheet): the chat
-  // of this PDF is loaded from the server when the panel opens. [_restoring]
-  // blocks sending until that finished, so a question can never be added
-  // before the saved ones.
-  bool _restoring = false;
-  bool _resumed   = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreSavedChat());
-    // BUG FIX: this listener was previously never attached (no initState
-    // override existed), so _userScrolledUp never updated and the panel
-    // always behaved as if the user were pinned to the bottom — i.e. it
-    // would auto-scroll out from under anyone trying to read an earlier
-    // reply. Attaching it here is what makes the "stay put while reading,
-    // only jump when near the bottom" behaviour actually work.
-    _scrollCtrl.addListener(_onScroll);
-  }
-
   @override
   void dispose() {
     _controller.dispose();
-    _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  /// Loads the saved chat of this PDF. Any failure (offline, feature not
-  /// available, not signed in) just leaves an empty chat - never blocks asking.
-  Future<void> _restoreSavedChat() async {
-    final id = widget.materialId;
-    if (id == null) return;
-    if (mounted) setState(() => _restoring = true);
-    try {
-      final data  = await ApiClient.getPdfChat(materialId: id);
-      final items = (data['items'] as List?) ?? const [];
-      final saved = pdfChatFromTurns(items);
-      if (!mounted) return;
-      if (saved.isNotEmpty && _messages.isEmpty) {
-        setState(() {
-          _messages.addAll([
-            for (final m in saved)
-              _WebMessage(text: m.text, isUser: m.isUser, sent: m.sent),
-          ]);
-          _resumed = true;
-        });
-        _scrollToBottom(force: true);
-      }
-    } catch (_) {
-      // keep an empty chat
-    } finally {
-      if (mounted) setState(() => _restoring = false);
-    }
-  }
-
-  Future<void> _confirmStartOver() async {
-    final id = widget.materialId;
-    if (id == null) return;
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Start this chat over?'),
-        content: const Text(
-            'Your saved chat about this material will be deleted. '
-            'Your AI usage is not affected.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep chat'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Start over'),
-          ),
-        ],
-      ),
-    );
-    if (yes != true || !mounted) return;
-    try {
-      await ApiClient.deletePdfChat(materialId: id);
-      if (!mounted) return;
-      setState(() {
-        _messages.clear();
-        _resumed = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not start over. Please try again.')),
-      );
-    }
-  }
-
-  void _onScroll() {
-    if (!_scrollCtrl.hasClients) return;
-    final nearBottom = _scrollCtrl.position.pixels >=
-        _scrollCtrl.position.maxScrollExtent - _kScrollThreshold;
-    if (nearBottom && _userScrolledUp) {
-      setState(() {
-        _userScrolledUp = false;
-        _hasNewMessage  = false; // back at bottom — clear badge
-      });
-    } else if (!nearBottom && !_userScrolledUp) {
-      setState(() => _userScrolledUp = true);
-    }
-  }
-
-  void _scrollToBottom({bool force = false}) {
-    if (_userScrolledUp && !force) return;
+  void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollCtrl.hasClients) return;
-      _scrollCtrl.animateTo(
-        _scrollCtrl.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOut,
-      );
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _loading || _restoring) return;
+    if (text.isEmpty || _loading) return;
     _controller.clear();
     _focusNode.unfocus();
     await _askAi(text);
   }
 
   Future<void> _fireQuickAction(String action) async {
-    final prompt = kPdfQuickPrompts[action] ?? action;
-    final label  = kPdfQuickLabels[action]  ?? action;
+    final prompt = switch (action) {
+      'explain' =>
+        'Please explain the key concepts, important definitions, and main ideas '
+        'in this course material. Also include any exam tips.',
+      'notes' =>
+        'Generate structured study notes for this course material. '
+        'Include: Key Concepts, Definitions, Important Points, and Exam Tips.',
+      'quiz' =>
+        'Generate 5 exam-style questions based on this course material. '
+        'Mix multiple-choice and short-answer. Include correct answers.',
+      _ => action,
+    };
+
+    final label = switch (action) {
+      'explain' => '📖 Explain This Material',
+      'notes'   => '📝 Generate Notes',
+      'quiz'    => '❓ Quiz Me',
+      _         => action,
+    };
 
     await _askAi(prompt, displayText: label);
   }
 
   Future<void> _askAi(String question, {String? displayText}) async {
-    if (_loading || _restoring) return;
-
-    // History = everything said so far in THIS PDF's chat (before this
-    // question), so follow-ups like "explain that again" make sense.
-    final history = pdfHistoryFor([
-      for (final m in _messages)
-        PdfChatEntry(
-            text: m.text, sent: m.sent, isUser: m.isUser, isError: m.isError),
-    ]);
+    if (_loading) return;
 
     setState(() {
-      _messages.add(_WebMessage(
-        text: displayText ?? question,
-        isUser: true,
-        sent: question,
-      ));
+      _messages.add(_WebMessage(text: displayText ?? question, isUser: true));
       _loading = true;
     });
-    // The user just asked something — always jump to the bottom for
-    // their own outgoing message, same as the other chat screens.
-    setState(() {
-      _userScrolledUp = false;
-      _hasNewMessage  = false;
-    });
-    _scrollToBottom(force: true);
+    _scrollToBottom();
 
     try {
       final ai = context.read<AiProvider>();
@@ -382,10 +205,6 @@ class _WebAiPanelState extends State<WebAiPanel> {
         pdfCourseCode:    widget.courseCode,
         pdfLevelName:     widget.levelName,
         pdfCategoryName:  widget.categoryName,
-        // PDF questions never inherit history from saved AI Tutor chats;
-        // they carry this PDF's own chat history instead.
-        contextType:      'pdf',
-        conversationHistory: history,
       );
       if (mounted) {
         setState(() {
@@ -394,10 +213,6 @@ class _WebAiPanelState extends State<WebAiPanel> {
             isUser: false,
           ));
           _loading = false;
-          // The user may have scrolled up to re-read something while
-          // waiting for this reply — don't yank them to the bottom,
-          // just flag that a new message is waiting.
-          if (_userScrolledUp) _hasNewMessage = true;
         });
         _scrollToBottom();
       }
@@ -410,7 +225,6 @@ class _WebAiPanelState extends State<WebAiPanel> {
             isError: true,
           ));
           _loading = false;
-          if (_userScrolledUp) _hasNewMessage = true;
         });
         _scrollToBottom();
       }
@@ -427,65 +241,15 @@ class _WebAiPanelState extends State<WebAiPanel> {
         children: [
           _buildHeader(),
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
-          if (_resumed) _buildResumedBanner(),
           _buildQuickActions(),
           const Divider(height: 1, color: Color(0xFF3A3A3A)),
-          Expanded(
-            child: Stack(
-              children: [
-                _buildMessageList(),
-                if (_userScrolledUp)
-                  Positioned(
-                    right: 12,
-                    bottom: 10,
-                    child: _hasNewMessage
-                        ? _WebNewMessagePill(
-                            onTap: () {
-                              setState(() {
-                                _userScrolledUp = false;
-                                _hasNewMessage  = false;
-                              });
-                              _scrollToBottom(force: true);
-                            },
-                          )
-                        : _WebScrollToBottomButton(
-                            onTap: () {
-                              setState(() => _userScrolledUp = false);
-                              _scrollToBottom(force: true);
-                            },
-                          ),
-                  ),
-              ],
-            ),
-          ),
+          Expanded(child: _buildMessageList()),
           if (_loading) _buildTypingIndicator(),
           _buildInputBar(),
         ],
       ),
     );
   }
-
-  Widget _buildResumedBanner() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(16, 2, 8, 2),
-    color: _kAccent.withOpacity(0.08),
-    child: Row(
-      children: [
-        const Icon(Icons.history_rounded, size: 16, color: _kAccent),
-        const SizedBox(width: 8),
-        const Expanded(
-          child: Text(
-            'Continuing your saved chat',
-            style: TextStyle(color: _kTextSecondary, fontSize: 12),
-          ),
-        ),
-        TextButton(
-          onPressed: _loading ? null : _confirmStartOver,
-          child: const Text('Start over', style: TextStyle(fontSize: 12)),
-        ),
-      ],
-    ),
-  );
 
   Widget _buildHeader() => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -593,11 +357,8 @@ class _WebAiPanelState extends State<WebAiPanel> {
       controller: _scrollCtrl,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      physics: const AlwaysScrollableScrollPhysics(),
       itemCount: _messages.length,
-      itemBuilder: (_, i) => RepaintBoundary(
-        child: _WebMessageBubble(message: _messages[i]),
-      ),
+      itemBuilder: (_, i) => _WebMessageBubble(message: _messages[i]),
     );
   }
 
@@ -698,88 +459,23 @@ class _WebAiPanelState extends State<WebAiPanel> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scroll-to-bottom affordances (mirrors AiTutorScreen / AiLecturerScreen)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _WebScrollToBottomButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _WebScrollToBottomButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: _kAccent,
-      shape: const CircleBorder(),
-      elevation: 4,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.all(8),
-          child: Icon(Icons.keyboard_arrow_down_rounded,
-              color: Colors.white, size: 20),
-        ),
-      ),
-    );
-  }
-}
-
-class _WebNewMessagePill extends StatelessWidget {
-  final VoidCallback onTap;
-  const _WebNewMessagePill({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: _kAccent,
-      borderRadius: BorderRadius.circular(18),
-      elevation: 4,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 13),
-              SizedBox(width: 5),
-              Text(
-                'New Message',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _WebMessage {
   final String text;
-  final String sent; // exact text sent to the AI (quick actions show a label)
   final bool   isUser;
   final bool   isError;
   const _WebMessage({
     required this.text,
     required this.isUser,
-    String? sent,
     this.isError = false,
-  }) : sent = sent ?? text;
+  });
 }
 
 class _WebMessageBubble extends StatelessWidget {
   final _WebMessage message;
-  const _WebMessageBubble({required this.message});
+  const _WebMessageBubble({super.key, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -831,9 +527,27 @@ class _WebMessageBubble extends StatelessWidget {
                         color: Colors.white, fontSize: 14, height: 1.4,
                       ),
                     )
-                  : AiContentRenderer(
-                      content: message.text,
-                      isDark: true,
+                  : MarkdownBody(
+                      data: message.text,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(
+                          color: _kTextPrimary, fontSize: 14, height: 1.5,
+                        ),
+                        code: const TextStyle(
+                          color: _kAccent,
+                          backgroundColor: Color(0xFF1A1A1A),
+                          fontSize: 13,
+                        ),
+                        codeblockDecoration: BoxDecoration(
+                          color: const Color(0xFF1A1A1A),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        h1: const TextStyle(color: _kTextPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+                        h2: const TextStyle(color: _kTextPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+                        h3: const TextStyle(color: _kTextPrimary, fontSize: 14, fontWeight: FontWeight.bold),
+                        listBullet: const TextStyle(color: _kTextSecondary),
+                        blockquote: const TextStyle(color: _kTextSecondary),
+                      ),
                     ),
             ),
           ),
