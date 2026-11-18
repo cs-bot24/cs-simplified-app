@@ -121,8 +121,9 @@
   </script>
 
   <script>
-    // Draws every page of the PDF at [url] as a sharp canvas inside [box].
-    // Used by the web PDF viewer (lib/screens/pdf/pdf_web_panels.dart).
+    // Draws the PDF at [url] inside [box] (used by lib/screens/pdf/pdf_web_panels.dart).
+    // Pages are drawn at high density so small text stays sharp, but only the pages
+    // near the screen are kept drawn, so long PDFs do not run the phone out of memory.
     window.csRenderPdf = async function (box, url) {
       var say = function (t) { box.textContent = t; };
       try {
@@ -134,24 +135,58 @@
         var data = await resp.arrayBuffer();
         var pdf = await pdfjsLib.getDocument({ data: data }).promise;
         box.textContent = '';
-        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        var dpr = window.devicePixelRatio || 1;
+        var density = Math.min(Math.max(dpr, 2) * 1.5, 4);
+        var avail = Math.max(box.clientWidth || window.innerWidth, 200);
+
+        var slots = [];
         for (var n = 1; n <= pdf.numPages; n++) {
           var page = await pdf.getPage(n);
-          var avail = Math.max((box.clientWidth || window.innerWidth) - 16, 200);
           var base = page.getViewport({ scale: 1 });
           var cssScale = avail / base.width;
-          var viewport = page.getViewport({ scale: cssScale * dpr });
-          var canvas = document.createElement('canvas');
-          canvas.width = Math.floor(viewport.width);
-          canvas.height = Math.floor(viewport.height);
-          canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
-          canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
-          canvas.style.display = 'block';
-          canvas.style.margin = '8px auto';
-          canvas.style.background = '#ffffff';
-          box.appendChild(canvas);
-          await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+          var slot = document.createElement('div');
+          slot.style.width = Math.floor(base.width * cssScale) + 'px';
+          slot.style.height = Math.floor(base.height * cssScale) + 'px';
+          slot.style.margin = '0 auto 14px';
+          slot.style.background = '#ffffff';
+          box.appendChild(slot);
+          slots.push({ el: slot, page: page, cssScale: cssScale, canvas: null, task: null });
         }
+
+        var draw = async function (s) {
+          if (s.canvas || s.task) return;
+          var vp = s.page.getViewport({ scale: s.cssScale * density });
+          var c = document.createElement('canvas');
+          c.width = Math.floor(vp.width);
+          c.height = Math.floor(vp.height);
+          c.style.width = '100%';
+          c.style.height = '100%';
+          c.style.display = 'block';
+          s.task = s.page.render({ canvasContext: c.getContext('2d'), viewport: vp });
+          try {
+            await s.task.promise;
+            s.el.appendChild(c);
+            s.canvas = c;
+          } catch (e) { /* cancelled while scrolling away */ }
+          s.task = null;
+        };
+        var release = function (s) {
+          if (s.task) { try { s.task.cancel(); } catch (e) {} }
+          if (s.canvas) {
+            s.el.removeChild(s.canvas);
+            s.canvas.width = 0; s.canvas.height = 0;
+            s.canvas = null;
+          }
+        };
+
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            var s = slots[en.target.__i];
+            if (en.isIntersecting) draw(s); else release(s);
+          });
+        }, { root: box, rootMargin: '100% 0px' });
+        slots.forEach(function (s, i) { s.el.__i = i; io.observe(s.el); });
       } catch (e) {
         say('Could not load this PDF: ' + (e && e.message ? e.message : e));
       }
