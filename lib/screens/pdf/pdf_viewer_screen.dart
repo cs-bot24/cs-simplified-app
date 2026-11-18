@@ -624,12 +624,22 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
     final width = MediaQuery.of(context).size.width;
     final double aiPanelWidth = _webAiPanelWidth(width);
+    // Phones: PDF uses the full width and the AI slides up from the bottom
+    // (like the mobile app). Wider screens keep the side drawer.
+    final bool narrow = width < 600;
+
+    return LayoutBuilder(builder: (context, box) {
+    final double bodyH = box.maxHeight;
+    final double aiSheetH = bodyH * 0.88;
 
     // When the AI panel/backdrop is open, also shrink the iframe's right
     // edge by the panel width so it can't intercept clicks on the panel
     // or backdrop (same HtmlElementView click-through issue as the FAB).
-    final double iframeRight  = _webAiOpen ? aiPanelWidth : reservedWidth;
-    final double iframeBottom = _webAiOpen ? 0 : reservedHeight;
+    final double iframeRight  =
+        narrow ? 0 : (_webAiOpen ? aiPanelWidth : reservedWidth);
+    final double iframeBottom = narrow
+        ? (_webAiOpen ? aiSheetH : reservedHeight)
+        : (_webAiOpen ? 0 : reservedHeight);
 
     return Stack(
       children: [
@@ -688,10 +698,11 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             ),
           ),
 
-        // AI panel — responsive: right drawer / wide drawer / full-screen
-        _buildWebAiOverlay(),
+        // AI panel — phones: bottom sheet / wider screens: right drawer
+        _buildWebAiOverlay(bodyH),
       ],
     );
+    });
   }
 
   // Desktop: right-side drawer. Tablet: wider drawer. Mobile: full-screen.
@@ -701,9 +712,46 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     return screenWidth;
   }
 
-  Widget _buildWebAiOverlay() {
+  Widget _buildWebAiOverlay(double bodyH) {
     final width = MediaQuery.of(context).size.width;
     final double panelWidth = _webAiPanelWidth(width);
+
+    if (width < 600) {
+      final double sheetH = bodyH * 0.88;
+      return Positioned.fill(
+        child: IgnorePointer(
+          ignoring: !_webAiOpen,
+          child: Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                left: 0,
+                right: 0,
+                height: sheetH,
+                bottom: _webAiOpen ? 0 : -sheetH,
+                child: ClipRRect(
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                  child: Material(
+                    elevation: 16,
+                    color: _kBackground(context),
+                    child: WebAiPanel(
+                      materialId:    widget.materialId,
+                      materialTitle: widget.title,
+                      courseCode:    widget.courseCode,
+                      levelName:     widget.levelName,
+                      categoryName:  widget.categoryName,
+                      onClose:       _closeWebAiPanel,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     final aiPanel = Material(
       elevation: 16,
