@@ -1090,7 +1090,6 @@ class _LeaderboardEntryCard extends StatelessWidget {
                       fontWeight: FontWeight.bold, color: Colors.amber)),
             ),
             const SizedBox(width: 6),
-            if (!kIsWeb)
               GestureDetector(
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(
