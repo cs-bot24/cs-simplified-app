@@ -104,3 +104,109 @@ class GroupMember {
         isMe: j['is_me'] == true,
       );
 }
+
+/// One chat bubble. Deleted messages arrive blanked (deleted == true).
+class GroupMessage {
+  final int id;
+  final String nickname;
+  final String kind; // 'text' | 'material'
+  final String body;
+  final int? materialId;
+  final String? materialTitle;
+  final DateTime? createdAt;
+  final bool deleted;
+  final bool isMine;
+
+  const GroupMessage({
+    required this.id,
+    required this.nickname,
+    required this.kind,
+    required this.body,
+    this.materialId,
+    this.materialTitle,
+    this.createdAt,
+    required this.deleted,
+    required this.isMine,
+  });
+
+  bool get isMaterial => kind == 'material' && materialId != null;
+
+  factory GroupMessage.fromJson(Map<String, dynamic> j) => GroupMessage(
+        id: _asInt(j['id']),
+        nickname: (j['nickname'] ?? '') as String,
+        kind: (j['kind'] ?? 'text') as String,
+        body: (j['body'] ?? '') as String,
+        materialId:
+            j['material_id'] is num ? (j['material_id'] as num).toInt() : null,
+        materialTitle: j['material_title'] as String?,
+        createdAt: j['created_at'] is String
+            ? DateTime.tryParse(j['created_at'] as String)?.toLocal()
+            : null,
+        deleted: j['deleted'] == true,
+        isMine: j['is_mine'] == true,
+      );
+}
+
+class MessagePage {
+  final List<GroupMessage> messages;
+  final bool hasOlder;
+  const MessagePage(this.messages, this.hasOlder);
+}
+
+class JoinRequest {
+  final int id;
+  final String nickname;
+  const JoinRequest({required this.id, required this.nickname});
+
+  factory JoinRequest.fromJson(Map<String, dynamic> j) =>
+      JoinRequest(id: _asInt(j['id']), nickname: (j['nickname'] ?? '') as String);
+}
+
+/// A report as shown to the app admin.
+class GroupReport {
+  final int id;
+  final String reason;
+  final String note;
+  final int groupId;
+  final String groupName;
+  final int memberCount;
+  final int? messageId;
+  final String? messageNickname;
+  final String? messageBody;
+  final bool messageDeleted;
+  final String reporterName;
+  final DateTime? createdAt;
+
+  const GroupReport({
+    required this.id,
+    required this.reason,
+    required this.note,
+    required this.groupId,
+    required this.groupName,
+    required this.memberCount,
+    this.messageId,
+    this.messageNickname,
+    this.messageBody,
+    required this.messageDeleted,
+    required this.reporterName,
+    this.createdAt,
+  });
+
+  factory GroupReport.fromJson(Map<String, dynamic> j) => GroupReport(
+        id: _asInt(j['id']),
+        reason: (j['reason'] ?? '') as String,
+        note: (j['note'] ?? '') as String,
+        groupId: _asInt(j['group_id']),
+        groupName: (j['group_name'] ?? '') as String,
+        memberCount: _asInt(j['member_count']),
+        messageId:
+            j['message_id'] is num ? (j['message_id'] as num).toInt() : null,
+        messageNickname: j['message_nickname'] as String?,
+        messageBody: j['message_body'] as String?,
+        messageDeleted: j['message_deleted'] == true,
+        reporterName: (j['reporter_name'] ?? '') as String,
+        createdAt: j['created_at'] is String
+            ? DateTime.tryParse(j['created_at'] as String)?.toLocal()
+            : null,
+      );
+}
