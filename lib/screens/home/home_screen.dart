@@ -42,6 +42,7 @@ import '../bookmarks/bookmarks_screen.dart';
 import '../profile/profile_screen.dart';
 import '../ai/ai_tutor_screen.dart';
 import '../study_planner/study_planner_screen.dart';
+import '../groups/study_groups_screen.dart';
 import '../lecturer/ai_lecturer_screen.dart';
 import '../../widgets/requires_internet_view.dart';
 
@@ -676,6 +677,25 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
               ),
             ),
 
+            // Study Groups card
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: _QuickActionCard(
+                  icon: Icons.groups_rounded,
+                  label: 'Study Groups',
+                  color: const Color(0xFF00838F),
+                  wide: true,
+                  badge: 'NEW',
+                  onTap: () => requireInternet(context,
+                      featureName: 'Study Groups',
+                      onProceed: () => Navigator.push(context,
+                          MaterialPageRoute(
+                              builder: (_) => const StudyGroupsScreen()))),
+                ),
+              ),
+            ),
+
             // Study Planner card
             SliverToBoxAdapter(
               child: Padding(
@@ -968,6 +988,7 @@ class _QuickActionCard extends StatelessWidget {
   final Color        color;
   final VoidCallback onTap;
   final bool         wide;
+  final String       badge;
 
   const _QuickActionCard({
     required this.icon,
@@ -975,6 +996,7 @@ class _QuickActionCard extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.wide = false,
+    this.badge = 'PRO',
   });
 
   @override
@@ -1010,7 +1032,7 @@ class _QuickActionCard extends StatelessWidget {
                         color: color.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Text('PRO',
+                      child: Text(badge,
                           style: TextStyle(fontSize: 10,
                               fontWeight: FontWeight.bold, color: color)),
                     ),
