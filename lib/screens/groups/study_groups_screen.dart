@@ -9,7 +9,7 @@ import '../../services/study_groups_api.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/loading_view.dart';
 import 'create_group_screen.dart';
-import 'group_info_screen.dart';
+import 'group_chat_screen.dart';
 import 'group_widgets.dart';
 
 class StudyGroupsScreen extends StatefulWidget {
@@ -30,7 +30,7 @@ class _StudyGroupsScreenState extends State<StudyGroupsScreen> {
 
   Future<void> _openGroup(StudyGroup g) async {
     await Navigator.push(
-        context, MaterialPageRoute(builder: (_) => GroupInfoScreen(groupId: g.id)));
+        context, MaterialPageRoute(builder: (_) => GroupChatScreen(groupId: g.id)));
     if (mounted) _reloadBoth();
   }
 
