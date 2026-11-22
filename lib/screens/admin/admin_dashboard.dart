@@ -11,6 +11,7 @@ import 'admin_support_screen.dart';
 import 'admin_categories_screen.dart';
 import 'admin_material_requests_screen.dart';
 import 'ai_health_dashboard.dart';
+import 'admin_group_reports_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -362,6 +363,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 subtitle: 'Provider status, retries & cache',
                 color: Colors.green[700]!,
                 onTap: () => _goTo(const AiHealthDashboard()),
+              ),
+              const SizedBox(height: 10),
+              _ActionCard(
+                icon: Icons.flag_rounded,
+                title: 'Study Group Reports',
+                subtitle: 'Review reported messages and groups',
+                color: Colors.deepOrange,
+                onTap: () => _goTo(const AdminGroupReportsScreen()),
               ),
               const SizedBox(height: 20),
 

@@ -85,6 +85,44 @@ class ApiClient {
     return 'Unexpected error. Please try again.';
   }
 
+  // ── Generic authenticated call (used by Study Groups) ────────────────────
+  static Future<dynamic> request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? query,
+  }) async {
+    try {
+      var uri = Uri.parse('$_base$path');
+      if (query != null && query.isNotEmpty) {
+        uri = uri.replace(queryParameters: query);
+      }
+      final h = _headers(auth: true);
+      final http.Response res;
+      switch (method) {
+        case 'GET':
+          res = await http.get(uri, headers: h);
+          break;
+        case 'POST':
+          res = await http.post(uri, headers: h, body: jsonEncode(body ?? {}));
+          break;
+        case 'PATCH':
+          res = await http.patch(uri, headers: h, body: jsonEncode(body ?? {}));
+          break;
+        case 'DELETE':
+          res = await http.delete(uri, headers: h);
+          break;
+        default:
+          throw ApiException('Unsupported request.');
+      }
+      return _handle(res);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(_friendlyError(e));
+    }
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> register({
     required String fullName, required String email, required String password,
