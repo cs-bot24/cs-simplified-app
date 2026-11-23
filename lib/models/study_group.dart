@@ -18,6 +18,9 @@ class StudyGroup {
   final String? myRole; // 'admin' | 'member' | null
   final String? myNickname;
 
+  /// Push notifications muted for me (My Groups list: `muted`, detail: `my_muted`).
+  final bool myMuted;
+
   /// Only sent to active members.
   final String? joinCode;
 
@@ -40,6 +43,7 @@ class StudyGroup {
     this.myStatus,
     this.myRole,
     this.myNickname,
+    this.myMuted = false,
     this.joinCode,
     this.pendingCount = 0,
     this.unreadCount = 0,
@@ -70,6 +74,7 @@ class StudyGroup {
       myStatus: (j['my_status'] ?? j['status']) as String?,
       myRole: (j['my_role'] ?? j['role']) as String?,
       myNickname: (j['my_nickname'] ?? j['nickname']) as String?,
+      myMuted: (j['my_muted'] ?? j['muted']) == true,
       joinCode: j['join_code'] as String?,
       pendingCount: _asInt(j['pending_count']),
       unreadCount: _asInt(j['unread_count']),
