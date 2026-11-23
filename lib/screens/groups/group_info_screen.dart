@@ -56,6 +56,27 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     }
   }
 
+  bool _muteBusy = false;
+
+  Future<void> _toggleMute(bool muted) async {
+    if (_muteBusy) return;
+    final g = _group;
+    if (g == null) return;
+    setState(() => _muteBusy = true);
+    try {
+      final now = await StudyGroupsApi.setMute(widget.groupId, muted);
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      _snack(now ? 'Notifications muted' : 'Notifications on');
+    } catch (e) {
+      if (!mounted) return;
+      _snack(groupErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _muteBusy = false);
+    }
+  }
+
   Future<void> _leave() async {
     final g = _group!;
     final ok = await showDialog<bool>(
@@ -447,6 +468,15 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           const SizedBox(height: 8),
         ],
         if (g.isActive) ...[
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.notifications_off_outlined),
+            title: const Text('Mute notifications'),
+            subtitle: const Text('No push alerts for new messages in this group'),
+            value: g.myMuted,
+            onChanged: _muteBusy ? null : _toggleMute,
+          ),
+          const SizedBox(height: 4),
           OutlinedButton.icon(
             onPressed: _changeMyNickname,
             icon: const Icon(Icons.badge_outlined),
