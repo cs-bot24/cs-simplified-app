@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../services/group_push_state.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
@@ -47,6 +48,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    GroupPushState.openGroupId = widget.groupId;
     _scroll.addListener(_onScroll);
     _start();
   }
@@ -54,6 +56,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   @override
   void dispose() {
     _closed = true;
+    if (GroupPushState.openGroupId == widget.groupId) GroupPushState.openGroupId = null;
     _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _scroll.dispose();

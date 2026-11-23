@@ -325,6 +325,11 @@ class _MyGroupTile extends StatelessWidget {
                   ],
                 ),
               ),
+              if (g.myMuted)
+                const Padding(
+                  padding: EdgeInsets.only(right: 6),
+                  child: Icon(Icons.notifications_off_rounded, size: 16, color: Colors.grey),
+                ),
               if (g.unreadCount > 0)
                 _Badge(text: g.unreadCount > 99 ? '99+' : '${g.unreadCount}')
               else if (g.pendingCount > 0)
