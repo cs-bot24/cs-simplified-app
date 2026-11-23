@@ -147,6 +147,13 @@ class StudyGroupsApi {
   static Future<void> changeNickname(int groupId, String nickname) =>
       ApiClient.request('PATCH', '/groups/$groupId/me', body: {'nickname': nickname});
 
+  /// Mute / unmute push notifications for one group. Returns the new state.
+  static Future<bool> setMute(int groupId, bool muted) async {
+    final res = await ApiClient.request('POST', '/groups/$groupId/mute',
+        body: {'muted': muted});
+    return res is Map && res['muted'] == true;
+  }
+
   static Future<List<JoinRequest>> requests(int groupId) async {
     final res = await ApiClient.request('GET', '/groups/$groupId/requests');
     return _list(res, 'requests')
