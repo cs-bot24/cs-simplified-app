@@ -9,6 +9,7 @@
 //         The in-app notification feed (NotificationProvider) works on web
 //         without any FCM involvement.
 
+import 'dart:async' show unawaited;
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -21,6 +22,8 @@ import '../core/api_client.dart';
 import '../core/storage.dart';
 import '../models/notification_model.dart';
 import '../providers/notification_provider.dart';
+import '../screens/groups/group_chat_screen.dart';
+import '../services/group_push_state.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -223,6 +226,10 @@ class FcmService {
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
     if (kIsWeb) return;
     final notification = message.notification;
+    final groupId = _groupIdFrom(message.data);
+
+    // Study Group message while that chat is open: the chat shows it already.
+    if (groupId != null && groupId == GroupPushState.openGroupId) return;
 
     // Show the heads-up notification that FCM suppresses in foreground.
     if (notification != null) {
@@ -230,6 +237,7 @@ class FcmService {
         notification.hashCode,
         notification.title,
         notification.body,
+        payload: groupId != null ? 'study_group:$groupId' : null,
         NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
@@ -251,6 +259,9 @@ class FcmService {
       );
     }
 
+    // Group chat pushes are not part of the announcements feed.
+    if (groupId != null) return;
+
     // Also update the in-app notification feed immediately.
     final ctx = navigatorKey.currentContext;
     if (ctx != null && notification != null) {
@@ -270,8 +281,31 @@ class FcmService {
 
   // ── Notification tap handlers ──────────────────────────────────────────────
 
+  /// `{type: study_group, group_id: "7"}` -> 7, otherwise null.
+  static int? _groupIdFrom(Map<String, dynamic> data) {
+    if (data['type'] != 'study_group') return null;
+    return int.tryParse('${data['group_id']}');
+  }
+
+  /// Opens that group's chat. On a cold start the navigator may not be ready
+  /// yet, so wait a moment once before giving up.
+  static Future<void> _openGroupChat(int groupId) async {
+    if (navigatorKey.currentState == null) {
+      await Future.delayed(const Duration(seconds: 2));
+    }
+    if (GroupPushState.openGroupId == groupId) return;
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => GroupChatScreen(groupId: groupId)),
+    );
+  }
+
   static void _handleNotificationOpen(RemoteMessage message) {
     if (kIsWeb) return;
+    final groupId = _groupIdFrom(message.data);
+    if (groupId != null) {
+      unawaited(_openGroupChat(groupId));
+      return;
+    }
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return;
     ctx.read<NotificationProvider>().fetchNotifications();
@@ -279,6 +313,14 @@ class FcmService {
 
   static void _onNotificationTapped(NotificationResponse response) {
     if (kIsWeb) return;
+    final payload = response.payload;
+    if (payload != null && payload.startsWith('study_group:')) {
+      final id = int.tryParse(payload.substring('study_group:'.length));
+      if (id != null) {
+        unawaited(_openGroupChat(id));
+        return;
+      }
+    }
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return;
     ctx.read<NotificationProvider>().fetchNotifications();
