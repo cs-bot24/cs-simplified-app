@@ -43,6 +43,7 @@ import '../profile/profile_screen.dart';
 import '../ai/ai_tutor_screen.dart';
 import '../study_planner/study_planner_screen.dart';
 import '../groups/study_groups_screen.dart';
+import '../../services/study_groups_api.dart';
 import '../lecturer/ai_lecturer_screen.dart';
 import '../../widgets/requires_internet_view.dart';
 
@@ -441,6 +442,20 @@ class _HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
+  /// Unread Study Group messages across my groups (0 = none / unknown).
+  int _groupUnread = 0;
+
+  /// Quietly refreshes the Study Groups indicator; never shows an error.
+  Future<void> _loadGroupUnread() async {
+    try {
+      final groups = await StudyGroupsApi.myGroups();
+      final total = groups.fold<int>(0, (sum, g) => sum + g.unreadCount);
+      if (mounted && total != _groupUnread) setState(() => _groupUnread = total);
+    } catch (_) {
+      // offline or signed out: keep whatever we showed before
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -452,6 +467,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
       context.read<HomeProvider>().pingStreak();
       context.read<StudyPlannerProvider>().refresh();
       if (!kIsWeb) context.read<OfflineProvider>().loadFromStorage();
+      _loadGroupUnread();
     });
   }
 
@@ -466,6 +482,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && mounted) {
       context.read<HomeProvider>().pingStreak();
       context.read<StudyPlannerProvider>().refreshIfNewDay();
+      _loadGroupUnread();
     }
   }
 
@@ -473,6 +490,7 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
     await Future.wait([
       context.read<HomeProvider>().fetchHome(forceRefresh: true),
       context.read<AcademicProvider>().fetchLevels(forceRefresh: true),
+      _loadGroupUnread(),
     ]);
   }
 
@@ -686,12 +704,16 @@ class _HomeTabState extends State<_HomeTab> with WidgetsBindingObserver {
                   label: 'Study Groups',
                   color: const Color(0xFF00838F),
                   wide: true,
-                  badge: 'NEW',
+                  badge: _groupUnread > 0
+                      ? (_groupUnread > 99 ? '99+ new' : '$_groupUnread new')
+                      : 'NEW',
+                  badgeHot: _groupUnread > 0,
                   onTap: () => requireInternet(context,
                       featureName: 'Study Groups',
                       onProceed: () => Navigator.push(context,
                           MaterialPageRoute(
-                              builder: (_) => const StudyGroupsScreen()))),
+                              builder: (_) => const StudyGroupsScreen()))
+                          .then((_) => _loadGroupUnread())),
                 ),
               ),
             ),
@@ -989,6 +1011,7 @@ class _QuickActionCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool         wide;
   final String       badge;
+  final bool         badgeHot; // red 'N new' style for unread messages
 
   const _QuickActionCard({
     required this.icon,
@@ -997,6 +1020,7 @@ class _QuickActionCard extends StatelessWidget {
     required this.onTap,
     this.wide = false,
     this.badge = 'PRO',
+    this.badgeHot = false,
   });
 
   @override
@@ -1029,12 +1053,13 @@ class _QuickActionCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: color.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(6),
+                        color: badgeHot ? Colors.red : color.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(badgeHot ? 10 : 6),
                       ),
                       child: Text(badge,
                           style: TextStyle(fontSize: 10,
-                              fontWeight: FontWeight.bold, color: color)),
+                              fontWeight: FontWeight.bold,
+                              color: badgeHot ? Colors.white : color)),
                     ),
                   ],
                 )
